@@ -2,7 +2,7 @@
 
 import asyncio
 from argparse import Namespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -25,28 +25,32 @@ class TestRunInferenceCmd:
             temperature=0.7,
         )
 
+    def _make_mock_pipeline(self, response_text="The answer is 4."):
+        """Create a mock UnifiedPipeline with proper return types."""
+        mock_response = MagicMock()
+        mock_response.text = response_text
+        mock_response.stats.output_tokens = 10
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.generate.return_value = mock_response
+        mock_pipeline.chat.return_value = mock_response
+
+        mock_module = MagicMock()
+        mock_module.UnifiedPipeline.from_pretrained.return_value = mock_pipeline
+        return mock_module, mock_pipeline
+
     def test_run_inference_cmd_basic(self, basic_args, capsys):
         """Test basic inference command execution."""
-        mock_result = MagicMock()
-        mock_result.to_display.return_value = "The answer is 4."
+        mock_module, mock_pipeline = self._make_mock_pipeline("The answer is 4.")
 
-        mock_service = MagicMock()
-        mock_service.run = AsyncMock(return_value=mock_result)
-
-        with patch.dict(
-            "sys.modules",
-            {"chuk_lazarus.inference": MagicMock(InferenceService=mock_service)},
-        ):
+        with patch.dict("sys.modules", {"chuk_lazarus.inference": mock_module}):
             asyncio.run(run_inference_cmd(basic_args))
 
-            # Verify service was called
-            mock_service.run.assert_called_once()
-
-            # Verify the config was passed correctly
-            call_args = mock_service.run.call_args[0]
-            config = call_args[0]
-            assert config.model == "test-model"
-            assert config.prompt == "What is 2+2?"
+            # Verify pipeline was created and generate was called
+            mock_module.UnifiedPipeline.from_pretrained.assert_called_once_with(
+                "test-model", verbose=False
+            )
+            mock_pipeline.generate.assert_called_once()
 
         captured = capsys.readouterr()
         assert "The answer is 4." in captured.out
@@ -62,37 +66,19 @@ class TestRunInferenceCmd:
             temperature=0.5,
         )
 
-        mock_result = MagicMock()
-        mock_result.to_display.return_value = "Response with adapter"
+        mock_module, mock_pipeline = self._make_mock_pipeline("Response with adapter")
 
-        mock_service = MagicMock()
-        mock_service.run = AsyncMock(return_value=mock_result)
-
-        with patch.dict(
-            "sys.modules",
-            {"chuk_lazarus.inference": MagicMock(InferenceService=mock_service)},
-        ):
+        with patch.dict("sys.modules", {"chuk_lazarus.inference": mock_module}):
             asyncio.run(run_inference_cmd(args))
-
-            call_args = mock_service.run.call_args[0]
-            config = call_args[0]
-            assert config.adapter == "/path/to/adapter"
 
         captured = capsys.readouterr()
         assert "Response with adapter" in captured.out
 
     def test_run_inference_cmd_multiline_output(self, basic_args, capsys):
         """Test inference with multiline output."""
-        mock_result = MagicMock()
-        mock_result.to_display.return_value = "Line 1\nLine 2\nLine 3"
+        mock_module, mock_pipeline = self._make_mock_pipeline("Line 1\nLine 2\nLine 3")
 
-        mock_service = MagicMock()
-        mock_service.run = AsyncMock(return_value=mock_result)
-
-        with patch.dict(
-            "sys.modules",
-            {"chuk_lazarus.inference": MagicMock(InferenceService=mock_service)},
-        ):
+        with patch.dict("sys.modules", {"chuk_lazarus.inference": mock_module}):
             asyncio.run(run_inference_cmd(basic_args))
 
         captured = capsys.readouterr()

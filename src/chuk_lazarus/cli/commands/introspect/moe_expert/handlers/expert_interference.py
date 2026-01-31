@@ -116,11 +116,13 @@ async def _async_handle_expert_interference(args: Namespace) -> dict:
                 k1_quality = len(k_results[1][i])
                 kn_quality = len(k_results[k][i])
                 if kn_quality < k1_quality * 0.8:
-                    interference_cases.append({
-                        "prompt": prompt[:50],
-                        "k": k,
-                        "quality_drop": 1.0 - (kn_quality / k1_quality),
-                    })
+                    interference_cases.append(
+                        {
+                            "prompt": prompt[:50],
+                            "k": k,
+                            "quality_drop": 1.0 - (kn_quality / k1_quality),
+                        }
+                    )
 
     if interference_cases:
         print("\n" + "-" * 70)
@@ -145,12 +147,9 @@ def main():
     parser.add_argument("-m", "--model", required=True, help="Model ID")
     parser.add_argument("-p", "--prompt", help="Single prompt to test")
     parser.add_argument(
-        "-k", "--k-values", nargs="+", type=int, default=[1, 2, 4],
-        help="K values to test"
+        "-k", "--k-values", nargs="+", type=int, default=[1, 2, 4], help="K values to test"
     )
-    parser.add_argument(
-        "-t", "--max-tokens", type=int, default=20, help="Max tokens to generate"
-    )
+    parser.add_argument("-t", "--max-tokens", type=int, default=20, help="Max tokens to generate")
 
     args = parser.parse_args()
     result = asyncio.run(_async_handle_expert_interference(args))

@@ -123,15 +123,9 @@ def main():
 
     parser = argparse.ArgumentParser(description="Task-aware expert prediction")
     parser.add_argument("-m", "--model", required=True, help="Model ID")
-    parser.add_argument(
-        "-n", "--num-prompts", type=int, default=40, help="Number of prompts"
-    )
-    parser.add_argument(
-        "-p", "--probe-layer", type=int, default=4, help="Layer to probe from"
-    )
-    parser.add_argument(
-        "-t", "--target-layers", help="Comma-separated target layer indices"
-    )
+    parser.add_argument("-n", "--num-prompts", type=int, default=40, help="Number of prompts")
+    parser.add_argument("-p", "--probe-layer", type=int, default=4, help="Layer to probe from")
+    parser.add_argument("-t", "--target-layers", help="Comma-separated target layer indices")
 
     args = parser.parse_args()
     result = asyncio.run(_async_handle_task_prediction(args))

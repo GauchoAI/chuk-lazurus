@@ -121,9 +121,7 @@ class AttentionPredictionService:
         from .attention_routing_service import AttentionRoutingService
 
         # Capture attention weights
-        result = AttentionRoutingService.capture_attention_weights(
-            self.router, prompt, layer_idx
-        )
+        result = AttentionRoutingService.capture_attention_weights(self.router, prompt, layer_idx)
 
         if result.attention_weights is None:
             return []
@@ -208,13 +206,15 @@ class AttentionPredictionService:
 
             if use_learned and layer_idx in self._learned_mappings:
                 # Use learned mapping
-                feat_vec = np.array([
-                    feat.self_attention,
-                    feat.entropy,
-                    feat.top_k_concentration,
-                    feat.recent_window_mass,
-                    feat.early_token_mass,
-                ])
+                feat_vec = np.array(
+                    [
+                        feat.self_attention,
+                        feat.entropy,
+                        feat.top_k_concentration,
+                        feat.recent_window_mass,
+                        feat.early_token_mass,
+                    ]
+                )
                 expert_scores = self._learned_mappings[layer_idx] @ feat_vec
             else:
                 # Heuristic: distribute based on attention entropy
@@ -285,13 +285,15 @@ class AttentionPredictionService:
                 if pos_idx >= len(lw.positions):
                     break
 
-                feat_vec = np.array([
-                    feat.self_attention,
-                    feat.entropy,
-                    feat.top_k_concentration,
-                    feat.recent_window_mass,
-                    feat.early_token_mass,
-                ])
+                feat_vec = np.array(
+                    [
+                        feat.self_attention,
+                        feat.entropy,
+                        feat.top_k_concentration,
+                        feat.recent_window_mass,
+                        feat.early_token_mass,
+                    ]
+                )
 
                 # Target: one-hot for top expert
                 target = np.zeros(self.router.info.num_experts)
@@ -394,8 +396,7 @@ class AttentionPredictionService:
 
         # Compute layer accuracies
         layer_accuracies = {
-            layer: np.mean(matches) if matches else 0.0
-            for layer, matches in layer_matches.items()
+            layer: np.mean(matches) if matches else 0.0 for layer, matches in layer_matches.items()
         }
 
         return PredictionEvaluation(
@@ -502,7 +503,7 @@ class AttentionPredictionService:
 
         # Evaluate
         print("Evaluating prediction accuracy...")
-        eval_prompts = prompts[len(prompts) // 2:] if learn_mappings else prompts
+        eval_prompts = prompts[len(prompts) // 2 :] if learn_mappings else prompts
         evaluation = await self.evaluate_predictions(eval_prompts, layers)
 
         # Analyze correlations
@@ -566,9 +567,7 @@ def print_prediction_analysis(analysis: AttentionPredictionAnalysis) -> None:
         print(f"\nLayer {corr.layer_idx}: {corr.dominant_attention_pattern}")
         if corr.self_attention_vs_expert:
             top_corrs = sorted(
-                corr.self_attention_vs_expert.items(),
-                key=lambda x: abs(x[1]),
-                reverse=True
+                corr.self_attention_vs_expert.items(), key=lambda x: abs(x[1]), reverse=True
             )[:3]
             for exp_idx, c in top_corrs:
                 direction = "+" if c > 0 else ""

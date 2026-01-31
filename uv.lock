@@ -311,7 +311,7 @@ requires-dist = [
     { name = "umap-learn", marker = "extra == 'circuit'", specifier = ">=0.5.0" },
     { name = "wasmtime", specifier = ">=19.0.0" },
 ]
-provides-extras = ["dev", "fast", "openai", "circuit"]
+provides-extras = ["dev", "fast", "openai", "circuit", "experts"]
 
 [[package]]
 name = "click"

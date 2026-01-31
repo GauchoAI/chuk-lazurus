@@ -72,7 +72,7 @@ async def _async_handle_context_attention_routing(args: Namespace) -> dict:
                 name = ctx.split()[0] if ctx.split() else ctx[:10]
                 contexts.append((name, ctx))
 
-    print(f"Analyzing context-attention-routing correlation...")
+    print("Analyzing context-attention-routing correlation...")
     print(f"  Target token: '{target_token}'")
     print()
 
@@ -114,16 +114,13 @@ def main():
     )
     parser.add_argument("-m", "--model", required=True, help="Model ID")
     parser.add_argument(
-        "-t", "--token", default="127",
-        help="Target token to analyze (default: 127)"
+        "-t", "--token", default="127", help="Target token to analyze (default: 127)"
     )
+    parser.add_argument("-l", "--layers", help="Comma-separated layer indices to analyze")
     parser.add_argument(
-        "-l", "--layers",
-        help="Comma-separated layer indices to analyze"
-    )
-    parser.add_argument(
-        "-c", "--contexts",
-        help="Pipe-separated contexts: 'name:prompt|name:prompt' or 'prompt|prompt'"
+        "-c",
+        "--contexts",
+        help="Pipe-separated contexts: 'name:prompt|name:prompt' or 'prompt|prompt'",
     )
 
     args = parser.parse_args()

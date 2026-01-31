@@ -48,6 +48,7 @@ circuit = [
     "matplotlib>=3.7.0",
     "safetensors>=0.4.0",
 ]
+experts = []
 
 [project.scripts]
 chuk-lazarus = "chuk_lazarus.cli:main"

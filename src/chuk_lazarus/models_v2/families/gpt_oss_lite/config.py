@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 from ...core.config import ModelConfig
-from ..constants import ConfigField, DefaultNormEps, HFModelType
+from ..constants import ConfigField, DefaultNormEps
 
 
 class GptOssLiteConfig(ModelConfig):

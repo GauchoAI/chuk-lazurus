@@ -47,8 +47,7 @@ class ContextSample(BaseModel):
 
     # Attention pattern (flattened for comparison)
     attention_pattern: list[float] = Field(
-        default_factory=list,
-        description="Attention weights from target position to all positions"
+        default_factory=list, description="Attention weights from target position to all positions"
     )
 
 
@@ -100,7 +99,9 @@ class ContextAttentionRoutingAnalysis(BaseModel):
         """Average correlation across all layers."""
         if not self.layer_correlations:
             return 0.0
-        return sum(lc.attention_routing_correlation for lc in self.layer_correlations) / len(self.layer_correlations)
+        return sum(lc.attention_routing_correlation for lc in self.layer_correlations) / len(
+            self.layer_correlations
+        )
 
     @computed_field
     @property
@@ -126,19 +127,16 @@ DEFAULT_CONTEXT_TESTS: list[tuple[str, str]] = [
     ("numeric_mult", "127 * "),
     ("numeric_eq", "127 = "),
     ("numeric_seq", "125 126 127"),
-
     # Code contexts
     ("code_var", "x = 127"),
     ("code_print", "print(127"),
     ("code_arr", "[127,"),
     ("code_hex", "0x7F == 127"),
-
     # Language contexts
     ("word_number", "the number 127"),
     ("word_value", "value is 127"),
     ("word_room", "room 127"),
     ("word_error", "error 127"),
-
     # Mixed contexts
     ("calc_sum", "Calculate: 127"),
     ("question", "What is 127"),
@@ -243,7 +241,9 @@ class ContextAttentionRoutingService:
                     context=ctx,
                     tokens=attn_result.tokens,
                     target_position=target_pos_idx,
-                    primary_expert=target_pos.expert_indices[0] if target_pos.expert_indices else -1,
+                    primary_expert=target_pos.expert_indices[0]
+                    if target_pos.expert_indices
+                    else -1,
                     all_experts=target_pos.expert_indices,
                     expert_weights=target_pos.weights,
                     attention_pattern=attention_pattern,

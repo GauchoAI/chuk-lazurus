@@ -9,10 +9,16 @@ get a "virtual" routing layer that:
 1. Analyzes hidden states at specified layers
 2. Computes routing scores to virtual experts
 3. Decides whether to use a plugin or continue with model generation
+
+With CoT rewriting enabled:
+1. User query is rewritten to normalized VirtualExpertAction JSON
+2. Routing is based on the action JSON hidden state (not raw query)
+3. Expert receives the structured action (not raw query)
 """
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import mlx.core as mx
@@ -20,11 +26,12 @@ import mlx.nn as nn
 import numpy as np
 
 from .base import (
+    InferenceResult,
     VirtualExpertAnalysis,
     VirtualExpertApproach,
     VirtualExpertPlugin,
-    VirtualExpertResult,
 )
+from .cot_rewriter import CoTRewriter, VirtualExpertAction
 from .plugins.math import MathExpertPlugin
 from .registry import VirtualExpertRegistry, get_default_registry
 
@@ -144,6 +151,7 @@ class VirtualDenseWrapper:
         registry: VirtualExpertRegistry | None = None,
         target_layer: int | None = None,
         routing_threshold: float = 0.5,
+        cot_rewriter: CoTRewriter | None = None,
     ):
         """
         Initialize the wrapper.
@@ -155,12 +163,14 @@ class VirtualDenseWrapper:
             registry: Plugin registry (uses default if None)
             target_layer: Which layer to extract hidden states from (default: middle)
             routing_threshold: Score threshold for routing to virtual expert
+            cot_rewriter: Optional CoT rewriter for query normalization
         """
         self.model = model
         self.tokenizer = tokenizer
         self.model_id = model_id
         self.registry = registry or get_default_registry()
         self.routing_threshold = routing_threshold
+        self.cot_rewriter = cot_rewriter
 
         # Detect model structure
         self._detect_structure()
@@ -175,6 +185,11 @@ class VirtualDenseWrapper:
         self.router = VirtualDenseRouter(self.hidden_size, num_plugins)
 
         self._calibrated = False
+        self._use_cot_calibration = False  # Set True when calibrated with action JSONs
+
+        # Populate rewriter with expert examples if provided
+        if self.cot_rewriter:
+            self._populate_rewriter_examples()
 
     def _detect_structure(self):
         """Detect model backbone structure and hidden size."""
@@ -214,6 +229,44 @@ class VirtualDenseWrapper:
         self.router = VirtualDenseRouter(self.hidden_size, num_plugins)
         self._calibrated = False
 
+    def set_cot_rewriter(self, rewriter: CoTRewriter) -> None:
+        """
+        Set the CoT rewriter for query normalization.
+
+        When set, queries are rewritten to VirtualExpertAction JSON
+        before routing, and calibration uses action JSONs.
+
+        Automatically populates the rewriter with examples from registered experts.
+        """
+        self.cot_rewriter = rewriter
+        self._calibrated = False  # Need to recalibrate with CoT
+
+        # Populate rewriter with expert examples
+        self._populate_rewriter_examples()
+
+    def _populate_rewriter_examples(self) -> None:
+        """Populate the CoT rewriter with examples from registered experts."""
+        if not self.cot_rewriter:
+            return
+
+        # Check if rewriter supports set_expert_info (FewShotCoTRewriter does)
+        if not hasattr(self.cot_rewriter, "set_expert_info"):
+            return
+
+        for plugin in self.registry.get_all():
+            # Get CoT examples from the expert
+            if hasattr(plugin, "get_cot_examples"):
+                cot_examples = plugin.get_cot_examples()
+                examples = [
+                    {"query": ex.query, "action": ex.action.model_dump()}
+                    for ex in cot_examples.examples
+                ]
+                self.cot_rewriter.set_expert_info(
+                    expert_name=plugin.name,
+                    description=plugin.description,
+                    examples=examples,
+                )
+
     def _get_hidden_state(self, prompt: str) -> mx.array:
         """Get hidden state at target layer for last position."""
         input_ids = mx.array(self.tokenizer.encode(prompt))[None, :]
@@ -244,17 +297,38 @@ class VirtualDenseWrapper:
         mx.eval(h)
         return h[0, -1, :]
 
-    def calibrate(self) -> None:
-        """Calibrate all registered plugins."""
+    def calibrate(self, use_cot: bool | None = None) -> None:
+        """
+        Calibrate all registered plugins.
+
+        Args:
+            use_cot: If True, calibrate on action JSONs (requires cot_rewriter or
+                     plugin with get_calibration_actions). If None, auto-detect.
+        """
         plugins = self.registry.get_all()
 
+        # Auto-detect CoT calibration
+        if use_cot is None:
+            use_cot = self.cot_rewriter is not None or any(
+                hasattr(p, "get_calibration_actions") for p in plugins
+            )
+
+        self._use_cot_calibration = use_cot
+
         for plugin_idx, plugin in enumerate(plugins):
-            pos_prompts, neg_prompts = plugin.get_calibration_prompts()
+            if use_cot and hasattr(plugin, "get_calibration_actions"):
+                # New CoT-based calibration using action JSONs
+                pos_actions, neg_actions = plugin.get_calibration_actions()
+                pos_activations = [self._get_hidden_state(a) for a in pos_actions]
+                neg_activations = [self._get_hidden_state(a) for a in neg_actions]
+            else:
+                # Legacy calibration using raw prompts
+                pos_prompts, neg_prompts = plugin.get_calibration_prompts()
+                pos_activations = [self._get_hidden_state(p) for p in pos_prompts]
+                neg_activations = [self._get_hidden_state(p) for p in neg_prompts]
 
-            pos_activations = [self._get_hidden_state(p) for p in pos_prompts]
-            neg_activations = [self._get_hidden_state(p) for p in neg_prompts]
-
-            self.router.calibrate_expert(plugin_idx, pos_activations, neg_activations)
+            if pos_activations and neg_activations:
+                self.router.calibrate_expert(plugin_idx, pos_activations, neg_activations)
 
         self._calibrated = True
 
@@ -287,36 +361,77 @@ class VirtualDenseWrapper:
 
         return self.tokenizer.decode(generated).strip()
 
-    def solve(self, prompt: str, max_tokens: int = 20) -> VirtualExpertResult:
+    def solve(
+        self,
+        prompt: str,
+        max_tokens: int = 20,
+        action: VirtualExpertAction | None = None,
+    ) -> InferenceResult:
         """
         Solve a problem, using virtual experts when appropriate.
+
+        With action (Rogue-1 / CoT):
+        1. Model output is parsed into VirtualExpertAction with trace steps
+        2. Router matches action.expert to registered plugin
+        3. Plugin executes the trace
+
+        Without action (legacy):
+        1. Routing is based on hidden state + can_handle
+        2. Only plugins with extract_and_evaluate work (MathExpert)
 
         Args:
             prompt: The input prompt
             max_tokens: Maximum tokens to generate
+            action: Pre-parsed VirtualExpertAction (from model YAML output or CoT rewriter)
 
         Returns:
-            VirtualExpertResult with the answer and metadata
+            InferenceResult with the answer and metadata
         """
         if not self._calibrated:
             self.calibrate()
 
-        # Get hidden state for routing decision
-        hidden = self._get_hidden_state(prompt)
+        # Use provided action, or try CoT rewriter, or fall back to legacy
+        routing_input = prompt
+        skip_expert_routing = False
 
-        # Find best matching plugin
+        if action is None and self.cot_rewriter:
+            expert_names = [p.name for p in self.registry.get_all()]
+            action = self.cot_rewriter.rewrite(prompt, expert_names)
+
+        if action:
+            if action.expert == "none":
+                skip_expert_routing = True
+            else:
+                routing_input = action.model_dump_json()
+
+        # Find best matching plugin (skip if CoT said "none")
         plugins = self.registry.get_all()
         best_plugin: VirtualExpertPlugin | None = None
         best_score = 0.0
         best_idx = -1
 
-        for plugin_idx, plugin in enumerate(plugins):
-            score = self.router.get_routing_score(hidden[None, None, :], plugin_idx)
-            if score > self.routing_threshold and score > best_score:
-                if plugin.can_handle(prompt):
-                    best_plugin = plugin
-                    best_score = score
-                    best_idx = plugin_idx
+        if not skip_expert_routing:
+            # Get hidden state for routing decision
+            hidden = self._get_hidden_state(routing_input)
+
+            for plugin_idx, plugin in enumerate(plugins):
+                score = self.router.get_routing_score(hidden[None, None, :], plugin_idx)
+                if score > self.routing_threshold and score > best_score:
+                    # With CoT action: match by expert name
+                    # Without CoT: only plugins supporting extract_and_evaluate
+                    # (trace-only experts need CoT-generated YAML traces)
+                    if action:
+                        if action.expert == plugin.name:
+                            best_plugin = plugin
+                            best_score = score
+                            best_idx = plugin_idx
+                    elif (
+                        plugin.can_handle(prompt)
+                        and "extract_and_evaluate" in plugin.get_operations()
+                    ):
+                        best_plugin = plugin
+                        best_score = score
+                        best_idx = plugin_idx
 
         # Check if we should use plugin
         correct_answer = None
@@ -324,11 +439,31 @@ class VirtualDenseWrapper:
             _, correct_answer = best_plugin.extract_and_evaluate(prompt)
 
         if best_plugin and best_score > self.routing_threshold:
-            result = best_plugin.execute(prompt)
-            if result:
-                return VirtualExpertResult(
+            # Dispatch via the CoT-provided action
+            if action:
+                ve_action = action
+            else:
+                # Legacy path (no CoT): only MathExpert supports this
+                ve_action = VirtualExpertAction(
+                    expert=best_plugin.name,
+                    operation="extract_and_evaluate",
+                    parameters={"text": prompt},
+                )
+
+            result = asyncio.run(best_plugin.execute(ve_action))
+
+            if result.success and result.data:
+                data = result.data
+                if isinstance(data, dict):
+                    answer = str(
+                        data.get("formatted", data.get("answer", data.get("result", data)))
+                    )
+                else:
+                    answer = str(data)
+
+                return InferenceResult(
                     prompt=prompt,
-                    answer=result,
+                    answer=answer,
                     correct_answer=correct_answer,
                     approach=VirtualExpertApproach.VIRTUAL_EXPERT,
                     used_virtual_expert=True,
@@ -341,7 +476,7 @@ class VirtualDenseWrapper:
         # Fall back to model generation
         answer = self._generate_direct(prompt, max_tokens)
 
-        return VirtualExpertResult(
+        return InferenceResult(
             prompt=prompt,
             answer=answer,
             correct_answer=correct_answer,

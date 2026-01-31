@@ -45,7 +45,6 @@ async def _async_handle_expert_merging(args: Namespace) -> dict:
     from chuk_lazarus.introspection.moe.compression import (
         compute_similarity_matrix,
         find_merge_candidates,
-        print_compression_summary,
     )
 
     model_id = args.model
@@ -59,7 +58,7 @@ async def _async_handle_expert_merging(args: Namespace) -> dict:
     moe_layers = list(router.info.moe_layers)
 
     if layers_to_analyze:
-        moe_layers = [l for l in moe_layers if l in layers_to_analyze]
+        moe_layers = [layer for layer in moe_layers if layer in layers_to_analyze]
 
     print(f"Analyzing {len(moe_layers)} MoE layers with threshold {similarity_threshold}")
 
@@ -85,17 +84,20 @@ async def _async_handle_expert_merging(args: Namespace) -> dict:
             # Find the similarity for this pair
             sim_score = 0.0
             for sim in similarities:
-                if (sim.expert_a == exp_a and sim.expert_b == exp_b) or \
-                   (sim.expert_a == exp_b and sim.expert_b == exp_a):
+                if (sim.expert_a == exp_a and sim.expert_b == exp_b) or (
+                    sim.expert_a == exp_b and sim.expert_b == exp_a
+                ):
                     sim_score = sim.weight_cosine_similarity
                     break
 
-            all_candidates.append({
-                "layer": layer_idx,
-                "expert_a": exp_a,
-                "expert_b": exp_b,
-                "similarity": sim_score,
-            })
+            all_candidates.append(
+                {
+                    "layer": layer_idx,
+                    "expert_a": exp_a,
+                    "expert_b": exp_b,
+                    "similarity": sim_score,
+                }
+            )
 
     # Print results
     print("\n" + "=" * 70)
@@ -119,9 +121,7 @@ async def _async_handle_expert_merging(args: Namespace) -> dict:
         print("TOP MERGE CANDIDATES")
         print("-" * 70)
 
-        sorted_candidates = sorted(
-            all_candidates, key=lambda x: x["similarity"], reverse=True
-        )
+        sorted_candidates = sorted(all_candidates, key=lambda x: x["similarity"], reverse=True)
 
         for cand in sorted_candidates[:20]:
             print(
@@ -139,7 +139,7 @@ async def _async_handle_expert_merging(args: Namespace) -> dict:
     print("-" * 70)
     print(f"Total experts: {total_experts}")
     print(f"Mergeable pairs: {mergeable_experts}")
-    print(f"Potential reduction: {mergeable_experts}/{total_experts} = {1-compression_ratio:.1%}")
+    print(f"Potential reduction: {mergeable_experts}/{total_experts} = {1 - compression_ratio:.1%}")
 
     return {
         "model": model_id,
@@ -159,13 +159,9 @@ def main():
     parser = argparse.ArgumentParser(description="Analyze expert merging")
     parser.add_argument("-m", "--model", required=True, help="Model ID")
     parser.add_argument(
-        "-t", "--threshold", type=float, default=0.8,
-        help="Similarity threshold (default: 0.8)"
+        "-t", "--threshold", type=float, default=0.8, help="Similarity threshold (default: 0.8)"
     )
-    parser.add_argument(
-        "-l", "--layers", nargs="+", type=int,
-        help="Specific layers to analyze"
-    )
+    parser.add_argument("-l", "--layers", nargs="+", type=int, help="Specific layers to analyze")
 
     args = parser.parse_args()
     result = asyncio.run(_async_handle_expert_merging(args))

@@ -14,10 +14,13 @@ from .glu import GEGLU, GLU, SwiGLU, create_geglu, create_glu, create_swiglu
 from .mlp import MLP, create_mlp
 from .moe import MoE, MoERouter
 
+
 # Experimental MoE variants (lazy import to avoid circular deps)
 def _get_experimental():
     from . import moe_experimental
+
     return moe_experimental
+
 
 __all__ = [
     # Standard MLP

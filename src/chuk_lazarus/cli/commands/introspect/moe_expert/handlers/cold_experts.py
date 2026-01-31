@@ -101,11 +101,10 @@ async def _async_handle_cold_experts(args: Namespace) -> dict:
         "cold_percentage": analysis.cold_expert_percentage,
         "cold_experts_by_layer": {
             str(layer): [e.expert_idx for e in analysis.get_cold_experts_for_layer(layer)]
-            for layer in set(e.layer_idx for e in analysis.cold_experts)
+            for layer in {e.layer_idx for e in analysis.cold_experts}
         },
         "pruning_recommendations": [
-            {"layer": layer, "expert": exp}
-            for layer, exp in analysis.pruning_recommendations
+            {"layer": layer, "expert": exp} for layer, exp in analysis.pruning_recommendations
         ],
     }
 
@@ -119,15 +118,9 @@ def main():
     parser.add_argument(
         "-t", "--threshold", type=float, default=0.01, help="Cold threshold (default: 0.01)"
     )
-    parser.add_argument(
-        "-n", "--num-prompts", type=int, default=50, help="Number of prompts"
-    )
-    parser.add_argument(
-        "--triggers", action="store_true", default=True, help="Analyze triggers"
-    )
-    parser.add_argument(
-        "--ablation", action="store_true", help="Analyze ablation impact (slow)"
-    )
+    parser.add_argument("-n", "--num-prompts", type=int, default=50, help="Number of prompts")
+    parser.add_argument("--triggers", action="store_true", default=True, help="Analyze triggers")
+    parser.add_argument("--ablation", action="store_true", help="Analyze ablation impact (slow)")
 
     args = parser.parse_args()
     result = asyncio.run(_async_handle_cold_experts(args))

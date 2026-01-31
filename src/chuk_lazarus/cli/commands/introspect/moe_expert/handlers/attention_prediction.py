@@ -112,15 +112,9 @@ def main():
 
     parser = argparse.ArgumentParser(description="Attention-based routing prediction")
     parser.add_argument("-m", "--model", required=True, help="Model ID")
-    parser.add_argument(
-        "-n", "--num-prompts", type=int, default=30, help="Number of prompts"
-    )
-    parser.add_argument(
-        "-l", "--layers", help="Comma-separated layer indices to analyze"
-    )
-    parser.add_argument(
-        "--no-learn", action="store_true", help="Skip learning phase"
-    )
+    parser.add_argument("-n", "--num-prompts", type=int, default=30, help="Number of prompts")
+    parser.add_argument("-l", "--layers", help="Comma-separated layer indices to analyze")
+    parser.add_argument("--no-learn", action="store_true", help="Skip learning phase")
 
     args = parser.parse_args()
     args.learn = not args.no_learn

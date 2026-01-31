@@ -44,54 +44,54 @@ class TestWeightNameMapping:
     def test_direct_weight_map_wte(self):
         """Test direct mapping for token embeddings."""
         result = _map_weight_name("wte.weight")
-        assert result == "model.embed_tokens.weight.weight"
+        assert result == "transformer.wte.weight.weight"
 
     def test_direct_weight_map_wpe(self):
         """Test direct mapping for position embeddings."""
         result = _map_weight_name("wpe.weight")
-        assert result == "model.position_embeddings.weight"
+        assert result == "transformer.wpe.weight"
 
     def test_direct_weight_map_ln_f(self):
         """Test direct mapping for final layer norm."""
         result = _map_weight_name("ln_f.weight")
-        assert result == "model.norm.weight"
+        assert result == "transformer.ln_f.weight"
         result = _map_weight_name("ln_f.bias")
-        assert result == "model.norm.bias"
+        assert result == "transformer.ln_f.bias"
 
     def test_layer_weight_map_ln_1(self):
         """Test layer-level mapping for pre-attention layer norm."""
         result = _map_weight_name("h.0.ln_1.weight")
-        assert result == "model.layers.0.input_layernorm.weight"
+        assert result == "transformer.h.0.ln_1.weight"
         result = _map_weight_name("h.5.ln_1.bias")
-        assert result == "model.layers.5.input_layernorm.bias"
+        assert result == "transformer.h.5.ln_1.bias"
 
     def test_layer_weight_map_ln_2(self):
         """Test layer-level mapping for post-attention layer norm."""
         result = _map_weight_name("h.0.ln_2.weight")
-        assert result == "model.layers.0.post_attention_layernorm.weight"
+        assert result == "transformer.h.0.ln_2.weight"
         result = _map_weight_name("h.3.ln_2.bias")
-        assert result == "model.layers.3.post_attention_layernorm.bias"
+        assert result == "transformer.h.3.ln_2.bias"
 
     def test_layer_weight_map_attention(self):
         """Test layer-level mapping for attention weights."""
         # Combined QKV projection
         result = _map_weight_name("h.0.attn.c_attn.weight")
-        assert result == "model.layers.0.self_attn.c_attn.weight"
+        assert result == "transformer.h.0.attn.c_attn.weight"
         result = _map_weight_name("h.2.attn.c_attn.bias")
-        assert result == "model.layers.2.self_attn.c_attn.bias"
+        assert result == "transformer.h.2.attn.c_attn.bias"
 
         # Output projection
         result = _map_weight_name("h.0.attn.c_proj.weight")
-        assert result == "model.layers.0.self_attn.o_proj.weight"
+        assert result == "transformer.h.0.attn.c_proj.weight"
 
     def test_layer_weight_map_mlp(self):
         """Test layer-level mapping for MLP weights."""
         result = _map_weight_name("h.0.mlp.c_fc.weight")
-        assert result == "model.layers.0.mlp.c_fc.weight"
+        assert result == "transformer.h.0.mlp.c_fc.weight"
         result = _map_weight_name("h.1.mlp.c_fc.bias")
-        assert result == "model.layers.1.mlp.c_fc.bias"
+        assert result == "transformer.h.1.mlp.c_fc.bias"
         result = _map_weight_name("h.0.mlp.c_proj.weight")
-        assert result == "model.layers.0.mlp.c_proj.weight"
+        assert result == "transformer.h.0.mlp.c_proj.weight"
 
     def test_unrecognized_weight_returns_none(self):
         """Test that unrecognized weights return None."""
@@ -107,37 +107,37 @@ class TestReverseWeightNameMapping:
 
     def test_reverse_map_direct(self):
         """Test reverse mapping for direct weights."""
-        result = _reverse_map_weight_name("model.embed_tokens.weight.weight")
+        result = _reverse_map_weight_name("transformer.wte.weight.weight")
         assert result == "wte.weight"
 
-        result = _reverse_map_weight_name("model.position_embeddings.weight")
+        result = _reverse_map_weight_name("transformer.wpe.weight")
         assert result == "wpe.weight"
 
-        result = _reverse_map_weight_name("model.norm.weight")
+        result = _reverse_map_weight_name("transformer.ln_f.weight")
         assert result == "ln_f.weight"
 
     def test_reverse_map_layer_norms(self):
         """Test reverse mapping for layer norms."""
-        result = _reverse_map_weight_name("model.layers.0.input_layernorm.weight")
+        result = _reverse_map_weight_name("transformer.h.0.ln_1.weight")
         assert result == "h.0.ln_1.weight"
 
-        result = _reverse_map_weight_name("model.layers.2.post_attention_layernorm.bias")
+        result = _reverse_map_weight_name("transformer.h.2.ln_2.bias")
         assert result == "h.2.ln_2.bias"
 
     def test_reverse_map_attention(self):
         """Test reverse mapping for attention weights."""
-        result = _reverse_map_weight_name("model.layers.0.self_attn.c_attn.weight")
+        result = _reverse_map_weight_name("transformer.h.0.attn.c_attn.weight")
         assert result == "h.0.attn.c_attn.weight"
 
-        result = _reverse_map_weight_name("model.layers.1.self_attn.o_proj.weight")
+        result = _reverse_map_weight_name("transformer.h.1.attn.c_proj.weight")
         assert result == "h.1.attn.c_proj.weight"
 
     def test_reverse_map_mlp(self):
         """Test reverse mapping for MLP weights."""
-        result = _reverse_map_weight_name("model.layers.0.mlp.c_fc.weight")
+        result = _reverse_map_weight_name("transformer.h.0.mlp.c_fc.weight")
         assert result == "h.0.mlp.c_fc.weight"
 
-        result = _reverse_map_weight_name("model.layers.0.mlp.c_proj.bias")
+        result = _reverse_map_weight_name("transformer.h.0.mlp.c_proj.bias")
         assert result == "h.0.mlp.c_proj.bias"
 
 
@@ -154,9 +154,9 @@ class TestConvertHfWeights:
 
         converted = convert_hf_weights(hf_weights)
 
-        assert "model.embed_tokens.weight.weight" in converted
-        assert "model.position_embeddings.weight" in converted
-        assert "model.norm.weight" in converted
+        assert "transformer.wte.weight.weight" in converted
+        assert "transformer.wpe.weight" in converted
+        assert "transformer.ln_f.weight" in converted
 
     def test_convert_layer_weights(self):
         """Test layer weight conversion."""
@@ -168,9 +168,9 @@ class TestConvertHfWeights:
 
         converted = convert_hf_weights(hf_weights)
 
-        assert "model.layers.0.input_layernorm.weight" in converted
-        assert "model.layers.0.self_attn.c_attn.weight" in converted
-        assert "model.layers.0.mlp.c_fc.weight" in converted
+        assert "transformer.h.0.ln_1.weight" in converted
+        assert "transformer.h.0.attn.c_attn.weight" in converted
+        assert "transformer.h.0.mlp.c_fc.weight" in converted
 
     def test_convert_skips_unmapped_weights(self):
         """Test that unmapped weights are skipped."""
@@ -181,7 +181,7 @@ class TestConvertHfWeights:
 
         converted = convert_hf_weights(hf_weights)
 
-        assert "model.embed_tokens.weight.weight" in converted
+        assert "transformer.wte.weight.weight" in converted
         assert len(converted) == 1
 
 

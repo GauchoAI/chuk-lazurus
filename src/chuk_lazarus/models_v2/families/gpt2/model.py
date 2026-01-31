@@ -433,7 +433,12 @@ class GPT2ForCausalLM(Model):
             if new_name is not None:
                 # GPT-2 Conv1D weights need transposition for nn.Linear
                 # HF stores as (in_features, out_features), MLX expects (out_features, in_features)
-                if ".weight" in name and weight.ndim == 2 and "wte" not in name and "wpe" not in name:
+                if (
+                    ".weight" in name
+                    and weight.ndim == 2
+                    and "wte" not in name
+                    and "wpe" not in name
+                ):
                     weight = weight.T
                 sanitized[new_name] = weight
         return sanitized
