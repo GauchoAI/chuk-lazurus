@@ -1,4 +1,4 @@
-# Memory & Fact Retrieval Experiment
+# Memory & Fact Retrieval Experiments
 
 Investigates how LLMs store, retrieve, and process factual knowledge.
 

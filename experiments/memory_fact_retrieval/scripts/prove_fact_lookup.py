@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Prove that memory bank fact lookup works.
+Prove that memory bank fact lookup works
 
 Concept: The model has parametric memory (weights), but we give it an
 external memory bank that it should prefer. Like a person checking their
