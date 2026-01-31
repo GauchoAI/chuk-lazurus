@@ -296,7 +296,7 @@ class TestVirtualDenseWrapper:
             def get_operations(self):
                 return ["evaluate"]
 
-            def execute_operation(self, operation, parameters):
+            async def execute_operation(self, operation, parameters):
                 return {"result": "test_result", "formatted": "test_result"}
 
             def get_calibration_prompts(self):
@@ -417,7 +417,7 @@ class TestCreateVirtualDenseWrapper:
             def get_operations(self):
                 return ["evaluate"]
 
-            def execute_operation(self, operation, parameters):
+            async def execute_operation(self, operation, parameters):
                 return {"result": "extra", "formatted": "extra"}
 
             def get_calibration_prompts(self):

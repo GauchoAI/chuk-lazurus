@@ -93,9 +93,7 @@ def main():
     parser = argparse.ArgumentParser(description="Analyze generation dynamics")
     parser.add_argument("-m", "--model", required=True, help="Model ID")
     parser.add_argument("-p", "--prompt", help="Single prompt to analyze")
-    parser.add_argument(
-        "-t", "--max-tokens", type=int, default=30, help="Max tokens to generate"
-    )
+    parser.add_argument("-t", "--max-tokens", type=int, default=30, help="Max tokens to generate")
 
     args = parser.parse_args()
     result = asyncio.run(_async_handle_generation_dynamics(args))

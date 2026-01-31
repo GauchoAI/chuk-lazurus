@@ -11,9 +11,8 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-import mlx.core as mx
 from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
@@ -125,9 +124,7 @@ class ColdExpertService:
                     trigger_contexts: tuple[str, ...] = ()
 
                     if analyze_triggers and count > 0:
-                        triggers = await self._find_triggers(
-                            layer_idx, expert_idx, prompts[:50]
-                        )
+                        triggers = await self._find_triggers(layer_idx, expert_idx, prompts[:50])
                         trigger_tokens = tuple(triggers["tokens"][:10])
                         trigger_contexts = tuple(triggers["contexts"][:5])
 
@@ -161,16 +158,12 @@ class ColdExpertService:
         for cold_info in cold_experts:
             # Recommend pruning if activation rate is very low
             if cold_info.activation_rate < cold_threshold / 10:
-                pruning_recommendations.append(
-                    (cold_info.layer_idx, cold_info.expert_idx)
-                )
+                pruning_recommendations.append((cold_info.layer_idx, cold_info.expert_idx))
 
         cold_count = len(cold_experts)
         cold_percentage = cold_count / total_experts if total_experts > 0 else 0.0
 
-        logger.info(
-            f"Found {cold_count}/{total_experts} cold experts ({cold_percentage:.1%})"
-        )
+        logger.info(f"Found {cold_count}/{total_experts} cold experts ({cold_percentage:.1%})")
 
         return ColdExpertAnalysis(
             model_id=self._router.info.architecture.value,
@@ -215,9 +208,7 @@ class ColdExpertService:
         trigger_contexts: list[str] = []
 
         for prompt in prompts:
-            weights_list = await self._router.capture_router_weights(
-                prompt, layers=[layer_idx]
-            )
+            weights_list = await self._router.capture_router_weights(prompt, layers=[layer_idx])
 
             if not weights_list:
                 continue
@@ -313,21 +304,42 @@ class ColdExpertService:
         if candidate_tokens is None:
             # Diverse token set
             candidate_tokens = [
-                "0", "1", "100", "3.14",  # Numbers
-                "+", "-", "*", "/", "=",  # Operators
-                "def", "class", "import", "return",  # Code
-                "the", "a", "is", "of", "and",  # Function words
-                ".", ",", "!", "?", ";",  # Punctuation
-                "Hello", "World", "Python", "Math",  # Misc
-                "\n", "\t", "    ",  # Whitespace
+                "0",
+                "1",
+                "100",
+                "3.14",  # Numbers
+                "+",
+                "-",
+                "*",
+                "/",
+                "=",  # Operators
+                "def",
+                "class",
+                "import",
+                "return",  # Code
+                "the",
+                "a",
+                "is",
+                "of",
+                "and",  # Function words
+                ".",
+                ",",
+                "!",
+                "?",
+                ";",  # Punctuation
+                "Hello",
+                "World",
+                "Python",
+                "Math",  # Misc
+                "\n",
+                "\t",
+                "    ",  # Whitespace
             ]
 
         activating_inputs: list[str] = []
 
         for token in candidate_tokens[:max_attempts]:
-            weights_list = await self._router.capture_router_weights(
-                token, layers=[layer_idx]
-            )
+            weights_list = await self._router.capture_router_weights(token, layers=[layer_idx])
 
             if weights_list:
                 for pos in weights_list[0].positions:
@@ -375,7 +387,7 @@ def print_cold_expert_report(analysis: ColdExpertAnalysis) -> None:
     sorted_cold = sorted(analysis.cold_experts, key=lambda x: x.activation_rate)
     for i, cold in enumerate(sorted_cold[:10]):
         rate_str = f"{cold.activation_rate:.4%}" if cold.activation_rate > 0 else "0%"
-        print(f"\n{i+1}. Layer {cold.layer_idx}, Expert {cold.expert_idx}")
+        print(f"\n{i + 1}. Layer {cold.layer_idx}, Expert {cold.expert_idx}")
         print(f"   Activation rate: {rate_str} ({cold.activation_count} activations)")
         if cold.trigger_tokens:
             tokens = ", ".join(repr(t) for t in cold.trigger_tokens[:5])

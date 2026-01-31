@@ -171,7 +171,9 @@ class TestVirtualExpertPluginInterface:
             def get_operations(self) -> list[str]:
                 return ["evaluate"]
 
-            def execute_operation(self, operation: str, parameters: dict[str, Any]) -> dict[str, Any]:
+            def execute_operation(
+                self, operation: str, parameters: dict[str, Any]
+            ) -> dict[str, Any]:
                 return {"result": "test_result"}
 
             def get_calibration_prompts(self):
@@ -195,7 +197,9 @@ class TestVirtualExpertPluginInterface:
             def get_operations(self) -> list[str]:
                 return ["evaluate"]
 
-            def execute_operation(self, operation: str, parameters: dict[str, Any]) -> dict[str, Any]:
+            def execute_operation(
+                self, operation: str, parameters: dict[str, Any]
+            ) -> dict[str, Any]:
                 return {"result": None}
 
             def get_calibration_prompts(self):
@@ -206,7 +210,7 @@ class TestVirtualExpertPluginInterface:
         assert "TestPlugin" in repr_str
         assert "mytest" in repr_str
 
-    def test_plugin_execute_via_action(self):
+    async def test_plugin_execute_via_action(self):
         """Test execute with VirtualExpertAction."""
         from chuk_virtual_expert import VirtualExpertAction
 
@@ -220,7 +224,9 @@ class TestVirtualExpertPluginInterface:
             def get_operations(self) -> list[str]:
                 return ["evaluate"]
 
-            def execute_operation(self, operation: str, parameters: dict[str, Any]) -> dict[str, Any]:
+            async def execute_operation(
+                self, operation: str, parameters: dict[str, Any]
+            ) -> dict[str, Any]:
                 return {"result": parameters.get("value", 42), "formatted": "42"}
 
             def get_calibration_prompts(self):
@@ -232,7 +238,7 @@ class TestVirtualExpertPluginInterface:
             operation="evaluate",
             parameters={"value": 42},
         )
-        result = plugin.execute(action)
+        result = await plugin.execute(action)
         assert result.success is True
         assert result.data["result"] == 42
 

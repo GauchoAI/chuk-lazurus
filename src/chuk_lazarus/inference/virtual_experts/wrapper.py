@@ -6,6 +6,7 @@ Main interface for adding virtual expert capability to MoE models.
 
 from __future__ import annotations
 
+import asyncio
 import re
 from typing import Any
 
@@ -262,9 +263,6 @@ class VirtualMoEWrapper:
 
             virtual_selected_this_step = False
 
-            # Track attention output for contribution calculation (first step only)
-            h_after_attention = None
-
             for idx, layer in enumerate(self._layers):
                 # Capture state before MoE for attention contribution calc
                 h_pre_layer = h if (collect_trace and step == 0) else None
@@ -291,7 +289,9 @@ class VirtualMoEWrapper:
                             routing_scores.append(score)
 
                         _, _, virtual_masks = router(h[:, -1:, :])
-                        selected = plugin_idx in virtual_masks and bool(mx.any(virtual_masks[plugin_idx]))
+                        selected = plugin_idx in virtual_masks and bool(
+                            mx.any(virtual_masks[plugin_idx])
+                        )
 
                         if selected:
                             virtual_selected_this_step = True
@@ -447,11 +447,13 @@ class VirtualMoEWrapper:
         if action and action.expert != "none":
             plugin = self.registry.get(action.expert)
             if plugin:
-                ve_result = plugin.execute(action)
+                ve_result = asyncio.run(plugin.execute(action))
                 if ve_result.success and ve_result.data:
                     data = ve_result.data
                     if isinstance(data, dict):
-                        answer = str(data.get('formatted', data.get('answer', data.get('result', data))))
+                        answer = str(
+                            data.get("formatted", data.get("answer", data.get("result", data)))
+                        )
                     else:
                         answer = str(data)
 
@@ -493,11 +495,13 @@ class VirtualMoEWrapper:
                 parameters={"text": prompt},
             )
 
-            ve_result = plugin.execute(ve_action)
+            ve_result = asyncio.run(plugin.execute(ve_action))
             if ve_result.success and ve_result.data:
                 data = ve_result.data
                 if isinstance(data, dict):
-                    answer = str(data.get('formatted', data.get('answer', data.get('result', data))))
+                    answer = str(
+                        data.get("formatted", data.get("answer", data.get("result", data)))
+                    )
                 else:
                     answer = str(data)
                 approach = VirtualExpertApproach.VIRTUAL_EXPERT

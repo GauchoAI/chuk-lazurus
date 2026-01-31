@@ -206,7 +206,7 @@ class VirtualExpertConfig(BaseModel):
     verbose: bool = Field(default=False, description="Show detailed routing trace")
     use_few_shot_rewriter: bool = Field(
         default=False,
-        description="Use FewShotCoTRewriter for query normalization (for non-CoT-trained models)"
+        description="Use FewShotCoTRewriter for query normalization (for non-CoT-trained models)",
     )
     test_categories: dict[str, list[str]] | None = Field(
         default=None, description="Test categories for analyze"
@@ -303,7 +303,9 @@ class VirtualExpertService:
                 rewriter = FewShotCoTRewriter(model, tokenizer, max_examples_per_expert=5)
 
             wrapper = VirtualDenseWrapper(
-                model, tokenizer, model_id,
+                model,
+                tokenizer,
+                model_id,
                 cot_rewriter=rewriter,
             )
             return wrapper

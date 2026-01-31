@@ -189,7 +189,7 @@ class TaskPredictionService:
             Tuple of (features, {layer: expert_labels})
         """
         all_features = []
-        all_labels: dict[int, list[np.ndarray]] = {l: [] for l in target_layers}
+        all_labels: dict[int, list[np.ndarray]] = {layer: [] for layer in target_layers}
 
         for prompt in prompts:
             # Get probe layer activations
@@ -222,7 +222,10 @@ class TaskPredictionService:
                 all_labels[target_layer].append(labels)
 
         X = np.stack(all_features) if all_features else np.array([])
-        Y = {l: np.stack(labels) if labels else np.array([]) for l, labels in all_labels.items()}
+        Y = {
+            layer: np.stack(labels) if labels else np.array([])
+            for layer, labels in all_labels.items()
+        }
 
         return X, Y
 
@@ -513,7 +516,7 @@ class TaskPredictionService:
 
         # Evaluate
         print("Evaluating prediction accuracy...")
-        eval_prompts = prompts[len(prompts) // 2:]
+        eval_prompts = prompts[len(prompts) // 2 :]
         layer_metrics = await self.evaluate_predictions(eval_prompts, probe_layer, target_layers)
 
         # Analyze layer pairs
@@ -532,7 +535,7 @@ class TaskPredictionService:
 
         # Best predicted layers
         sorted_by_acc = sorted(layer_metrics.items(), key=lambda x: x[1].accuracy, reverse=True)
-        best_layers = [l for l, _ in sorted_by_acc[:3]]
+        best_layers = [layer for layer, _ in sorted_by_acc[:3]]
 
         return TaskPredictionAnalysis(
             model_id=model_id,
@@ -570,7 +573,9 @@ def print_task_prediction_analysis(analysis: TaskPredictionAnalysis) -> None:
 
     for layer_idx, metrics in sorted(analysis.layer_metrics.items()):
         acc_bar = "*" * int(metrics.accuracy * 20) + "." * (20 - int(metrics.accuracy * 20))
-        print(f"L{layer_idx:2d}: {acc_bar} acc={metrics.accuracy:.1%} prec={metrics.precision:.1%} rec={metrics.recall:.1%}")
+        print(
+            f"L{layer_idx:2d}: {acc_bar} acc={metrics.accuracy:.1%} prec={metrics.precision:.1%} rec={metrics.recall:.1%}"
+        )
 
     if analysis.layer_pairs:
         print("\n" + "-" * 70)
@@ -588,9 +593,9 @@ def print_task_prediction_analysis(analysis: TaskPredictionAnalysis) -> None:
     print("-" * 70)
 
     if analysis.overall_prefetch_efficiency > 0.7:
-        print("-> STRONG prefetch potential: L{} probe can reliably predict later experts".format(
-            analysis.probe_layer
-        ))
+        print(
+            f"-> STRONG prefetch potential: L{analysis.probe_layer} probe can reliably predict later experts"
+        )
     elif analysis.overall_prefetch_efficiency > 0.4:
         print("-> MODERATE prefetch potential: Some predictability from early layer")
     else:

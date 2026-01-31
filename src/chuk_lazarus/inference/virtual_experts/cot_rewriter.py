@@ -20,13 +20,13 @@ from __future__ import annotations
 
 import json
 from abc import ABC, abstractmethod
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 # Import VirtualExpertAction from chuk-virtual-expert
 from chuk_virtual_expert import VirtualExpertAction
 
 if TYPE_CHECKING:
-    import mlx.core as mx
+    pass
 
 
 class CoTRewriter(ABC):
@@ -127,7 +127,7 @@ Action:"""
         examples = []
         for name in available_experts:
             expert_examples = self.expert_examples.get(name, [])
-            for ex in expert_examples[:self.max_examples_per_expert]:
+            for ex in expert_examples[: self.max_examples_per_expert]:
                 # Only include positive examples (where expert matches)
                 if ex["action"].get("expert") == name:
                     action_json = json.dumps(ex["action"])
@@ -135,8 +135,12 @@ Action:"""
 
         # Add negative examples (passthrough) - important but keep limited to avoid bias
         # Include 2 hardcoded negative examples for robustness
-        examples.append('Query: "Tell me a joke"\nAction: {"expert": "none", "operation": "passthrough", "parameters": {}, "confidence": 1.0, "reasoning": "Entertainment request, not math or time"}')
-        examples.append('Query: "What is the capital of France?"\nAction: {"expert": "none", "operation": "passthrough", "parameters": {}, "confidence": 1.0, "reasoning": "Geography question, not math or time"}')
+        examples.append(
+            'Query: "Tell me a joke"\nAction: {"expert": "none", "operation": "passthrough", "parameters": {}, "confidence": 1.0, "reasoning": "Entertainment request, not math or time"}'
+        )
+        examples.append(
+            'Query: "What is the capital of France?"\nAction: {"expert": "none", "operation": "passthrough", "parameters": {}, "confidence": 1.0, "reasoning": "Geography question, not math or time"}'
+        )
 
         return self.SYSTEM_PROMPT.format(
             expert_descriptions="\n".join(descriptions),

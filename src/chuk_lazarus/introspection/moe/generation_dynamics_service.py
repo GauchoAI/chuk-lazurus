@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import mlx.core as mx
@@ -176,9 +175,7 @@ class GenerationDynamicsService:
             all_handoffs.extend(trace.handoffs)
 
         # Compute aggregate statistics
-        avg_consistency = (
-            sum(t.consistency_score for t in traces) / len(traces) if traces else 0.0
-        )
+        avg_consistency = sum(t.consistency_score for t in traces) / len(traces) if traces else 0.0
 
         total_handoffs = len(all_handoffs)
         total_tokens = sum(len(t.snapshots) for t in traces)
@@ -190,9 +187,7 @@ class GenerationDynamicsService:
             pattern = (handoff.layer_idx, handoff.from_expert, handoff.to_expert)
             pattern_counts[pattern] += 1
 
-        common_patterns = sorted(
-            pattern_counts.items(), key=lambda x: x[1], reverse=True
-        )[:20]
+        common_patterns = sorted(pattern_counts.items(), key=lambda x: x[1], reverse=True)[:20]
 
         # Compute layer stability
         layer_stability: dict[int, float] = {}

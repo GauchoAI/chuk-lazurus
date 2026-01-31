@@ -14,7 +14,6 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-import mlx.core as mx
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -71,12 +70,8 @@ class ExpertInfluenceMap(BaseModel):
 
     layer_idx: int
     expert_idx: int
-    token_influences: dict[str, float] = Field(
-        description="Token -> influence score on activation"
-    )
-    position_preference: str = Field(
-        description="Position preference (early, middle, late, any)"
-    )
+    token_influences: dict[str, float] = Field(description="Token -> influence score on activation")
+    position_preference: str = Field(description="Position preference (early, middle, late, any)")
     context_sensitivity: float = Field(
         ge=0, le=1, description="How much context affects activation"
     )
@@ -94,9 +89,7 @@ class RoutingManipulationAnalysis(BaseModel):
     perturbation_results: tuple[RoutingPerturbation, ...] = Field(
         description="Perturbation experiment results"
     )
-    controllability_score: float = Field(
-        ge=0, le=1, description="Overall routing controllability"
-    )
+    controllability_score: float = Field(ge=0, le=1, description="Overall routing controllability")
     stable_experts: list[int] = Field(description="Experts with stable routing")
     volatile_experts: list[int] = Field(description="Experts with volatile routing")
 
@@ -454,9 +447,7 @@ class RoutingManipulationService:
         for layer_idx in layers_to_analyze:
             print(f"  Discovering triggers for layer {layer_idx}...")
             for expert_idx in range(min(experts_per_layer, self.router.info.num_experts)):
-                trigger = await self.analyze_expert_trigger(
-                    layer_idx, expert_idx, prompts[:30]
-                )
+                trigger = await self.analyze_expert_trigger(layer_idx, expert_idx, prompts[:30])
                 triggers.append(trigger)
 
         # Perturbation experiments

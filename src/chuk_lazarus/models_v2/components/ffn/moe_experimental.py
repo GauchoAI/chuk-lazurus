@@ -22,7 +22,6 @@ import mlx.nn as nn
 from ...core.config import FFNConfig
 from .glu import GLU
 
-
 # =============================================================================
 # Configuration
 # =============================================================================
@@ -122,7 +121,7 @@ class CompactNonlinearRouter(nn.Module):
         logits = self.up(h)
 
         # Top-k selection
-        indices = mx.argsort(logits, axis=-1)[:, :, -self.num_experts_per_tok:]
+        indices = mx.argsort(logits, axis=-1)[:, :, -self.num_experts_per_tok :]
         indices = indices[:, :, ::-1]
 
         weights = mx.softmax(logits, axis=-1)
@@ -176,7 +175,7 @@ class CircuitRouter(nn.Module):
         """Select circuits."""
         logits = self.gate(x)
 
-        indices = mx.argsort(logits, axis=-1)[:, :, -self.num_circuits_per_tok:]
+        indices = mx.argsort(logits, axis=-1)[:, :, -self.num_circuits_per_tok :]
         indices = indices[:, :, ::-1]
 
         weights = mx.softmax(logits, axis=-1)
@@ -220,8 +219,7 @@ class CircuitMoE(nn.Module):
         else:
             # Default: circuit i uses expert i at all layers
             self.circuit_definitions = [
-                [i % config.num_experts] * self.num_layers
-                for i in range(config.num_circuits)
+                [i % config.num_experts] * self.num_layers for i in range(config.num_circuits)
             ]
 
         # Experts for this layer
@@ -275,7 +273,9 @@ class CircuitMoE(nn.Module):
 
             # Find tokens routed to this circuit
             circuit_mask = circuit_indices_flat == circuit_idx
-            circuit_w = mx.sum(circuit_weights_flat * circuit_mask.astype(circuit_weights_flat.dtype), axis=-1)
+            circuit_w = mx.sum(
+                circuit_weights_flat * circuit_mask.astype(circuit_weights_flat.dtype), axis=-1
+            )
 
             if mx.any(circuit_w > 0):
                 expert_out = self.experts[expert_idx](x_flat)
@@ -343,7 +343,7 @@ class AdaptiveKRouter(nn.Module):
         logits = self.expert_gate(x)
 
         # Get top-max_k (we'll mask based on actual k)
-        indices = mx.argsort(logits, axis=-1)[:, :, -self.max_k:]
+        indices = mx.argsort(logits, axis=-1)[:, :, -self.max_k :]
         indices = indices[:, :, ::-1]
 
         weights = mx.softmax(logits, axis=-1)
@@ -466,7 +466,7 @@ class TieredMoE(nn.Module):
 
         # Route
         logits = self.router(x)
-        indices = mx.argsort(logits, axis=-1)[:, :, -self.num_experts_per_tok:]
+        indices = mx.argsort(logits, axis=-1)[:, :, -self.num_experts_per_tok :]
         indices = indices[:, :, ::-1]
 
         weights = mx.softmax(logits, axis=-1)
@@ -633,7 +633,7 @@ class TeamMoE(nn.Module):
 
         # Route to teams
         logits = self.team_router(x)
-        indices = mx.argsort(logits, axis=-1)[:, :, -self.num_teams_per_tok:]
+        indices = mx.argsort(logits, axis=-1)[:, :, -self.num_teams_per_tok :]
         indices = indices[:, :, ::-1]
 
         weights = mx.softmax(logits, axis=-1)
@@ -694,9 +694,7 @@ class AttentionAugmentedRouter(nn.Module):
             nn.Linear(bottleneck, num_experts, bias=False),
         )
 
-    def __call__(
-        self, hidden: mx.array, attention_features: mx.array
-    ) -> tuple[mx.array, mx.array]:
+    def __call__(self, hidden: mx.array, attention_features: mx.array) -> tuple[mx.array, mx.array]:
         """
         Route using combined hidden state and attention features.
 
@@ -713,7 +711,7 @@ class AttentionAugmentedRouter(nn.Module):
         # Route
         logits = self.router(combined)
 
-        indices = mx.argsort(logits, axis=-1)[:, :, -self.num_experts_per_tok:]
+        indices = mx.argsort(logits, axis=-1)[:, :, -self.num_experts_per_tok :]
         indices = indices[:, :, ::-1]
 
         weights = mx.softmax(logits, axis=-1)
@@ -747,7 +745,7 @@ class AttentionAugmentedRouter(nn.Module):
         pos_attn = avg_attn[:, position, :]  # (batch, seq)
 
         # Feature 1: Self-attention weight
-        self_attn = pos_attn[:, position:position+1]  # (batch, 1)
+        self_attn = pos_attn[:, position : position + 1]  # (batch, 1)
 
         # Feature 2: Max attention to other positions
         max_attn = mx.max(pos_attn, axis=-1, keepdims=True)  # (batch, 1)
@@ -784,9 +782,9 @@ class TieredCircuitTeams(nn.Module):
 
     # Team counts per layer phase
     TEAM_COUNTS = {
-        'early': 4,    # L0-L7: low differentiation anyway
-        'middle': 15,  # L8-L17: full circuit coverage
-        'late': 8,     # L18-L23: convergence phase
+        "early": 4,  # L0-L7: low differentiation anyway
+        "middle": 15,  # L8-L17: full circuit coverage
+        "late": 8,  # L18-L23: convergence phase
     }
 
     def __init__(
@@ -803,14 +801,14 @@ class TieredCircuitTeams(nn.Module):
 
         # Determine team count for this layer
         if layer_idx < 8:
-            self.num_teams = self.TEAM_COUNTS['early']
-            self.phase = 'early'
+            self.num_teams = self.TEAM_COUNTS["early"]
+            self.phase = "early"
         elif layer_idx < 18:
-            self.num_teams = self.TEAM_COUNTS['middle']
-            self.phase = 'middle'
+            self.num_teams = self.TEAM_COUNTS["middle"]
+            self.phase = "middle"
         else:
-            self.num_teams = self.TEAM_COUNTS['late']
-            self.phase = 'late'
+            self.num_teams = self.TEAM_COUNTS["late"]
+            self.phase = "late"
 
         # Circuit definitions (team_idx -> expert assignments across layers)
         # Each circuit maps to a team of experts at each layer
@@ -819,8 +817,7 @@ class TieredCircuitTeams(nn.Module):
         else:
             # Default: circuit i uses expert i at all layers
             self.circuit_definitions = [
-                [i % config.num_experts] * 24
-                for i in range(max(self.TEAM_COUNTS.values()))
+                [i % config.num_experts] * 24 for i in range(max(self.TEAM_COUNTS.values()))
             ]
 
         # Single routing decision at layer 0
@@ -915,9 +912,9 @@ class TieredLightweightMoE(nn.Module):
     """
 
     TEAM_COUNTS = {
-        'early': 4,   # L0-L7: low differentiation
-        'middle': 8,  # L8-L17: full allocation
-        'late': 6,    # L18+: convergence phase
+        "early": 4,  # L0-L7: low differentiation
+        "middle": 8,  # L8-L17: full allocation
+        "late": 6,  # L18+: convergence phase
     }
 
     def __init__(self, config: ExperimentalMoEConfig, layer_idx: int):
@@ -927,14 +924,14 @@ class TieredLightweightMoE(nn.Module):
 
         # Determine team count for this layer
         if layer_idx < 8:
-            self.num_teams = self.TEAM_COUNTS['early']
-            self.phase = 'early'
+            self.num_teams = self.TEAM_COUNTS["early"]
+            self.phase = "early"
         elif layer_idx < 18:
-            self.num_teams = self.TEAM_COUNTS['middle']
-            self.phase = 'middle'
+            self.num_teams = self.TEAM_COUNTS["middle"]
+            self.phase = "middle"
         else:
-            self.num_teams = self.TEAM_COUNTS['late']
-            self.phase = 'late'
+            self.num_teams = self.TEAM_COUNTS["late"]
+            self.phase = "late"
 
         # Team router
         self.team_router = nn.Linear(config.hidden_size, self.num_teams, bias=False)
@@ -957,7 +954,7 @@ class TieredLightweightMoE(nn.Module):
 
         # Route to teams
         logits = self.team_router(x)
-        indices = mx.argsort(logits, axis=-1)[:, :, -self.num_teams_per_tok:]
+        indices = mx.argsort(logits, axis=-1)[:, :, -self.num_teams_per_tok :]
         indices = indices[:, :, ::-1]
 
         weights = mx.softmax(logits, axis=-1)
@@ -988,15 +985,17 @@ class TieredLightweightMoE(nn.Module):
         # Each team: team_size * (hidden*intermediate + intermediate*hidden)
         member_intermediate = self.config.intermediate_size // self.config.team_size
         member_params = 2 * self.config.hidden_size * member_intermediate
-        team_params = self.config.team_size * member_params + self.config.team_size  # +team_size for mix weights
+        team_params = (
+            self.config.team_size * member_params + self.config.team_size
+        )  # +team_size for mix weights
         total_expert_params = self.num_teams * team_params
 
         return {
-            'phase': self.phase,
-            'num_teams': self.num_teams,
-            'router_params': router_params,
-            'expert_params': total_expert_params,
-            'total_params': router_params + total_expert_params,
+            "phase": self.phase,
+            "num_teams": self.num_teams,
+            "router_params": router_params,
+            "expert_params": total_expert_params,
+            "total_params": router_params + total_expert_params,
         }
 
 
@@ -1084,14 +1083,14 @@ class LayerPairCircuitMoE(nn.Module):
             bias = mx.zeros_like(base_logits)
             for i in range(self.config.num_experts):
                 mask = (prev_primary == i).astype(base_logits.dtype)[:, :, None]
-                bias = bias + mask * transition[i:i+1, :]
+                bias = bias + mask * transition[i : i + 1, :]
 
             logits = base_logits + bias
         else:
             logits = base_logits
 
         # Top-k selection
-        indices = mx.argsort(logits, axis=-1)[:, :, -self.num_experts_per_tok:]
+        indices = mx.argsort(logits, axis=-1)[:, :, -self.num_experts_per_tok :]
         indices = indices[:, :, ::-1]
 
         weights = mx.softmax(logits, axis=-1)
@@ -1158,10 +1157,7 @@ def discover_circuits(
     # Placeholder: identity mapping
     num_layers = 24
     num_experts = 32
-    return [
-        [i % num_experts] * num_layers
-        for i in range(num_circuits)
-    ]
+    return [[i % num_experts] * num_layers for i in range(num_circuits)]
 
 
 def compute_circuit_overlap(
@@ -1214,7 +1210,7 @@ def validate_cold_experts(
     # 1. Run rare_inputs through model
     # 2. Track activation of cold experts
     # 3. Report which "cold" experts actually activate on rare cases
-    return {exp: 0.0 for exp in cold_expert_list}
+    return dict.fromkeys(cold_expert_list, 0.0)
 
 
 # =============================================================================

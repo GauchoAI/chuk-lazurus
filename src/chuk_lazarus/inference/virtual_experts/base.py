@@ -97,8 +97,10 @@ class RoutingTrace:
             lines.append(f"  {marker} [L{d.layer:02d}]{task_str} {conf_str}{attn_str}")
 
         if self.hijack_layer is not None:
-            lines.append(f"\n  [Hijack] Layer {self.hijack_layer} "
-                        f"(confidence: {self.hijack_confidence:.2f}) → virtual calculator")
+            lines.append(
+                f"\n  [Hijack] Layer {self.hijack_layer} "
+                f"(confidence: {self.hijack_confidence:.2f}) → virtual calculator"
+            )
         return "\n".join(lines)
 
 

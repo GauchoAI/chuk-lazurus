@@ -123,15 +123,14 @@ def main():
 
     parser = argparse.ArgumentParser(description="Routing manipulation analysis")
     parser.add_argument("-m", "--model", required=True, help="Model ID")
+    parser.add_argument("-n", "--num-prompts", type=int, default=30, help="Number of prompts")
+    parser.add_argument("-l", "--layers", help="Comma-separated layer indices to analyze")
     parser.add_argument(
-        "-n", "--num-prompts", type=int, default=30, help="Number of prompts"
-    )
-    parser.add_argument(
-        "-l", "--layers", help="Comma-separated layer indices to analyze"
-    )
-    parser.add_argument(
-        "-e", "--experts-per-layer", type=int, default=5,
-        help="Number of experts per layer to analyze"
+        "-e",
+        "--experts-per-layer",
+        type=int,
+        default=5,
+        help="Number of experts per layer to analyze",
     )
 
     args = parser.parse_args()

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections import defaultdict
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -93,10 +92,7 @@ async def _async_handle_expert_circuits(args: Namespace) -> dict:
         circuit = {
             "name": pipeline.name,
             "category": pipeline.category.value,
-            "path": [
-                {"layer": n.layer_idx, "expert": n.expert_idx}
-                for n in pipeline.nodes
-            ],
+            "path": [{"layer": n.layer_idx, "expert": n.expert_idx} for n in pipeline.nodes],
             "consistency": pipeline.consistency_score,
             "coverage": pipeline.coverage,
         }
@@ -117,9 +113,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="Analyze expert circuits")
     parser.add_argument("-m", "--model", required=True, help="Model ID")
-    parser.add_argument(
-        "-n", "--num-prompts", type=int, default=20, help="Number of prompts"
-    )
+    parser.add_argument("-n", "--num-prompts", type=int, default=20, help="Number of prompts")
 
     args = parser.parse_args()
     result = asyncio.run(_async_handle_expert_circuits(args))

@@ -18,6 +18,7 @@ With CoT rewriting enabled:
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import mlx.core as mx
@@ -249,12 +250,12 @@ class VirtualDenseWrapper:
             return
 
         # Check if rewriter supports set_expert_info (FewShotCoTRewriter does)
-        if not hasattr(self.cot_rewriter, 'set_expert_info'):
+        if not hasattr(self.cot_rewriter, "set_expert_info"):
             return
 
         for plugin in self.registry.get_all():
             # Get CoT examples from the expert
-            if hasattr(plugin, 'get_cot_examples'):
+            if hasattr(plugin, "get_cot_examples"):
                 cot_examples = plugin.get_cot_examples()
                 examples = [
                     {"query": ex.query, "action": ex.action.model_dump()}
@@ -326,7 +327,8 @@ class VirtualDenseWrapper:
                 pos_activations = [self._get_hidden_state(p) for p in pos_prompts]
                 neg_activations = [self._get_hidden_state(p) for p in neg_prompts]
 
-            self.router.calibrate_expert(plugin_idx, pos_activations, neg_activations)
+            if pos_activations and neg_activations:
+                self.router.calibrate_expert(plugin_idx, pos_activations, neg_activations)
 
         self._calibrated = True
 
@@ -423,8 +425,10 @@ class VirtualDenseWrapper:
                             best_plugin = plugin
                             best_score = score
                             best_idx = plugin_idx
-                    elif (plugin.can_handle(prompt)
-                          and "extract_and_evaluate" in plugin.get_operations()):
+                    elif (
+                        plugin.can_handle(prompt)
+                        and "extract_and_evaluate" in plugin.get_operations()
+                    ):
                         best_plugin = plugin
                         best_score = score
                         best_idx = plugin_idx
@@ -446,12 +450,14 @@ class VirtualDenseWrapper:
                     parameters={"text": prompt},
                 )
 
-            result = best_plugin.execute(ve_action)
+            result = asyncio.run(best_plugin.execute(ve_action))
 
             if result.success and result.data:
                 data = result.data
                 if isinstance(data, dict):
-                    answer = str(data.get('formatted', data.get('answer', data.get('result', data))))
+                    answer = str(
+                        data.get("formatted", data.get("answer", data.get("result", data)))
+                    )
                 else:
                     answer = str(data)
 

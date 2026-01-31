@@ -90,7 +90,7 @@ class VirtualExpertRegistry:
         """
         for plugin in self.get_all():
             # Check if plugin has can_handle method (adapters have it)
-            if hasattr(plugin, 'can_handle') and plugin.can_handle(prompt):
+            if hasattr(plugin, "can_handle") and plugin.can_handle(prompt):
                 return plugin
         return None
 
@@ -154,6 +154,7 @@ def get_default_registry() -> VirtualExpertRegistry:
         # Register TimeExpert if available
         try:
             from chuk_virtual_expert_time import TimeExpert
+
             _default_registry.register(TimeExpert())
         except ImportError:
             pass  # chuk-virtual-expert-time not installed
@@ -167,6 +168,7 @@ def get_default_registry() -> VirtualExpertRegistry:
                 PercentageExpert,
                 RateEquationExpert,
             )
+
             _default_registry.register(EntityTrackExpert())
             _default_registry.register(ArithmeticExpert())
             _default_registry.register(PercentageExpert())

@@ -69,37 +69,47 @@ class TestMathExpertPlugin:
         assert plugin.can_handle("Hello world") is False
         assert plugin.can_handle("What is the capital of France?") is False
 
-    def test_execute(self):
+    async def test_execute(self):
         plugin = MathExpertPlugin()
 
-        action = ExpertAction(expert="math", operation="evaluate", parameters={"expression": "2 + 3"})
-        result = plugin.execute(action)
+        action = ExpertAction(
+            expert="math", operation="evaluate", parameters={"expression": "2 + 3"}
+        )
+        result = await plugin.execute(action)
         assert result.success is True
         assert result.data["result"] == 5
 
-        action = ExpertAction(expert="math", operation="evaluate", parameters={"expression": "7 * 8"})
-        result = plugin.execute(action)
+        action = ExpertAction(
+            expert="math", operation="evaluate", parameters={"expression": "7 * 8"}
+        )
+        result = await plugin.execute(action)
         assert result.success is True
         assert result.data["result"] == 56
 
-    def test_execute_subtraction(self):
+    async def test_execute_subtraction(self):
         plugin = MathExpertPlugin()
-        action = ExpertAction(expert="math", operation="evaluate", parameters={"expression": "10 - 3"})
-        result = plugin.execute(action)
+        action = ExpertAction(
+            expert="math", operation="evaluate", parameters={"expression": "10 - 3"}
+        )
+        result = await plugin.execute(action)
         assert result.success is True
         assert result.data["result"] == 7
 
-    def test_execute_division(self):
+    async def test_execute_division(self):
         plugin = MathExpertPlugin()
-        action = ExpertAction(expert="math", operation="evaluate", parameters={"expression": "20 / 4"})
-        result = plugin.execute(action)
+        action = ExpertAction(
+            expert="math", operation="evaluate", parameters={"expression": "20 / 4"}
+        )
+        result = await plugin.execute(action)
         assert result.success is True
         assert result.data["result"] == 5
 
-    def test_execute_invalid(self):
+    async def test_execute_invalid(self):
         plugin = MathExpertPlugin()
-        action = ExpertAction(expert="math", operation="evaluate", parameters={"expression": "not math"})
-        result = plugin.execute(action)
+        action = ExpertAction(
+            expert="math", operation="evaluate", parameters={"expression": "not math"}
+        )
+        result = await plugin.execute(action)
         assert result.success is False
 
     def test_get_calibration_prompts(self):
@@ -122,38 +132,48 @@ class TestSafeMathEvaluator:
     def test_is_alias(self):
         assert SafeMathEvaluator is MathExpertPlugin
 
-    def test_execute_addition(self):
+    async def test_execute_addition(self):
         evaluator = SafeMathEvaluator()
-        action = ExpertAction(expert="math", operation="evaluate", parameters={"expression": "2 + 3"})
-        result = evaluator.execute(action)
+        action = ExpertAction(
+            expert="math", operation="evaluate", parameters={"expression": "2 + 3"}
+        )
+        result = await evaluator.execute(action)
         assert result.success is True
         assert result.data["result"] == 5
 
-    def test_execute_subtraction(self):
+    async def test_execute_subtraction(self):
         evaluator = SafeMathEvaluator()
-        action = ExpertAction(expert="math", operation="evaluate", parameters={"expression": "10 - 3"})
-        result = evaluator.execute(action)
+        action = ExpertAction(
+            expert="math", operation="evaluate", parameters={"expression": "10 - 3"}
+        )
+        result = await evaluator.execute(action)
         assert result.success is True
         assert result.data["result"] == 7
 
-    def test_execute_multiplication(self):
+    async def test_execute_multiplication(self):
         evaluator = SafeMathEvaluator()
-        action = ExpertAction(expert="math", operation="evaluate", parameters={"expression": "7 * 8"})
-        result = evaluator.execute(action)
+        action = ExpertAction(
+            expert="math", operation="evaluate", parameters={"expression": "7 * 8"}
+        )
+        result = await evaluator.execute(action)
         assert result.success is True
         assert result.data["result"] == 56
 
-    def test_execute_division(self):
+    async def test_execute_division(self):
         evaluator = SafeMathEvaluator()
-        action = ExpertAction(expert="math", operation="evaluate", parameters={"expression": "20 / 4"})
-        result = evaluator.execute(action)
+        action = ExpertAction(
+            expert="math", operation="evaluate", parameters={"expression": "20 / 4"}
+        )
+        result = await evaluator.execute(action)
         assert result.success is True
         assert result.data["result"] == 5
 
-    def test_execute_invalid(self):
+    async def test_execute_invalid(self):
         evaluator = SafeMathEvaluator()
-        action = ExpertAction(expert="math", operation="evaluate", parameters={"expression": "not a math problem"})
-        result = evaluator.execute(action)
+        action = ExpertAction(
+            expert="math", operation="evaluate", parameters={"expression": "not a math problem"}
+        )
+        result = await evaluator.execute(action)
         assert result.success is False
 
     def test_extract_and_evaluate(self):
@@ -353,7 +373,7 @@ class TestVirtualExpertRegistry:
             def get_operations(self):
                 return ["evaluate"]
 
-            def execute_operation(self, operation, parameters):
+            async def execute_operation(self, operation, parameters):
                 return {"result": "test_result"}
 
             def get_calibration_prompts(self):
@@ -370,7 +390,7 @@ class TestVirtualExpertRegistry:
         plugin = registry.get("nonexistent")
         assert plugin is None
 
-    def test_find_handler(self):
+    async def test_find_handler(self):
         registry = VirtualExpertRegistry()
 
         class MathPlugin(VirtualExpertPlugin):
@@ -383,7 +403,7 @@ class TestVirtualExpertRegistry:
             def get_operations(self):
                 return ["evaluate"]
 
-            def execute_operation(self, operation, parameters):
+            async def execute_operation(self, operation, parameters):
                 return {"result": "math"}
 
             def get_calibration_prompts(self):
@@ -394,7 +414,7 @@ class TestVirtualExpertRegistry:
         plugin = registry.find_handler("2 + 2 = ")
         assert plugin is not None
         action = ExpertAction(expert="math", operation="evaluate", parameters={})
-        result = plugin.execute(action)
+        result = await plugin.execute(action)
         assert result.data["result"] == "math"
 
     def test_find_handler_no_match(self):
@@ -410,7 +430,7 @@ class TestVirtualExpertRegistry:
             def get_operations(self):
                 return ["evaluate"]
 
-            def execute_operation(self, operation, parameters):
+            async def execute_operation(self, operation, parameters):
                 return {"result": "math"}
 
             def get_calibration_prompts(self):
@@ -434,7 +454,7 @@ class TestVirtualExpertRegistry:
             def get_operations(self):
                 return ["evaluate"]
 
-            def execute_operation(self, operation, parameters):
+            async def execute_operation(self, operation, parameters):
                 return {"result": "result"}
 
             def get_calibration_prompts(self):
@@ -460,7 +480,7 @@ class TestVirtualExpertRegistry:
             def get_operations(self):
                 return ["evaluate"]
 
-            def execute_operation(self, operation, parameters):
+            async def execute_operation(self, operation, parameters):
                 return {"result": ""}
 
             def get_calibration_prompts(self):
@@ -477,7 +497,7 @@ class TestVirtualExpertRegistry:
             def get_operations(self):
                 return ["evaluate"]
 
-            def execute_operation(self, operation, parameters):
+            async def execute_operation(self, operation, parameters):
                 return {"result": ""}
 
             def get_calibration_prompts(self):
@@ -504,7 +524,7 @@ class TestVirtualExpertRegistry:
             def get_operations(self):
                 return ["evaluate"]
 
-            def execute_operation(self, operation, parameters):
+            async def execute_operation(self, operation, parameters):
                 return {"result": ""}
 
             def get_calibration_prompts(self):
@@ -526,7 +546,7 @@ class TestVirtualExpertRegistry:
             def get_operations(self):
                 return ["evaluate"]
 
-            def execute_operation(self, operation, parameters):
+            async def execute_operation(self, operation, parameters):
                 return {"result": ""}
 
             def get_calibration_prompts(self):
@@ -1008,7 +1028,7 @@ class TestVirtualExpertPlugin:
         with pytest.raises(TypeError):
             IncompletePlugin()  # type: ignore
 
-    def test_valid_subclass(self):
+    async def test_valid_subclass(self):
         class ValidPlugin(VirtualExpertPlugin):
             name = "valid"
             description = "Valid"
@@ -1019,7 +1039,7 @@ class TestVirtualExpertPlugin:
             def get_operations(self):
                 return ["evaluate"]
 
-            def execute_operation(self, operation, parameters):
+            async def execute_operation(self, operation, parameters):
                 return {"result": "result"}
 
             def get_calibration_prompts(self):
@@ -1028,7 +1048,7 @@ class TestVirtualExpertPlugin:
         plugin = ValidPlugin()
         assert plugin.can_handle("test") is True
         action = ExpertAction(expert="valid", operation="evaluate", parameters={})
-        result = plugin.execute(action)
+        result = await plugin.execute(action)
         assert result.success is True
         assert result.data["result"] == "result"
 
@@ -1221,60 +1241,72 @@ class TestEdgeCases:
 class TestMathExpertPluginEdgeCases:
     """Additional edge case tests for MathExpertPlugin."""
 
-    def test_complex_expression(self):
+    async def test_complex_expression(self):
         """Test with more complex expressions."""
         plugin = MathExpertPlugin()
 
         # Multiple operations
-        action = ExpertAction(expert="math", operation="evaluate", parameters={"expression": "10 + 5 * 2"})
-        result = plugin.execute(action)
+        action = ExpertAction(
+            expert="math", operation="evaluate", parameters={"expression": "10 + 5 * 2"}
+        )
+        result = await plugin.execute(action)
         assert result.success is True
         assert result.data["result"] == 20
 
-    def test_parentheses(self):
+    async def test_parentheses(self):
         """Test expressions with parentheses."""
         plugin = MathExpertPlugin()
 
-        action = ExpertAction(expert="math", operation="evaluate", parameters={"expression": "(10 + 5) * 2"})
-        result = plugin.execute(action)
+        action = ExpertAction(
+            expert="math", operation="evaluate", parameters={"expression": "(10 + 5) * 2"}
+        )
+        result = await plugin.execute(action)
         assert result.success is True
         assert result.data["result"] == 30
 
-    def test_negative_numbers(self):
+    async def test_negative_numbers(self):
         """Test with negative numbers."""
         plugin = MathExpertPlugin()
 
-        action = ExpertAction(expert="math", operation="evaluate", parameters={"expression": "-5 + 10"})
-        result = plugin.execute(action)
+        action = ExpertAction(
+            expert="math", operation="evaluate", parameters={"expression": "-5 + 10"}
+        )
+        result = await plugin.execute(action)
         assert result.success is True
         assert result.data["result"] == 5
 
-    def test_decimal_results(self):
+    async def test_decimal_results(self):
         """Test operations that produce decimals."""
         plugin = MathExpertPlugin()
 
-        action = ExpertAction(expert="math", operation="evaluate", parameters={"expression": "10 / 3"})
-        result = plugin.execute(action)
+        action = ExpertAction(
+            expert="math", operation="evaluate", parameters={"expression": "10 / 3"}
+        )
+        result = await plugin.execute(action)
         assert result.success is True
         # Result should be approximately 3.333...
         assert "3" in str(result.data["result"])
 
-    def test_very_large_numbers(self):
+    async def test_very_large_numbers(self):
         """Test with very large numbers."""
         plugin = MathExpertPlugin()
 
-        action = ExpertAction(expert="math", operation="evaluate", parameters={"expression": "999999 * 999999"})
-        result = plugin.execute(action)
+        action = ExpertAction(
+            expert="math", operation="evaluate", parameters={"expression": "999999 * 999999"}
+        )
+        result = await plugin.execute(action)
         assert result.success is True
         assert result.data["result"] == 999998000001
 
-    def test_division_by_zero_handling(self):
+    async def test_division_by_zero_handling(self):
         """Test division by zero is handled gracefully."""
         plugin = MathExpertPlugin()
 
         # Should not crash
-        action = ExpertAction(expert="math", operation="evaluate", parameters={"expression": "10 / 0"})
-        result = plugin.execute(action)
+        action = ExpertAction(
+            expert="math", operation="evaluate", parameters={"expression": "10 / 0"}
+        )
+        result = await plugin.execute(action)
         # Should return failure or handle gracefully
         assert result.success is False or isinstance(result.data, dict)
 

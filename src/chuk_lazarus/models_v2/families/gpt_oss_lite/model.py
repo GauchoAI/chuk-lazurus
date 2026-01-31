@@ -25,7 +25,6 @@ from ...core.registry import register_model
 from ...models.base import Model, ModelOutput
 from .config import GptOssLiteConfig
 
-
 # =============================================================================
 # GPT-OSS Custom SwiGLU Activation
 # =============================================================================
@@ -562,7 +561,7 @@ class GptOssLiteForCausalLM(Model):
                         obj = getattr(obj, part)
                 setattr(obj, parts[-1], value)
                 loaded += 1
-            except (AttributeError, IndexError, TypeError) as e:
+            except (AttributeError, IndexError, TypeError):
                 failed.append(key)
 
         return loaded, failed

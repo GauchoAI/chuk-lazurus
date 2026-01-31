@@ -224,7 +224,7 @@ class TestMathExpertExtractAndEvaluate:
 class TestMathExpertExecute:
     """Tests for execute method via VirtualExpertAction."""
 
-    def test_execute_float_result(self):
+    async def test_execute_float_result(self):
         """Test execute with float result that is whole number."""
         from chuk_virtual_expert import VirtualExpertAction
 
@@ -232,11 +232,11 @@ class TestMathExpertExecute:
         action = VirtualExpertAction(
             expert="math", operation="evaluate", parameters={"expression": "10 / 2"}
         )
-        result = plugin.execute(action)
+        result = await plugin.execute(action)
         assert result.success
         assert result.data["formatted"] == "5"  # Should be integer string
 
-    def test_execute_non_integer_result(self):
+    async def test_execute_non_integer_result(self):
         """Test execute with non-integer float result."""
         from chuk_virtual_expert import VirtualExpertAction
 
@@ -244,11 +244,11 @@ class TestMathExpertExecute:
         action = VirtualExpertAction(
             expert="math", operation="evaluate", parameters={"expression": "10 / 3"}
         )
-        result = plugin.execute(action)
+        result = await plugin.execute(action)
         assert result.success
         assert "." in result.data["formatted"]  # Should be float string
 
-    def test_execute_none_result(self):
+    async def test_execute_none_result(self):
         """Test execute returns error for invalid expressions."""
         from chuk_virtual_expert import VirtualExpertAction
 
@@ -256,7 +256,7 @@ class TestMathExpertExecute:
         action = VirtualExpertAction(
             expert="math", operation="evaluate", parameters={"expression": "not a math expression"}
         )
-        result = plugin.execute(action)
+        result = await plugin.execute(action)
         assert not result.success  # Should fail for invalid expression
 
 

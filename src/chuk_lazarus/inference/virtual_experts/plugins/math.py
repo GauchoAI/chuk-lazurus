@@ -85,7 +85,7 @@ class MathExpert(VirtualExpert):
         """Return available operation names."""
         return ["evaluate", "extract_and_evaluate", "execute_trace"]
 
-    def execute_operation(
+    async def execute_operation(
         self,
         operation: str,
         parameters: dict[str, Any],
@@ -140,8 +140,10 @@ class MathExpert(VirtualExpert):
                 "error": result.error,
                 "formatted": str(result.answer) if result.answer is not None else "",
             }
-        except ImportError:
-            raise ValueError("chuk-virtual-expert-arithmetic not installed for trace execution")
+        except ImportError as err:
+            raise ValueError(
+                "chuk-virtual-expert-arithmetic not installed for trace execution"
+            ) from err
 
     def can_handle(self, prompt: str) -> bool:
         """Check if prompt contains a computable math expression."""

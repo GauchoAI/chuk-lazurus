@@ -368,7 +368,9 @@ Examples:
     infer_parser.add_argument("--prompt-file", help="File with prompts (one per line)")
     infer_parser.add_argument("--max-tokens", type=int, default=256, help="Max tokens")
     infer_parser.add_argument("--temperature", type=float, default=0.7, help="Temperature")
-    infer_parser.add_argument("--chat", action="store_true", help="Use chat template (for chat models)")
+    infer_parser.add_argument(
+        "--chat", action="store_true", help="Use chat template (for chat models)"
+    )
     infer_parser.add_argument("--system", help="System prompt (only used with --chat)")
     infer_parser.set_defaults(func=lambda args: asyncio.run(run_inference(args)))
 

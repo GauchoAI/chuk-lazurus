@@ -318,8 +318,12 @@ class UnifiedPipeline:
         prompt = format_chat_prompt(self._tokenizer, user_message, system)
 
         config = GenerationConfig(
-            max_new_tokens=max_new_tokens if max_new_tokens is not None else self._pipeline_config.default_max_tokens,
-            temperature=temperature if temperature is not None else self._pipeline_config.default_temperature,
+            max_new_tokens=max_new_tokens
+            if max_new_tokens is not None
+            else self._pipeline_config.default_max_tokens,
+            temperature=temperature
+            if temperature is not None
+            else self._pipeline_config.default_temperature,
         )
 
         return generate(self._model, self._tokenizer, prompt, config)
@@ -343,8 +347,12 @@ class UnifiedPipeline:
         prompt = format_history(self._tokenizer, history)
 
         config = GenerationConfig(
-            max_new_tokens=max_new_tokens if max_new_tokens is not None else self._pipeline_config.default_max_tokens,
-            temperature=temperature if temperature is not None else self._pipeline_config.default_temperature,
+            max_new_tokens=max_new_tokens
+            if max_new_tokens is not None
+            else self._pipeline_config.default_max_tokens,
+            temperature=temperature
+            if temperature is not None
+            else self._pipeline_config.default_temperature,
         )
 
         return generate(self._model, self._tokenizer, prompt, config)
@@ -369,8 +377,12 @@ class UnifiedPipeline:
         """
         if config is None:
             config = GenerationConfig(
-                max_new_tokens=max_new_tokens if max_new_tokens is not None else self._pipeline_config.default_max_tokens,
-                temperature=temperature if temperature is not None else self._pipeline_config.default_temperature,
+                max_new_tokens=max_new_tokens
+                if max_new_tokens is not None
+                else self._pipeline_config.default_max_tokens,
+                temperature=temperature
+                if temperature is not None
+                else self._pipeline_config.default_temperature,
             )
 
         return generate(self._model, self._tokenizer, prompt, config)
