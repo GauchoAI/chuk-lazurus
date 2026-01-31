@@ -217,7 +217,12 @@ def load_training_data(n: int = 250, include_composition: bool = True) -> list[d
         include_composition: Whether to include multi-expert composition examples.
     """
     from chuk_virtual_expert_arithmetic.generators import TraceGenerator
-    gen = TraceGenerator()
+    gen = TraceGenerator(
+        perturbation_level=0.3,
+        word_number_prob=0.3,
+        gsm8k_style_prob=0.3,
+        messy_vocab_prob=0.2,
+    )
     examples = gen.generate_balanced(n, include_composition=include_composition)
 
     result = []
@@ -582,6 +587,7 @@ def main():
     parser.add_argument("--max-tokens", type=int, default=750, help="Max tokens for generation (default 750)")
     parser.add_argument("--hf-only", action="store_true", help="Only evaluate on HuggingFace GSM-8K (skip training data eval)")
     parser.add_argument("--unfreeze-layers", type=int, default=6, help="Number of layers to unfreeze (default 6, try 12/16 for more capacity)")
+    parser.add_argument("--expand-data", type=str, default=None, help="Load pre-expanded training data from JSONL file")
     args = parser.parse_args()
 
     # Config
@@ -597,8 +603,17 @@ def main():
     print("  GSM-8K YAML TRACE TRAINING (Rogue-1 Format)")
     print("=" * 70)
 
-    # Load training data (static GSM-8K + synthetic)
-    train_data = load_training_data(n=args.n_train)
+    # Load training data
+    if args.expand_data:
+        import json as _json
+        expand_path = Path(args.expand_data)
+        if not expand_path.is_absolute():
+            expand_path = Path(__file__).parent / expand_path
+        with open(expand_path) as f:
+            train_data = [_json.loads(line) for line in f if line.strip()]
+        print(f"Loaded expanded data from {expand_path}")
+    else:
+        train_data = load_training_data(n=args.n_train)
     print(f"Training examples: {len(train_data)}")
 
     # Show expert distribution

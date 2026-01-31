@@ -1,0 +1,87 @@
+# Expert Function Classification Experiment
+# Classifies MoE experts as storage / computation / routing / redundant
+
+model: "openai/gpt-oss-20b"
+
+# MoE architecture (GPT-OSS 20B)
+moe:
+  num_experts: 32
+  top_k: 4
+  num_layers: 24
+
+# Ablation settings
+ablation:
+  target_layers: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+  max_tokens: 30
+
+# Sampling strategy
+sampling:
+  quick_scan_prompts: 2       # Prompts per expert in quick scan phase
+  use_quick_scan: true        # If false, deep-test all 32 experts per layer
+
+# Classification thresholds
+classification:
+  redundant_threshold: 0.9    # No-change rate above this -> redundant
+  fact_error_threshold: 0.3   # Min fact error rate for storage
+  structure_error_threshold: 0.3  # Min structure error rate for computation
+  routing_threshold: 0.15     # JS divergence above this -> routing
+  repetition_threshold: 0.3   # 3-gram repetition ratio for structure error
+  length_ratio_min: 0.3       # Ablated/baseline length below this -> structure error
+  length_ratio_max: 3.0       # Ablated/baseline length above this -> structure error
+
+# Recovery testing
+recovery:
+  memory_bank_format: "bracket"  # [Memory Bank] ... [End Memory Bank]
+  test_only_storage: true        # Only run recovery on storage-classified experts
+  max_tokens: 30
+
+# Test prompts by category
+# Each prompt has: prompt text, expected answer keyword(s), and optional memory_bank entry
+test_prompts:
+  factual:
+    - prompt: "The capital of France is"
+      expected: "Paris"
+      memory_bank: "France | capital | Paris"
+    - prompt: "The chemical symbol for gold is"
+      expected: "Au"
+      memory_bank: "gold | chemical_symbol | Au"
+    - prompt: "The author of Romeo and Juliet is"
+      expected: "Shakespeare"
+      memory_bank: "Romeo and Juliet | author | William Shakespeare"
+    - prompt: "The speed of light is approximately"
+      expected: "299"
+      memory_bank: "speed of light | value | 299,792,458 m/s"
+    - prompt: "The CEO of Microsoft is"
+      expected: "Nadella"
+      memory_bank: "Microsoft | CEO | Satya Nadella"
+
+  procedural:
+    - prompt: "To convert Celsius to Fahrenheit, multiply by 9/5 and add"
+      expected: "32"
+      memory_bank: "Celsius to Fahrenheit | formula | multiply by 9/5 and add 32"
+    - prompt: "The order of mathematical operations is"
+      expected: "PEMDAS"
+      memory_bank: "math operations | order | PEMDAS (Parentheses, Exponents, Multiplication, Division, Addition, Subtraction)"
+    - prompt: "To find the area of a circle, use the formula"
+      expected: "pi"
+      memory_bank: "circle | area_formula | pi * r^2"
+
+  reasoning:
+    - prompt: "If all cats are mammals and Fluffy is a cat, then Fluffy is a"
+      expected: "mammal"
+    - prompt: "The pattern 2, 4, 8, 16 continues with"
+      expected: "32"
+    - prompt: "If A is taller than B, and B is taller than C, then A is taller than"
+      expected: "C"
+
+  linguistic:
+    - prompt: "The opposite of hot is"
+      expected: "cold"
+    - prompt: "The plural of 'child' is"
+      expected: "children"
+
+  generation:
+    - prompt: "Once upon a time, there was a"
+      expected: ""
+    - prompt: "Dear Sir or Madam, I am writing to"
+      expected: ""

@@ -21,6 +21,33 @@ python train_gsm8k_yaml.py \
 python train_gsm8k_yaml.py --load-checkpoint checkpoints/llama32_3b_instruct_best --eval-only
 ```
 
+## LLM Query Expansion
+
+The generator supports LLM-based query rewriting via a callback pattern.
+Template-generated queries are rewritten for linguistic diversity while
+the trace and answer stay fixed (deterministic from schema variables).
+
+```python
+from chuk_virtual_expert_arithmetic.generators import TraceGenerator, SchemaGenerator
+
+# Direct usage via SchemaGenerator
+gen = SchemaGenerator(seed=42)
+spec = gen.to_spec("price_chain")     # Get structured spec
+prompt = gen.expansion_prompt(spec)    # Get LLM prompt
+
+# With async expander callback
+async def my_expander(query: str, context: dict) -> str:
+    prompt = context["prompt"]         # Ready-to-use LLM prompt
+    return await call_my_llm(prompt)   # Your LLM call here
+
+example = await gen.generate_with_expander("price_chain", my_expander)
+batch = await gen.generate_batch_with_expander(schemas, 100, my_expander)
+
+# Via TraceGenerator convenience wrapper
+tgen = TraceGenerator(seed=42)
+examples = await tgen.generate_with_expander(n=100, expander=my_expander)
+```
+
 ## Architecture
 
 ```
@@ -123,8 +150,6 @@ experiments/csp_cot_gsm8k/
 │   ├── diagnose_gsm8k.py     # Diagnostic evaluation
 │   ├── diversity_analysis.py # Training data analysis
 │   ├── template_expander.py  # Template expansion
-│   ├── spec_generator.py     # Spec generation
-│   ├── llm_sample_gen.py     # LLM-based sample generation
 │   └── audit_vocab_system.py # Vocabulary auditing
 │
 ├── data/                     # Training data specs

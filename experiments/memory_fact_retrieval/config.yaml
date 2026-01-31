@@ -1,0 +1,249 @@
+# Memory & Fact Retrieval Experiment Configuration
+
+# GPT-OSS 20B - MoE model with 24 layers
+model: "openai/gpt-oss-20b"
+
+analyses:
+  - parametric_probing
+  - context_memory
+  - fact_steering
+  - retrieval_attention
+  - fact_types
+  - confidence
+  - moe_fact_routing
+
+# Parametric memory probing configuration
+# GPT-OSS has 24 layers - test at 25%, 50%, 75% depth and key layers
+parametric_probing:
+  probe_layers: [4, 6, 8, 10, 12, 13, 16, 18, 20]  # L13 = vocab classifier layer
+  num_facts_per_type: 50
+  train_split: 0.8
+  probe_type: "linear"  # linear, mlp
+  epochs: 100
+  learning_rate: 0.001
+
+# Context vs memory discrimination
+context_memory:
+  num_conflict_examples: 30
+  override_strengths: [0.5, 1.0, 2.0, 5.0]  # How strongly context asserts
+  probe_layers: [4, 8, 12, 13, 16, 20]  # Include L13 for vocab alignment
+  tracking_positions: ["context", "query", "answer"]
+
+# Fact manipulation via steering
+fact_steering:
+  steering_layers: [8, 10, 12, 13, 16]  # L12-13 are key for GPT-OSS
+  steering_strengths: [1.0, 2.0, 3.0, 5.0, 8.0]
+  num_test_facts: 20
+  extraction_method: "pca"  # pca, difference, mean_diff
+
+# Retrieval attention dynamics
+retrieval_attention:
+  track_layers: [0, 4, 8, 12, 13, 16, 20]
+  num_heads_to_analyze: 32
+  attention_threshold: 0.1  # Minimum attention weight to consider
+  categories: ["known", "unknown", "hallucinated"]
+
+# Fact type specialization
+fact_types:
+  types: ["entity", "numeric", "temporal", "procedural"]
+  num_examples_per_type: 40
+  probe_layers: [4, 8, 12, 13]  # Include L13 for vocab-aligned analysis
+  classifier_type: "linear"
+
+# Confidence calibration
+confidence:
+  probe_layer: 13  # L13 is key layer for GPT-OSS
+  num_correct_examples: 50
+  num_incorrect_examples: 50
+  calibration_bins: 10
+
+# MoE Expert Routing Analysis
+moe_fact_routing:
+  track_layers: [4, 8, 12, 13, 16, 20]
+  min_activation_threshold: 0.1  # Minimum weight to count as activation
+  dominant_threshold: 0.2  # Threshold for "dominant" expert designation
+
+# Fact datasets
+facts:
+  entity:
+    - prompt: "The capital of France is"
+      answer: "Paris"
+      category: "geography"
+    - prompt: "The capital of Japan is"
+      answer: "Tokyo"
+      category: "geography"
+    - prompt: "The capital of Germany is"
+      answer: "Berlin"
+      category: "geography"
+    - prompt: "The capital of Italy is"
+      answer: "Rome"
+      category: "geography"
+    - prompt: "The capital of Spain is"
+      answer: "Madrid"
+      category: "geography"
+    - prompt: "The chemical symbol for gold is"
+      answer: "Au"
+      category: "chemistry"
+    - prompt: "The chemical symbol for silver is"
+      answer: "Ag"
+      category: "chemistry"
+    - prompt: "The chemical symbol for iron is"
+      answer: "Fe"
+      category: "chemistry"
+    - prompt: "The largest planet in our solar system is"
+      answer: "Jupiter"
+      category: "astronomy"
+    - prompt: "The smallest planet in our solar system is"
+      answer: "Mercury"
+      category: "astronomy"
+    - prompt: "The author of Romeo and Juliet is"
+      answer: "William Shakespeare"
+      category: "literature"
+    - prompt: "The author of Pride and Prejudice is"
+      answer: "Jane Austen"
+      category: "literature"
+    - prompt: "The currency of the United Kingdom is the"
+      answer: "pound"
+      category: "economics"
+    - prompt: "The currency of Japan is the"
+      answer: "yen"
+      category: "economics"
+    - prompt: "The element with atomic number 1 is"
+      answer: "hydrogen"
+      category: "chemistry"
+
+  numeric:
+    - prompt: "The speed of light in vacuum is approximately"
+      answer: "299,792,458 meters per second"
+      category: "physics"
+    - prompt: "Water freezes at"
+      answer: "0 degrees Celsius"
+      category: "physics"
+    - prompt: "Water boils at"
+      answer: "100 degrees Celsius"
+      category: "physics"
+    - prompt: "The number of bones in an adult human body is"
+      answer: "206"
+      category: "biology"
+    - prompt: "The number of chromosomes in a human cell is"
+      answer: "46"
+      category: "biology"
+    - prompt: "The value of pi to 5 decimal places is"
+      answer: "3.14159"
+      category: "mathematics"
+    - prompt: "The number of planets in our solar system is"
+      answer: "8"
+      category: "astronomy"
+    - prompt: "The distance from Earth to the Sun is approximately"
+      answer: "93 million miles"
+      category: "astronomy"
+    - prompt: "The number of days in a leap year is"
+      answer: "366"
+      category: "calendar"
+    - prompt: "The melting point of ice is"
+      answer: "0 degrees Celsius"
+      category: "physics"
+
+  temporal:
+    - prompt: "World War II ended in"
+      answer: "1945"
+      category: "history"
+    - prompt: "World War I began in"
+      answer: "1914"
+      category: "history"
+    - prompt: "The Declaration of Independence was signed in"
+      answer: "1776"
+      category: "history"
+    - prompt: "The first moon landing occurred in"
+      answer: "1969"
+      category: "history"
+    - prompt: "The Berlin Wall fell in"
+      answer: "1989"
+      category: "history"
+    - prompt: "The French Revolution began in"
+      answer: "1789"
+      category: "history"
+    - prompt: "Shakespeare was born in"
+      answer: "1564"
+      category: "biography"
+    - prompt: "Einstein published his theory of special relativity in"
+      answer: "1905"
+      category: "history"
+    - prompt: "The first iPhone was released in"
+      answer: "2007"
+      category: "technology"
+    - prompt: "The Titanic sank in"
+      answer: "1912"
+      category: "history"
+
+  procedural:
+    - prompt: "To convert Celsius to Fahrenheit, multiply by 9/5 and add"
+      answer: "32"
+      category: "conversion"
+    - prompt: "The order of mathematical operations is remembered by the acronym"
+      answer: "PEMDAS"
+      category: "mathematics"
+    - prompt: "In CPR, the first step is to"
+      answer: "check for responsiveness"
+      category: "medical"
+    - prompt: "To calculate the area of a circle, multiply pi by the radius"
+      answer: "squared"
+      category: "mathematics"
+    - prompt: "The three primary colors of light are red, green, and"
+      answer: "blue"
+      category: "physics"
+    - prompt: "In the scientific method, after forming a hypothesis, you"
+      answer: "test it with an experiment"
+      category: "science"
+    - prompt: "To find the mean of a set of numbers, you add them and"
+      answer: "divide by the count"
+      category: "mathematics"
+    - prompt: "The mnemonic for the order of planets is My Very Eager Mother Just Served Us"
+      answer: "Nachos"
+      category: "astronomy"
+
+# Context override examples (for context_memory analysis)
+conflict_examples:
+  # DECLARATIVE CONFLICTS
+  - parametric: "The capital of France is Paris"
+    context: "Due to recent changes, the capital of France has been moved to Lyon"
+    query: "What is the capital of France?"
+    expected_parametric: "Paris"
+    expected_context: "Lyon"
+    fact_type: "entity"
+
+  - parametric: "Water boils at 100 degrees Celsius"
+    context: "In this high-altitude region, water boils at 85 degrees Celsius"
+    query: "At what temperature does water boil here?"
+    expected_parametric: "100"
+    expected_context: "85"
+    fact_type: "numeric"
+
+  - parametric: "The speed of light is 299,792,458 m/s"
+    context: "Scientists have discovered that light travels at 350,000,000 m/s"
+    query: "What is the speed of light?"
+    expected_parametric: "299,792,458"
+    expected_context: "350,000,000"
+    fact_type: "numeric"
+
+  # PROCEDURAL CONFLICTS - test if context override works for how-to knowledge
+  - parametric: "To convert Celsius to Fahrenheit, multiply by 9/5 and add 32"
+    context: "In this system, to convert Celsius to Fahrenheit, you multiply by 2 and add 30"
+    query: "How do I convert 20 Celsius to Fahrenheit in this system?"
+    expected_parametric: "68"
+    expected_context: "70"
+    fact_type: "procedural"
+
+  - parametric: "The order of mathematical operations is PEMDAS"
+    context: "In this notation system, addition is performed before multiplication"
+    query: "What is 2 + 3 * 4 in this notation?"
+    expected_parametric: "14"
+    expected_context: "20"
+    fact_type: "procedural"
+
+  - parametric: "To tie a bowline, make a loop, pass the end through, around, and back"
+    context: "The simplified bowline method: make two loops and pull the end through both"
+    query: "How do I tie a bowline using the method described?"
+    expected_parametric: "loop, through, around, back"
+    expected_context: "two loops, pull through"
+    fact_type: "procedural"
