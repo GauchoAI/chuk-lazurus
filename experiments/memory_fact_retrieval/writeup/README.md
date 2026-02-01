@@ -38,5 +38,6 @@
 19. [Memory Bank + Lite Model](20-memory-bank-lite-model.md) - The compression path, hybrid architecture
 20. [Layer Parity](21-layer-parity.md) - L0 is the gatekeeper, even vs odd
 21. [Layer Spacing](22-layer-spacing.md) - Hard cliff at gap=3, MB rescue gradient
+22. [Minimum Viable Routing](24-minimum-viable-routing.md) - 6 layers (25%) + MB = 8/8
 
 ### [Appendix: Experiment Configuration](23-appendix.md)
