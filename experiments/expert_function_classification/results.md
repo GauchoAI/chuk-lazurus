@@ -2,7 +2,7 @@
 
 **Model**: GPT-OSS 20B (24 MoE layers, 32 experts/layer, top-4 routing, ~21B params)
 **Date**: 29 Jan - 2 Feb 2026
-**Experiments run**: 19 of 20 designed (15 classification + 4 residual stream mechanistic)
+**Experiments run**: 20 of 21 designed (15 classification + 5 residual stream mechanistic)
 
 ---
 
@@ -487,9 +487,88 @@ The L22 dip for MB (37.1% vs 70.0% bare) may reflect the model processing the in
 
 ---
 
+## Part 5d: Memory Bank Attention at L20 (2 Feb)
+
+### Setup
+
+The MB injection point experiment (Part 5c) showed a striking L20 probability dip: bare prompts have 14.8% fact probability at L20, while MB prompts have 0.05%. This experiment captures attention weights at L18-L23 for both conditions and classifies every MB token into semantic regions to diagnose why.
+
+Regions: mb_answer (e.g., "Paris"), mb_entity (e.g., "France"), mb_other (other MB entries), mb_delimiters ([Memory Bank], [End Memory Bank]), instruction ("Using the memory bank above, answer:"), query_entity, query_copula (" is"), query_other, answer_prefix ("Answer:").
+
+### The Alternating Pattern
+
+The data reveals the same odd/even alternation found in Part 5b (attention_at_emergence), but in an MB-amplified form:
+
+| Layer | MB Answer | MB Other | Answer Prefix | Instruction | Q Entity | Q Copula |
+|-------|-----------|----------|---------------|-------------|----------|----------|
+| L18 (even) | 0.014 | 0.077 | **0.370** | 0.103 | 0.085 | 0.104 |
+| L19 (odd) | **0.098** | **0.346** | 0.128 | 0.091 | 0.043 | 0.051 |
+| L20 (even) | 0.016 | 0.082 | **0.413** | 0.110 | 0.045 | 0.089 |
+| L21 (odd) | **0.134** | **0.318** | 0.113 | 0.108 | 0.036 | 0.042 |
+| L22 (even) | 0.012 | 0.091 | **0.495** | 0.120 | 0.022 | 0.033 |
+| L23 (odd) | **0.098** | **0.310** | 0.178 | 0.104 | 0.025 | 0.052 |
+
+**Even layers (L18, L20, L22):** "Answer:" prefix absorbs 37-49% of attention. MB answer token gets <2%.
+**Odd layers (L19, L21, L23):** MB content dominates. mb_answer gets 10-13%, mb_other gets 31-35%. Answer prefix drops to 11-18%.
+
+### L20 Top Attention Targets (MB Condition)
+
+Across all 7 facts, the top-5 most-attended positions at L20 are identical in structure:
+
+| Rank | Token | Avg Attention | Role |
+|------|-------|---------------|------|
+| 1 | `:` | 0.280 | Answer prefix |
+| 2 | `Answer` | 0.132 | Answer prefix |
+| 3 | `\n` | 0.120 | Answer prefix |
+| 4 | ` is` | 0.089 | Query copula |
+| 5 | entity | 0.052 | Query entity |
+
+**Total attention to "Answer:" at L20: 41.3%.** The model is processing "what kind of answer do I need?" not "what is the answer?"
+
+The MB answer token ("Paris", "Au", etc.) receives only **1.5% attention at L20** — effectively ignored.
+
+### The L21 Switch
+
+At L21, the pattern reverses:
+- MB answer attention: 1.5% → **13.4%** (9x increase)
+- MB other attention: 8.2% → **31.8%** (4x increase)
+- Answer prefix attention: 41.3% → **11.3%** (73% drop)
+
+The model switches from task framing to content lookup in a single layer transition.
+
+### Connection to Part 5b (Bare Condition)
+
+The bare condition shows the same alternation:
+- L20 bare: copula (" is") gets 40.2%, entity gets 25.6%
+- L21 bare: entity gets 30.6%, copula gets 26.8%
+
+In bare prompts, the copula " is" plays the same role as "Answer:" in MB prompts — both are task-framing tokens. But in bare prompts, even at L20 the entity gets 25.6% because there are only 5 tokens competing for attention. In MB prompts, attention is diluted across 82 tokens, and "Answer:" — which is the strongest task-framing signal — absorbs 41.3%.
+
+### Diagnosis
+
+The L20 probability dip is **not distraction, not interference, but a structural property of the alternating attention architecture.** Even layers are task-framing layers. The MB prompt amplifies this effect because:
+
+1. "Answer:" is a stronger task-framing signal than " is" (it's an explicit instruction)
+2. The MB content (82 tokens) dilutes entity attention from 25.6% (bare) to 4.5% (MB)
+3. At L20, the model hasn't yet read the MB content — that happens at L19/L21
+
+The model deliberately delays MB content integration to odd layers. This is not a failure; it's the same two-phase cycle (frame → lookup → frame → lookup) running on a longer context.
+
+### Conclusions
+
+1. **The L20 dip is explained by the odd/even attention architecture.** Even layers frame the task; odd layers read content. "Answer:" acts as a super-copula at even layers.
+
+2. **MB answer token attention oscillates: 1.5% (L20) → 13.4% (L21) → 1.2% (L22) → 9.8% (L23).** The model reads the MB answer at odd layers only.
+
+3. **This explains why MB catches up at L21.** At L21, the model finally reads the MB content (13.4% to answer, 31.8% to other entries), processes it through the MoE FFN, and writes the fact to the residual stream. This is exactly one layer behind bare (which crystallizes at L20), explaining the slight probability lag.
+
+4. **"Answer:" serves a critical role in MB integration.** It provides the task-framing signal that tells the model "produce the answer now." Without it, the model might not know when to switch from MB reading to answer generation. This explains why the MB format includes explicit instruction text.
+
+---
+
 ## Part 6: Synthesis
 
-### The Five-Part Story
+### The Six-Part Story
 
 These experiments reveal a consistent architecture:
 
@@ -513,7 +592,11 @@ At L19 and L21, the prediction token focuses on the entity token (France, gold, 
 
 MB does NOT shift fact emergence earlier. Despite providing the answer explicitly in context, facts still crystallize at L21-23. The bare and MB residual streams start completely different (cosine distance 0.57 at L0) but converge monotonically to near-identical representations by L23 (distance 0.11). MB is actually *slower* at L20 (0.05% vs 14.8% bare), catching up at L21. MB provides a redundant computation pathway, not a shortcut.
 
-**6. Routing can be frozen at non-critical layers because facts don't depend on individual expert selection.**
+**6. The MB probability dip at L20 is explained by the odd/even attention architecture.**
+
+At even layers (L20, L22), attention focuses on "Answer:" (41-49%), the task-framing signal. At odd layers (L19, L21, L23), attention switches to MB content — the answer token jumps from 1.5% to 13.4% between L20 and L21 (9x increase). This is the same frame→lookup cycle seen in bare prompts (copula focus at L20, entity focus at L21), amplified by the explicit instruction text. The model reads MB content only at odd layers, explaining the one-layer delay.
+
+**7. Routing can be frozen at non-critical layers because facts don't depend on individual expert selection.**
 
 The minimum viable routing experiments show that 6-7 learned layers + memory bank injection = 100% fact preservation. The critical layers align with the crystallization zone: configs that include learned routing at L19+ succeed; configs that skip this zone fail.
 
@@ -609,4 +692,5 @@ Expert parameters account for ~85% of the 21B parameter model (~17.8B). With rou
 | 17 | layer_skip_emergence | 2 Feb | L20+L21 skip: 5/7 facts survive; robustness correlates with competitive margin |
 | 18 | attention_at_emergence | 2 Feb | Entity attention peaks at L19/L21 (1.3x); alternates with " is" focus at L20/L22 |
 | 19 | memory_bank_injection_point | 2 Feb | MB does NOT shift emergence; representations converge L16-L23; MB slower at L20 |
-| 20 | attention_head_ablation | -- | Designed, not run |
+| 20 | mb_attention_at_l20 | 2 Feb | L20 dip = odd/even alternation; "Answer:" absorbs 41% at L20; mb_answer 9x jump at L21 |
+| 21 | attention_head_ablation | -- | Designed, not run |
