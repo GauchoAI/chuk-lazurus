@@ -1,0 +1,191 @@
+# Residual Stream Dynamics Experiment
+#
+# Investigates geometric properties of the residual stream:
+# 1. Bypass Detection - easy problems cause less residual change than hard ones
+# 2. Residual Saturation - does the model converge gradually or in jumps?
+# 3. Information Flow - where does attention gather operands?
+# 4. Layer Subspaces - what directions do layers write to / read from?
+# 5. Bypass Validation - causal test: skip middle layers, compare easy vs hard
+
+model: "openai/gpt-oss-20b"
+
+analyses:
+  - bypass_detection
+  - residual_saturation
+  - information_flow
+  - layer_subspaces
+  - bypass_validation
+
+# =============================================================================
+# Analysis 1: Bypass Detection
+# =============================================================================
+# Hypothesis: When model uses lookup (easy math), residual stream changes LESS
+# through middle layers. When model computes (hard math), changes MORE.
+
+bypass_detection:
+  easy_prompts:
+    - "2 + 2 ="
+    - "5 * 5 ="
+    - "10 + 10 ="
+    - "3 * 3 ="
+    - "8 + 7 ="
+    - "6 * 4 ="
+    - "10 * 10 ="
+    - "9 + 1 ="
+    - "4 + 4 ="
+    - "7 * 7 ="
+  hard_prompts:
+    - "47 * 47 ="
+    - "89 * 73 ="
+    - "127 * 89 ="
+    - "234 + 567 ="
+    - "1024 - 389 ="
+    - "156 * 23 ="
+    - "347 + 896 ="
+    - "83 * 67 ="
+    - "512 - 178 ="
+    - "291 * 14 ="
+  factual_prompts:
+    - "The capital of France is"
+    - "Water boils at"
+    - "The largest planet is"
+    - "Shakespeare was born in"
+    - "The speed of light is approximately"
+    - "The chemical symbol for gold is"
+    - "The author of Romeo and Juliet is"
+    - "World War 2 ended in"
+
+# =============================================================================
+# Analysis 2: Residual Saturation
+# =============================================================================
+# Track how quickly the residual stream converges to its final state.
+# Look for discrete phase transitions vs gradual convergence.
+
+residual_saturation:
+  categories:
+    arithmetic:
+      - "127 * 89 ="
+      - "456 + 789 ="
+      - "23 * 45 ="
+      - "1000 - 357 ="
+      - "144 / 12 ="
+      - "67 + 238 ="
+      - "512 * 3 ="
+      - "99 - 47 ="
+    language:
+      - "The capital of France is"
+      - "A synonym for happy is"
+      - "The opposite of cold is"
+      - "Shakespeare wrote"
+      - "The largest planet is"
+      - "The speed of light is"
+      - "The author of Hamlet is"
+      - "The chemical symbol for water is"
+    code:
+      - "def fibonacci(n):"
+      - "import numpy as np"
+      - "class Database:"
+      - "for i in range(10):"
+      - "async def fetch_data():"
+      - "def sort_list(arr):"
+      - "try:"
+      - "return result"
+    reasoning:
+      - "If all cats are animals, and all animals breathe, then cats"
+      - "The day after Monday is"
+      - "If it rains, the ground gets wet. The ground is wet, so"
+      - "2, 4, 6, 8, the next number is"
+      - "North is opposite to"
+      - "If A > B and B > C, then A"
+      - "The sum of angles in a triangle is"
+      - "If today is Wednesday, yesterday was"
+
+# =============================================================================
+# Analysis 3: Cross-Position Information Flow
+# =============================================================================
+# For arithmetic prompts, track how the final position gathers information
+# from operand positions through the layers.
+
+information_flow:
+  prompts:
+    - prompt: "127 * 89 ="
+      operand_labels: ["127", "*", "89", "="]
+    - prompt: "456 + 789 ="
+      operand_labels: ["456", "+", "789", "="]
+    - prompt: "1000 - 357 ="
+      operand_labels: ["1000", "-", "357", "="]
+    - prompt: "83 * 67 ="
+      operand_labels: ["83", "*", "67", "="]
+    - prompt: "234 + 567 ="
+      operand_labels: ["234", "+", "567", "="]
+
+# =============================================================================
+# Analysis 4: Layer Subspace Communication
+# =============================================================================
+# Decompose per-layer residual updates via PCA to find dominant write
+# directions. Measure how aligned consecutive layers' updates are.
+
+layer_subspaces:
+  num_components: 10
+  prompts:
+    - "2 + 2 ="
+    - "127 * 89 ="
+    - "The capital of France is"
+    - "def fibonacci(n):"
+    - "A synonym for happy is"
+    - "Water boils at"
+    - "If A > B and B > C, then"
+    - "The opposite of cold is"
+    - "456 + 789 ="
+    - "import numpy as np"
+    - "Shakespeare was born in"
+    - "class Database:"
+    - "The largest planet is"
+    - "47 * 47 ="
+    - "The chemical symbol for gold is"
+    - "for i in range(10):"
+    - "3 * 3 ="
+    - "The speed of light is"
+    - "async def fetch_data():"
+    - "World War 2 ended in"
+
+# =============================================================================
+# Analysis 5: Bypass Validation (Causal)
+# =============================================================================
+# Skip middle layers via monkey-patching and check: do easy arithmetic
+# problems survive the skip better than hard ones?
+# This causally validates the bypass pattern from analysis 1.
+
+bypass_validation:
+  # Few-shot prefix to elicit arithmetic from base model
+  fewshot_prefix: "Math: 2+2=4, 5*5=25, 10+10=20, "
+
+  # Expressions (few-shot prefix + expr + "=" forms the prompt)
+  easy_exprs:
+    - "3*3"
+    - "4+4"
+    - "6*4"
+    - "8+7"
+    - "9+1"
+    - "7*7"
+    - "6+6"
+    - "5+3"
+    - "2*8"
+    - "10*10"
+  hard_exprs:
+    - "47*47"
+    - "89*73"
+    - "127*89"
+    - "156*23"
+    - "83*67"
+    - "234+567"
+    - "512-178"
+    - "347+896"
+    - "291*14"
+    - "1024-389"
+
+  # Layer ranges to skip (MoE bypassed, attention preserved)
+  skip_conditions:
+    skip_L10_L14:  [10, 11, 12, 13, 14]   # Bypass region (middle)
+    skip_L16_L20:  [16, 17, 18, 19, 20]   # Computation region (late)
+    skip_L0_L4:    [0, 1, 2, 3, 4]        # Input encoding (early - control)
