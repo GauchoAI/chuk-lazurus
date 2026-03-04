@@ -293,12 +293,19 @@ class CounterfactualIntervention:
         self._original_layers: dict[int, Any] = {}
 
     def _detect_structure(self) -> None:
-        """Detect model structure."""
+        """Detect model structure.
+
+        IMPORTANT: ``self._layers`` must be a *reference* to the actual
+        model layer list, **not** a copy.  ``intervened_forward`` swaps
+        entries in this list with ``InterventionWrapper`` objects; if
+        it were a copy the model's forward pass would never see the
+        wrappers and all interventions would silently be no-ops.
+        """
         if hasattr(self.model, "model") and hasattr(self.model.model, "layers"):
-            self._layers = list(self.model.model.layers)
+            self._layers = self.model.model.layers   # reference, NOT list()
             self._backbone = self.model.model
         elif hasattr(self.model, "layers"):
-            self._layers = list(self.model.layers)
+            self._layers = self.model.layers          # reference, NOT list()
             self._backbone = self.model
         else:
             raise ValueError("Cannot detect model layer structure")
@@ -534,6 +541,7 @@ class CounterfactualIntervention:
         target_token: str,
         layers: list[int] | None = None,
         effect_threshold: float = 0.1,
+        progress_callback: object | None = None,
     ) -> CausalTraceResult:
         """
         Trace where a target token's prediction is formed.
@@ -552,8 +560,8 @@ class CounterfactualIntervention:
         if layers is None:
             layers = list(range(self.num_layers))
 
-        # Get target token ID
-        target_id = self.tokenizer.encode(target_token)
+        # Get target token ID (add_special_tokens=False to avoid BOS)
+        target_id = self.tokenizer.encode(target_token, add_special_tokens=False)
         if isinstance(target_id, list):
             target_id = target_id[0] if target_id else 0
         elif hasattr(target_id, "tolist"):
@@ -583,6 +591,9 @@ class CounterfactualIntervention:
             effect = baseline_prob - ablated_prob
             layer_effects.append((layer_idx, effect))
 
+            if progress_callback is not None:
+                progress_callback(len(layer_effects), len(layers), layer_idx)
+
         # Find critical layers
         sorted_effects = sorted(layer_effects, key=lambda x: abs(x[1]), reverse=True)
         critical = [layer for layer, effect in sorted_effects if abs(effect) >= effect_threshold]
@@ -606,6 +617,7 @@ class CounterfactualIntervention:
         target_token: str,
         corrupt_prompt: str | None = None,
         layers: list[int] | None = None,
+        progress_callback: object | None = None,
     ) -> FullCausalTrace:
         """
         Full causal tracing with position × layer grid.
@@ -636,8 +648,8 @@ class CounterfactualIntervention:
             tok = self.tokenizer.decode([int(input_ids[0, i])])
             tokens.append(tok)
 
-        # Get target token ID
-        target_id = self.tokenizer.encode(target_token)
+        # Get target token ID (add_special_tokens=False to avoid BOS)
+        target_id = self.tokenizer.encode(target_token, add_special_tokens=False)
         if isinstance(target_id, list):
             target_id = target_id[0] if target_id else 0
 
@@ -695,6 +707,9 @@ class CounterfactualIntervention:
                 pos_effects.append(min(1.0, max(-1.0, effect)))
 
             effects.append(tuple(pos_effects))
+
+            if progress_callback is not None:
+                progress_callback(pos + 1, seq_len, len(layers))
 
         # Find critical positions and layers
         max_effects = [max(abs(e) for e in pos_effects) for pos_effects in effects]

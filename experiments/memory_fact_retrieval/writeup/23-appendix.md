@@ -40,3 +40,4 @@
 20. `memory_bank_lite` - Memory bank + degraded routing (fixed_alt+MB: 8/8 facts, skip_alt+MB: 6/8, counterfactual 100%)
 21. `layer_parity` - Even vs odd layers + L0 importance (L0 worth ~2 facts; best 12-layer: L0+spaced odds = 6/8; all configs 8/8 with MB)
 22. `layer_spacing` - How sparse can routing be (cliff at gap=3: 5/8→1/8; MB rescue gradient: 8/8 at gap=2, 4/8 at gap=8, 0/8 at gap>8)
+23. `minimum_viable_routing` - How few learned layers (L0 alone: 0/8; 7 layers: 8/8 MB; 6 tight: 8/8 MB; 6 wide: 2/8 MB; spacing > count)
