@@ -3409,6 +3409,13 @@ Example:
     )
     logit_lens_parser.set_defaults(func=lambda args: asyncio.run(introspect_logit_lens(args)))
 
+    # Serve subcommand — optional (requires chuk-lazarus[server])
+    try:
+        from chuk_lazarus.server.cli import add_serve_parser
+        add_serve_parser(subparsers)
+    except ImportError:
+        pass  # server deps not installed; serve command silently unavailable
+
     return parser
 
 
@@ -3433,6 +3440,14 @@ def main():
         parser.parse_args(["introspect", "--help"])
     elif args.command == "experiment" and getattr(args, "exp_command", None) is None:
         parser.parse_args(["experiment", "--help"])
+    elif args.command == "serve":
+        if not hasattr(args, "func"):
+            print(
+                "ERROR: Server dependencies not installed.\n"
+                "Install with: uv add 'chuk-lazarus[server]'",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
 
 if __name__ == "__main__":
