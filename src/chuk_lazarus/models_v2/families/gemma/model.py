@@ -359,6 +359,50 @@ class GemmaModel(Backbone):
             cache=new_cache,
         )
 
+    def forward_from_residual(
+        self,
+        residual: mx.array,
+        start_layer: int,
+        cache: list[Any] | None = None,
+    ) -> BackboneOutput:
+        """
+        Run layers [start_layer, num_layers) starting from an injected residual.
+
+        Used by BoundedKVEngine to rebuild the KV cache from a checkpoint residual.
+        Layers 0..start_layer-1 are skipped — the residual is assumed to be the
+        output of layer start_layer-1, already computed externally. Those layers'
+        cache entries are left as None; the caller must supply them separately if
+        single-token generation will use the full cache.
+
+        Useful when combined with standard prefill for layers 0..start_layer-1:
+          - standard prefill gives K,V for layers 0..C and residual at layer C
+          - forward_from_residual gives K,V for layers C..L
+          Together they cover all layers, with layers 0..C run twice in the worst
+          case. In practice the caller can optimise by splitting the layer loop.
+        """
+        h = residual
+        if cache is None:
+            cache = [None] * len(self.layers)
+
+        global_mask = self._create_attention_mask(h, None)
+        sliding_mask = (
+            self._create_attention_mask(h, None, window_size=self.sliding_window)
+            if self.sliding_window_pattern > 1
+            else None
+        )
+
+        new_cache: list = [None] * start_layer
+        for i in range(start_layer, len(self.layers)):
+            layer      = self.layers[i]
+            layer_cache = cache[i]
+            mask       = global_mask if self.config.is_global_layer(i) else sliding_mask
+            output     = layer(h, mask=mask, cache=layer_cache)
+            h          = output.hidden_states
+            new_cache.append(output.cache)
+
+        h = self.norm(h)
+        return BackboneOutput(last_hidden_state=h, hidden_states=None, cache=new_cache)
+
     def get_input_embeddings(self) -> nn.Module:
         return self.embed_tokens
 

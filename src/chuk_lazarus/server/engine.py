@@ -9,17 +9,23 @@ Design rules
 - Public surface is fully async.
 - ``_generate()`` is the private sync implementation — runs in a thread pool
   so it never blocks the event loop.
-- ``astream()`` bridges the synchronous ``generate_stream`` generator to an
+- ``astream()`` bridges the synchronous ``_stream_tokens`` generator to an
   async generator via an ``asyncio.Queue``.
+- ``_apply_template()`` formats messages (including tool definitions and tool
+  result turns) directly through the tokenizer's chat template.
+- ``_parse_tool_calls()`` detects ``<tool_call>…</tool_call>`` blocks in
+  model output and returns them as ``ToolCall`` instances.
 - Thread-safe: a threading.Lock guards model access for non-streaming calls.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
 import threading
-from typing import TYPE_CHECKING, AsyncGenerator
+from typing import TYPE_CHECKING, AsyncIterator
 
 from .schemas.internal import (
     FinishReason,
@@ -30,6 +36,9 @@ from .schemas.internal import (
     InternalUsage,
     MessageRole,
     StopReason,
+    Tool,
+    ToolCall,
+    ToolCallFunction,
 )
 
 if TYPE_CHECKING:
@@ -37,28 +46,156 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Gemma 3 and similar models wrap tool calls in XML-like tags.
+_TOOL_CALL_RE = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
+
+
+# ── Streaming token generator ─────────────────────────────────────────────────
+
+
+def _stream_tokens(model, tokenizer, prompt: str, config):
+    """Token-by-token streaming generator compatible with ModelOutput interface.
+
+    Mirrors the autoregressive loop in ``GemmaForCausalLM.generate()``:
+      - First call  : ``model(input_ids)``           → ModelOutput (no cache)
+      - Subsequent  : ``model(next_token, cache=…)``  → ModelOutput (with cache)
+
+    Yields decoded text chunks as they become non-empty.
+    """
+    import mlx.core as mx
+
+    from chuk_lazarus.inference.generation import get_stop_tokens
+
+    input_ids = tokenizer.encode(prompt, return_tensors="np")
+    input_ids = mx.array(input_ids)
+    stop_tokens = set(config.stop_tokens or get_stop_tokens(tokenizer))
+
+    accumulated: list[int] = []
+
+    # Full-prompt prefill
+    output = model(input_ids)
+    cache = output.cache
+
+    for _ in range(config.max_new_tokens):
+        logits = output.logits[:, -1, :]
+
+        if config.temperature == 0:
+            next_token = mx.argmax(logits, axis=-1, keepdims=True)
+        else:
+            probs = mx.softmax(logits / config.temperature, axis=-1)
+            next_token = mx.random.categorical(mx.log(probs + 1e-10))
+            next_token = mx.expand_dims(next_token, axis=-1)
+
+        mx.eval(next_token)
+        token_id = int(next_token[0, 0])
+
+        if token_id in stop_tokens:
+            break
+
+        accumulated.append(token_id)
+
+        text = tokenizer.decode(accumulated, skip_special_tokens=True)
+        if text:
+            yield text
+            accumulated = []
+
+        # Next step — single token with cache
+        output = model(next_token, cache=cache)
+        cache = output.cache
+        mx.eval(output.logits)
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _to_chat_history(messages: list[InternalMessage]):
-    """Convert internal messages to a ``ChatHistory`` instance."""
-    from chuk_lazarus.inference.chat import ChatHistory
+def _apply_template(tokenizer, request: InternalRequest) -> str:
+    """Format the request into a prompt string via the tokenizer's chat template.
 
-    history = ChatHistory()
-    for msg in messages:
-        if msg.role == MessageRole.SYSTEM:
-            history.add_system(msg.content)
-        elif msg.role == MessageRole.USER:
-            history.add_user(msg.content)
-        elif msg.role == MessageRole.ASSISTANT:
-            history.add_assistant(msg.content)
-    return history
+    Handles all message roles (system, user, assistant, tool) and injects
+    tool definitions when present so the model knows what it can call.
+    """
+    messages: list[dict] = []
+    for msg in request.messages:
+        entry: dict = {"role": msg.role.value}
+
+        # content may be None for assistant messages that only contain tool_calls
+        entry["content"] = msg.content
+
+        if msg.tool_call_id is not None:
+            entry["tool_call_id"] = msg.tool_call_id
+        if msg.name is not None:
+            entry["name"] = msg.name
+        if msg.tool_calls is not None:
+            entry["tool_calls"] = [
+                {
+                    "id": tc.id,
+                    "type": tc.type,
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments,
+                    },
+                }
+                for tc in msg.tool_calls
+            ]
+        messages.append(entry)
+
+    kwargs: dict = {"tokenize": False, "add_generation_prompt": True}
+    if request.tools:
+        kwargs["tools"] = [t.model_dump() for t in request.tools]
+
+    if hasattr(tokenizer, "apply_chat_template") and tokenizer.chat_template:
+        try:
+            return tokenizer.apply_chat_template(messages, **kwargs)
+        except Exception:
+            logger.warning(
+                "apply_chat_template failed with tools; falling back to basic template",
+                exc_info=True,
+            )
+            # Retry without tools kwarg as a fallback
+            try:
+                return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            except Exception:
+                pass
+
+    # Last-resort simple fallback
+    parts = []
+    for msg in request.messages:
+        role_label = msg.role.value.capitalize()
+        parts.append(f"{role_label}: {msg.content or ''}")
+    return "\n\n".join(parts) + "\n\nAssistant:"
+
+
+def _parse_tool_calls(text: str) -> tuple[str | None, list[ToolCall] | None]:
+    """Detect and extract ``<tool_call>`` blocks from model output.
+
+    Returns ``(cleaned_text, tool_calls)`` where ``cleaned_text`` is the text
+    with all tool-call blocks removed (None if nothing is left), and
+    ``tool_calls`` is a list of parsed ToolCall instances (None if none found).
+    """
+    tool_calls: list[ToolCall] = []
+
+    def _extract(match: re.Match) -> str:
+        try:
+            data = json.loads(match.group(1))
+            tool_calls.append(
+                ToolCall(
+                    function=ToolCallFunction(
+                        name=data["name"],
+                        arguments=json.dumps(data.get("arguments", {})),
+                    )
+                )
+            )
+        except (json.JSONDecodeError, KeyError):
+            logger.warning("Could not parse tool_call block: %s", match.group(0))
+        return ""
+
+    cleaned = _TOOL_CALL_RE.sub(_extract, text).strip()
+    return (cleaned or None, tool_calls or None)
 
 
 def _map_stop_reason(raw: str) -> FinishReason:
     """Map GenerationResult.stop_reason to FinishReason."""
-    if raw in (StopReason.EOS, StopReason.STOP_TOKEN, "eos", "stop_token", "stop"):
+    if raw in (StopReason.EOS, StopReason.STOP_TOKEN, StopReason.PLUGIN):
         return FinishReason.STOP
     return FinishReason.LENGTH
 
@@ -72,7 +209,7 @@ class ModelEngine:
 
     Usage::
 
-        engine = await ModelEngine.load("google/gemma-3-1b-it")
+        engine = await ModelEngine.load("google/gemma-3-4b-it")
         response = await engine.agenerate(request)
 
         async for chunk in engine.astream(request):
@@ -95,7 +232,7 @@ class ModelEngine:
     @classmethod
     async def load(cls, model_id: str, verbose: bool = True) -> ModelEngine:
         """Async factory — loads the model in a thread pool."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, lambda: cls._load_sync(model_id, verbose))
 
     @classmethod
@@ -109,20 +246,35 @@ class ModelEngine:
 
     def _generate(self, request: InternalRequest) -> InternalResponse:
         """Blocking generation — must be called from a thread pool."""
-        history = _to_chat_history(request.messages)
+        from chuk_lazarus.inference.generation import GenerationConfig
+
+        prompt = _apply_template(self._pipeline.tokenizer, request)
+        config = GenerationConfig(
+            max_new_tokens=request.max_tokens,
+            temperature=request.temperature,
+            top_p=request.top_p,
+        )
 
         with self._lock:
-            result = self._pipeline.chat_with_history(
-                history,
-                max_new_tokens=request.max_tokens,
-                temperature=request.temperature,
-            )
+            result = self._pipeline.generate(prompt, config=config)
 
         usage = InternalUsage(
             prompt_tokens=result.stats.input_tokens,
             completion_tokens=result.stats.output_tokens,
             total_tokens=result.stats.input_tokens + result.stats.output_tokens,
         )
+
+        # Detect tool calls in the output
+        cleaned_text, tool_calls = _parse_tool_calls(result.text)
+
+        if tool_calls:
+            return InternalResponse(
+                content=cleaned_text,
+                model=self._model_id,
+                finish_reason=FinishReason.TOOL_CALLS,
+                usage=usage,
+                tool_calls=tool_calls,
+            )
 
         return InternalResponse(
             content=result.text,
@@ -135,37 +287,34 @@ class ModelEngine:
 
     async def agenerate(self, request: InternalRequest) -> InternalResponse:
         """Non-streaming generation (async, runs in thread pool)."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, lambda: self._generate(request))
 
     async def astream(
         self, request: InternalRequest
-    ) -> AsyncGenerator[InternalChunk, None]:
+    ) -> AsyncIterator[InternalChunk]:
         """
         Streaming generation — yields InternalChunk instances.
 
-        Bridges the synchronous ``generate_stream`` generator to an async
-        generator via an ``asyncio.Queue``.  The last yielded chunk always
-        has a non-None ``finish_reason``.
+        Text chunks are streamed token-by-token via ``_stream_tokens``.
+        When the full output contains a ``<tool_call>`` block the accumulated
+        text is re-parsed and a final chunk carrying ``tool_calls`` is yielded.
         """
-        from chuk_lazarus.inference.chat import format_history
-        from chuk_lazarus.inference.generation import GenerationConfig, generate_stream
+        from chuk_lazarus.inference.generation import GenerationConfig
 
-        history = _to_chat_history(request.messages)
-        prompt = format_history(self._pipeline.tokenizer, history)
-
+        prompt = _apply_template(self._pipeline.tokenizer, request)
         config = GenerationConfig(
             max_new_tokens=request.max_tokens,
             temperature=request.temperature,
             top_p=request.top_p,
         )
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         queue: asyncio.Queue[InternalChunk | BaseException | None] = asyncio.Queue()
 
         def _run_sync() -> None:
             try:
-                for text in generate_stream(
+                for text in _stream_tokens(
                     self._pipeline.model,
                     self._pipeline.tokenizer,
                     prompt,
@@ -182,11 +331,24 @@ class ModelEngine:
         thread = threading.Thread(target=_run_sync, daemon=True)
         thread.start()
 
+        accumulated_text = ""
+
         while True:
             item = await queue.get()
             if item is None:
-                yield InternalChunk(content="", finish_reason=FinishReason.STOP)
-                return
+                break
             if isinstance(item, BaseException):
                 raise item
+            accumulated_text += item.content or ""
             yield item
+
+        # After streaming completes, check for tool calls in accumulated output
+        cleaned_text, tool_calls = _parse_tool_calls(accumulated_text)
+        if tool_calls:
+            yield InternalChunk(
+                content=None,
+                finish_reason=FinishReason.TOOL_CALLS,
+                tool_calls=tool_calls,
+            )
+        else:
+            yield InternalChunk(content=None, finish_reason=FinishReason.STOP)

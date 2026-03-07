@@ -17,6 +17,10 @@ from .internal import (
     InternalUsage,
     MessageRole,
     StopReason,
+    Tool,
+    ToolCall,
+    ToolCallFunction,
+    ToolFunctionDef,
 )
 
 __all__ = [
@@ -28,4 +32,8 @@ __all__ = [
     "InternalUsage",
     "MessageRole",
     "StopReason",
+    "Tool",
+    "ToolCall",
+    "ToolCallFunction",
+    "ToolFunctionDef",
 ]

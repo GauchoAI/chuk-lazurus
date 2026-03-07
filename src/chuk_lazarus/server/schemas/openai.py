@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import time
 import uuid
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -25,6 +25,10 @@ from .internal import (
     InternalRequest,
     InternalResponse,
     MessageRole,
+    Tool,
+    ToolCall,
+    ToolCallFunction,
+    ToolFunctionDef,
 )
 
 # ── Shared constants ──────────────────────────────────────────────────────────
@@ -44,8 +48,56 @@ _ROLE_MAP: dict[str, MessageRole] = {
     "system": MessageRole.SYSTEM,
     "user": MessageRole.USER,
     "assistant": MessageRole.ASSISTANT,
-    # unknown roles fall back to USER
+    "tool": MessageRole.TOOL,
 }
+
+
+# ── Tool definition wire types ────────────────────────────────────────────────
+
+
+class OpenAIFunctionDef(BaseModel):
+    name: str
+    description: str | None = None
+    parameters: dict[str, Any] | None = None  # JSON Schema
+
+    def to_internal(self) -> ToolFunctionDef:
+        return ToolFunctionDef(
+            name=self.name,
+            description=self.description,
+            parameters=self.parameters,
+        )
+
+
+class OpenAITool(BaseModel):
+    type: Literal["function"] = "function"
+    function: OpenAIFunctionDef
+
+    def to_internal(self) -> Tool:
+        return Tool(type=self.type, function=self.function.to_internal())
+
+
+# ── Tool call wire types (in responses) ───────────────────────────────────────
+
+
+class OpenAIToolCallFunction(BaseModel):
+    name: str
+    arguments: str  # JSON-encoded string
+
+
+class OpenAIToolCall(BaseModel):
+    id: str
+    type: Literal["function"] = "function"
+    function: OpenAIToolCallFunction
+
+    @classmethod
+    def from_internal(cls, tc: ToolCall) -> OpenAIToolCall:
+        return cls(
+            id=tc.id,
+            function=OpenAIToolCallFunction(
+                name=tc.function.name,
+                arguments=tc.function.arguments,
+            ),
+        )
 
 
 # ── Request ───────────────────────────────────────────────────────────────────
@@ -55,13 +107,30 @@ class OpenAIMessage(BaseModel):
     """A single message in the OpenAI chat format."""
 
     role: OpenAIRole
-    content: str
+    content: str | None = None
     name: str | None = None
+    tool_call_id: str | None = None
+    tool_calls: list[OpenAIToolCall] | None = None
 
     def to_internal(self) -> InternalMessage:
+        internal_tool_calls: list[ToolCall] | None = None
+        if self.tool_calls:
+            internal_tool_calls = [
+                ToolCall(
+                    id=tc.id,
+                    function=ToolCallFunction(
+                        name=tc.function.name,
+                        arguments=tc.function.arguments,
+                    ),
+                )
+                for tc in self.tool_calls
+            ]
         return InternalMessage(
             role=_ROLE_MAP.get(self.role, MessageRole.USER),
             content=self.content,
+            name=self.name,
+            tool_call_id=self.tool_call_id,
+            tool_calls=internal_tool_calls,
         )
 
 
@@ -75,6 +144,8 @@ class ChatCompletionRequest(BaseModel):
     top_p: float | None = Field(None, ge=0.0, le=1.0)
     stream: bool = False
     stop: str | list[str] | None = None
+    tools: list[OpenAITool] | None = None
+    tool_choice: str | dict | None = None  # "auto", "none", or specific function
     n: int = Field(1, description="Only n=1 is supported")
 
     # Accepted but not used for local inference
@@ -87,6 +158,10 @@ class ChatCompletionRequest(BaseModel):
         if self.stop is not None:
             stop = [self.stop] if isinstance(self.stop, str) else self.stop
 
+        internal_tools: list[Tool] | None = None
+        if self.tools:
+            internal_tools = [t.to_internal() for t in self.tools]
+
         return InternalRequest(
             messages=[m.to_internal() for m in self.messages],
             model=self.model,
@@ -95,6 +170,7 @@ class ChatCompletionRequest(BaseModel):
             top_p=self.top_p if self.top_p is not None else 0.9,
             stream=self.stream,
             stop=stop,
+            tools=internal_tools,
         )
 
 
@@ -109,7 +185,8 @@ class OpenAIUsage(BaseModel):
 
 class OpenAIResponseMessage(BaseModel):
     role: Literal["assistant"] = "assistant"
-    content: str
+    content: str | None = None
+    tool_calls: list[OpenAIToolCall] | None = None
 
 
 class ChatCompletionChoice(BaseModel):
@@ -129,11 +206,19 @@ class ChatCompletionResponse(BaseModel):
 
     @classmethod
     def from_internal(cls, response: InternalResponse) -> ChatCompletionResponse:
+        tool_calls = (
+            [OpenAIToolCall.from_internal(tc) for tc in response.tool_calls]
+            if response.tool_calls
+            else None
+        )
         return cls(
             model=response.model,
             choices=[
                 ChatCompletionChoice(
-                    message=OpenAIResponseMessage(content=response.content),
+                    message=OpenAIResponseMessage(
+                        content=response.content,
+                        tool_calls=tool_calls,
+                    ),
                     finish_reason=response.finish_reason,
                 )
             ],
@@ -148,11 +233,21 @@ class ChatCompletionResponse(BaseModel):
 # ── Streaming chunk ───────────────────────────────────────────────────────────
 
 
+class ToolCallDelta(BaseModel):
+    """Incremental tool call delta for streaming."""
+
+    index: int = 0
+    id: str | None = None
+    type: Literal["function"] | None = None
+    function: OpenAIToolCallFunction | None = None
+
+
 class DeltaMessage(BaseModel):
     """Delta content inside a streaming chunk."""
 
     role: Literal["assistant"] | None = None
     content: str | None = None
+    tool_calls: list[ToolCallDelta] | None = None
 
 
 class StreamingChoice(BaseModel):
@@ -193,6 +288,37 @@ class ChatCompletionChunk(BaseModel):
             created=created,
             model=model,
             choices=[StreamingChoice(delta=DeltaMessage(content=content))],
+        )
+
+    @classmethod
+    def tool_call_chunk(
+        cls,
+        chunk_id: str,
+        created: int,
+        model: str,
+        tool_calls: list[ToolCall],
+    ) -> ChatCompletionChunk:
+        """Chunk announcing tool calls (no text content)."""
+        deltas = [
+            ToolCallDelta(
+                index=i,
+                id=tc.id,
+                type="function",
+                function=OpenAIToolCallFunction(
+                    name=tc.function.name,
+                    arguments=tc.function.arguments,
+                ),
+            )
+            for i, tc in enumerate(tool_calls)
+        ]
+        return cls(
+            id=chunk_id,
+            created=created,
+            model=model,
+            choices=[StreamingChoice(
+                delta=DeltaMessage(tool_calls=deltas),
+                finish_reason=FinishReason.TOOL_CALLS,
+            )],
         )
 
     @classmethod

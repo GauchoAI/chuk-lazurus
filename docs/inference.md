@@ -429,8 +429,44 @@ uv run python examples/inference/starcoder2_inference.py --prompt "def fibonacci
 uv run python examples/inference/starcoder2_inference.py --model starcoder2-7b
 ```
 
+## Serving Models
+
+To expose a model over HTTP as an OpenAI-compatible API — for use with mcp-cli, LangChain, the `openai` SDK, or any other OpenAI-compatible client — start the built-in inference server:
+
+```bash
+# Requires the server extra
+uv add "chuk-lazarus[server]"
+
+lazarus serve --model google/gemma-3-4b-it
+```
+
+The server is ready at `http://localhost:8080/v1`. From there:
+
+```bash
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "google/gemma-3-4b-it", "messages": [{"role": "user", "content": "Hello!"}]}'
+```
+
+Or use the Python client library:
+
+```python
+from chuk_lazarus.client import LazarusClient, ChatMessage, ClientRole
+
+with LazarusClient() as client:
+    response = client.chat(
+        model="google/gemma-3-4b-it",
+        messages=[ChatMessage(role=ClientRole.USER, content="Hello!")],
+    )
+    print(response.content)
+```
+
+See [server.md](server.md) for the full server guide and [client.md](client.md) for the client library.
+
 ## See Also
 
 - [Models Guide](models.md) - Architecture details
 - [Training Guide](training.md) - Fine-tuning models
+- [Inference Server](server.md) - OpenAI-compatible HTTP server
+- [Client Library](client.md) - Python client for the server
 - [Examples](../examples/inference/) - Working inference examples

@@ -26,11 +26,17 @@ from typing import TYPE_CHECKING
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 if TYPE_CHECKING:
     from .engine import ModelEngine
 
 logger = logging.getLogger(__name__)
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+_BEARER_PREFIX = "Bearer "
+_PUBLIC_PATHS = frozenset({"/health", "/docs", "/openapi.json", "/redoc"})
 
 
 # ── Protocol enum ─────────────────────────────────────────────────────────────
@@ -44,7 +50,7 @@ class Protocol(str, Enum):
     ANTHROPIC = "anthropic"
 
 
-# ── Error response schema ─────────────────────────────────────────────────────
+# ── Response models ───────────────────────────────────────────────────────────
 
 
 class ErrorDetail(str, Enum):
@@ -53,11 +59,24 @@ class ErrorDetail(str, Enum):
     INTERNAL = "internal_error"
 
 
+class ErrorBody(BaseModel):
+    message: str
+    type: ErrorDetail
+
+
+class ErrorResponse(BaseModel):
+    error: ErrorBody
+
+
+class HealthResponse(BaseModel):
+    status: str
+    model: str
+    protocols: list[str]
+
+
 def _error_response(message: str, detail: ErrorDetail, http_status: int) -> JSONResponse:
-    return JSONResponse(
-        status_code=http_status,
-        content={"error": {"message": message, "type": detail.value}},
-    )
+    body = ErrorResponse(error=ErrorBody(message=message, type=detail))
+    return JSONResponse(status_code=http_status, content=body.model_dump())
 
 
 # ── Auth middleware ────────────────────────────────────────────────────────────
@@ -67,18 +86,17 @@ def _make_auth_middleware(api_key: str):
     """Return a Starlette middleware callable that checks the Bearer token."""
 
     async def auth_middleware(request: Request, call_next):
-        # Health and docs endpoints are always public
-        if request.url.path in ("/health", "/docs", "/openapi.json", "/redoc"):
+        if request.url.path in _PUBLIC_PATHS:
             return await call_next(request)
 
         auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
+        if not auth_header.startswith(_BEARER_PREFIX):
             return _error_response(
                 "Missing or malformed Authorization header",
                 ErrorDetail.UNAUTHORIZED,
                 status.HTTP_401_UNAUTHORIZED,
             )
-        token = auth_header.removeprefix("Bearer ").strip()
+        token = auth_header.removeprefix(_BEARER_PREFIX).strip()
         if token != api_key:
             return _error_response(
                 "Invalid API key",
@@ -141,13 +159,13 @@ def create_app(
         app.middleware("http")(_make_auth_middleware(api_key))
 
     # ── Health ─────────────────────────────────────────────────────────────
-    @app.get("/health", tags=["Meta"])
-    async def health() -> dict:
-        return {
-            "status": "ok",
-            "model": engine.model_id,
-            "protocols": [p.value for p in protocols],
-        }
+    @app.get("/health", response_model=HealthResponse, tags=["Meta"])
+    async def health() -> HealthResponse:
+        return HealthResponse(
+            status="ok",
+            model=engine.model_id,
+            protocols=[p.value for p in protocols],
+        )
 
     # ── Protocol routers ───────────────────────────────────────────────────
     if Protocol.OPENAI in protocols:
