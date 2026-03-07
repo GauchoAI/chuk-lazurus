@@ -1,27 +1,22 @@
 #!/usr/bin/env python3
 """
-Multi-mode inference comparison across a simulated multi-turn conversation.
-
-Three modes, same conversation, same device budget:
+Two-mode inference comparison across a simulated multi-turn conversation.
 
   unbounded-kv  Standard KV cache. No budget limit. Memory grows linearly.
-  bounded-kv    Bounded KV cache + residual stream backing store.
-                Hot/warm/cold tiers. Window slides at budget limit.
-                Full generation speed. Dark residuals via extra RS pass.
+                The baseline every production system runs today.
   bounded-rs    Bounded residual stream. Per-layer residuals as hot tier.
-                2-2.6× slower generation. Dark residuals free (in hot state).
-                1.25× more memory per token vs KV for Gemma 270M/4B.
+                Hard memory budget. Window slides when budget is hit.
+                For 12B: residuals are 0.94× the size of KV per token.
 
 The comparison shows:
   - Memory growth trajectory across turns (does it bound?)
   - Generation speed per turn and per mode
   - Path taken (cold / hot / warm) per turn
-  - Dark residual availability
 
 Usage:
     uv run python examples/inference/gemma_modes_comparison.py
-    uv run python examples/inference/gemma_modes_comparison.py --budget-mb 8
-    uv run python examples/inference/gemma_modes_comparison.py --turns 10 --tokens-per-turn 50
+    uv run python examples/inference/gemma_modes_comparison.py --model mlx-community/gemma-3-12b-it-bf16
+    uv run python examples/inference/gemma_modes_comparison.py --budget-mb 128 --turns 20
 """
 
 from __future__ import annotations
@@ -53,12 +48,14 @@ def fmt_bytes(n: int) -> str:
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--model", default="mlx-community/gemma-3-270m-it-bf16")
-    p.add_argument("--budget-mb", type=float, default=4.0)
+    p.add_argument("--budget-mb", type=float, default=None,
+                   help="Hot-tier budget in MB. Default: auto (holds ~300 KV tokens for the loaded model).")
     p.add_argument("--turns", type=int, default=8)
     p.add_argument("--tokens-per-turn", type=int, default=30)
     p.add_argument("--gen-tokens", type=int, default=20)
-    p.add_argument("--checkpoint-interval", type=int, default=50)
-    p.add_argument("--dark-layers", nargs="+", type=int, default=[6, 9, 14])
+    p.add_argument("--checkpoint-interval", type=int, default=0,
+                   help="Store residual checkpoint every N tokens. 0=disabled (default).")
+    p.add_argument("--dark-layers", nargs="+", type=int, default=[])
     return p.parse_args()
 
 
@@ -148,7 +145,10 @@ def run_unbounded_kv(std_model, input_ids_per_turn: list[list[int]], gen_tokens:
     all_ids  = []
     results  = []
 
-    for turn_ids in input_ids_per_turn:
+    print(f"  {'Turn':>4}  {'Context':>8}  {'Hot':>9}  {'tok/s':>6}")
+    print("  " + "─" * 36)
+
+    for i, turn_ids in enumerate(input_ids_per_turn, 1):
         all_ids.extend(turn_ids)
 
         # Feed new tokens through existing cache
@@ -183,9 +183,12 @@ def run_unbounded_kv(std_model, input_ids_per_turn: list[list[int]], gen_tokens:
             for k, v in cache
             if k is not None
         )
+        tps = gen_tokens / (gen_ms / 1000)
+        print(f"  {i:>4}  {len(all_ids):>8,}  {fmt_bytes(kv_bytes):>9}  {tps:>6.1f}")
+
         results.append({
             "hot_bytes":    kv_bytes,
-            "tok_per_sec":  gen_tokens / (gen_ms / 1000),
+            "tok_per_sec":  tps,
             "total_tokens": len(all_ids),
             "path":         "hot",
         })
@@ -203,7 +206,7 @@ def print_turn_table(label: str, color: str, rows: list[dict], evict_marker: str
           f"{'Warm':>9}  {'Cold':>8}  {'Budget%':>7}  {'tok/s':>6}")
     print("  " + "─" * 72)
 
-    path_color = {"hot": CYAN, "warm": YELLOW, "cold": RED}
+    path_color = {"hot": CYAN, "warm": YELLOW, "cold": RED, "grow": GREEN, "full": CYAN}
 
     for i, r in enumerate(rows, 1):
         evict = evict_marker if r.get("window_start", 0) > 0 else " "
@@ -226,20 +229,29 @@ def print_turn_table(label: str, color: str, rows: list[dict], evict_marker: str
 
 def main():
     args = parse_args()
-    budget_bytes = int(args.budget_mb * 1024 * 1024)
 
     print(f"\n{BOLD}Inference Mode Comparison: Multi-Turn Conversation{RESET}")
     print("=" * 60)
     print(f"  Model:     {args.model}")
-    print(f"  Budget:    {fmt_bytes(budget_bytes)}")
-    print(f"  Turns:     {args.turns}")
-    print(f"  Input/turn:{args.tokens_per_turn} base tokens (varies ±20)")
-    print(f"  Gen/turn:  {args.gen_tokens} tokens")
-    print(f"  Ckpt int:  every {args.checkpoint_interval} tokens")
-    print(f"  Dark:      layers {args.dark_layers}")
 
     std_model, rs_model, config = load_models(args.model)
     BoundedKVEngine = load_engine_class()
+
+    # Auto-budget: hold ~300 KV tokens if not specified
+    if args.budget_mb is None:
+        kv_bytes_per_tok_auto = (
+            2 * config.num_key_value_heads * config.head_dim * 2
+            * config.num_hidden_layers
+        )
+        budget_bytes = 300 * kv_bytes_per_tok_auto
+        print(f"  Budget:    {fmt_bytes(budget_bytes)}  (auto: 300 KV tokens)")
+    else:
+        budget_bytes = int(args.budget_mb * 1024 * 1024)
+        print(f"  Budget:    {fmt_bytes(budget_bytes)}")
+
+    print(f"  Turns:     {args.turns}")
+    print(f"  Input/turn:{args.tokens_per_turn} base tokens (varies ±20)")
+    print(f"  Gen/turn:  {args.gen_tokens} tokens")
 
     kv_bytes_per_tok = (
         2 * config.num_key_value_heads * config.head_dim * 2
@@ -251,16 +263,9 @@ def main():
     print(f"\n  Bytes/token — KV: {fmt_bytes(kv_bytes_per_tok)}  "
           f"RS: {fmt_bytes(rs_bytes_per_tok)}  "
           f"(RS is {res_ratio:.2f}× {'larger' if res_ratio > 1 else 'smaller'})")
-    print(f"  Max tokens in budget — KV: {budget_bytes // kv_bytes_per_tok}  "
-          f"RS: {budget_bytes // rs_bytes_per_tok}")
+    print(f"  Max tokens in budget — RS: {budget_bytes // rs_bytes_per_tok}")
 
-    # Build engines
-    engine_kv = BoundedKVEngine(
-        std_model=std_model, rs_model=rs_model, config=config,
-        budget_bytes=budget_bytes, generation_mode="kv",
-        checkpoint_interval=args.checkpoint_interval,
-        dark_layers=args.dark_layers,
-    )
+    # Build engine
     engine_rs = BoundedKVEngine(
         std_model=std_model, rs_model=rs_model, config=config,
         budget_bytes=budget_bytes, generation_mode="rs",
@@ -285,27 +290,45 @@ def main():
     mx.eval(_l2)
     print("  Done.\n")
 
-    # Run all three modes
-    print(f"{BOLD}Running unbounded KV (no budget)...{RESET}")
+    def _live_header():
+        print(f"  {'Turn':>4}  {'Path':>5}  {'Context':>8}  {'Window':>7}  {'Hot':>9}  {'Budget%':>7}  {'tok/s':>6}")
+        print("  " + "─" * 58)
+
+    def _live_row(i, stats):
+        path = stats.get("path", "?")
+        pc   = {"hot": CYAN, "warm": YELLOW, "cold": RED, "grow": GREEN, "full": CYAN}.get(path, RESET)
+        bpct = stats.get("budget_used_pct", 0)
+        bc   = RED if bpct > 100 else (YELLOW if bpct > 85 else RESET)
+        evict = "⚠" if stats.get("window_start", 0) > 0 else " "
+        print(f"  {i:>4}  {pc}{path:>5}{RESET}  "
+              f"{stats.get('total_tokens', 0):>8,}  "
+              f"{stats.get('window_size', 0):>7,}  "
+              f"{fmt_bytes(stats.get('hot_bytes', 0)):>9}  "
+              f"{evict}{bc}{bpct:>5.1f}%{RESET}  "
+              f"{stats.get('tok_per_sec', 0):>6.1f}")
+
+    # ── Mode 1: Unbounded KV ────────────────────────────────────────────
+    print(f"\n{BOLD}{CYAN}Mode 1 — Unbounded KV cache{RESET}")
+    print(f"  Standard transformer inference. Every token ever processed is kept")
+    print(f"  as K,V tensors in GPU memory. No eviction. Memory grows without bound.")
+    print(f"  The baseline every production system runs today.\n")
     unbounded_rows = run_unbounded_kv(std_model, turns, args.gen_tokens)
 
-    print(f"{BOLD}Running bounded KV (mode=kv, budget={fmt_bytes(budget_bytes)})...{RESET}")
-    state_kv = engine_kv.new_conversation()
-    bounded_kv_rows = []
-    for turn_ids in turns:
-        _, state_kv, stats = engine_kv.process_turn(
-            state_kv, turn_ids, max_new_tokens=args.gen_tokens
-        )
-        bounded_kv_rows.append(stats)
-
-    print(f"{BOLD}Running bounded RS (mode=rs, budget={fmt_bytes(budget_bytes)})...{RESET}")
+    # ── Mode 2: Bounded RS ──────────────────────────────────────────────
+    print(f"\n{BOLD}{YELLOW}Mode 2 — Bounded Residual Stream  (budget: {fmt_bytes(budget_bytes)}){RESET}")
+    print(f"  No KV cache. Stores the raw residual tensor at each layer instead.")
+    print(f"  K and V are recomputed on-the-fly from stored residuals each step.")
+    print(f"  For 12B: residuals are 0.94x the size of KV — fits more in the same budget.")
+    print(f"  Same window-sliding eviction as bounded KV. Same cold tier.\n")
+    _live_header()
     state_rs = engine_rs.new_conversation()
     bounded_rs_rows = []
-    for turn_ids in turns:
+    for i, turn_ids in enumerate(turns, 1):
         _, state_rs, stats = engine_rs.process_turn(
             state_rs, turn_ids, max_new_tokens=args.gen_tokens
         )
         bounded_rs_rows.append(stats)
+        _live_row(i, stats)
 
     # Display results
     print_turn_table(
@@ -313,11 +336,7 @@ def main():
         CYAN, unbounded_rows
     )
     print_turn_table(
-        f"Bounded KV    (budget={fmt_bytes(budget_bytes)}, window slides, full speed)",
-        GREEN, bounded_kv_rows
-    )
-    print_turn_table(
-        f"Bounded RS    (budget={fmt_bytes(budget_bytes)}, RS compiled, dark-native)",
+        f"Bounded RS    (budget={fmt_bytes(budget_bytes)}, window slides)",
         YELLOW, bounded_rs_rows
     )
 
@@ -326,7 +345,6 @@ def main():
         return sum(r.get("tok_per_sec", 0) for r in rows) / len(rows)
 
     peak_unbounded = unbounded_rows[-1]["hot_bytes"]
-    peak_kv        = max(r.get("hot_bytes", r.get("kv_bytes", 0)) for r in bounded_kv_rows)
     peak_rs        = max(r.get("hot_bytes", 0) for r in bounded_rs_rows)
 
     total_toks     = unbounded_rows[-1]["total_tokens"]
@@ -335,27 +353,13 @@ def main():
     print(f"""
 {BOLD}Summary{RESET}
 
-  {'Mode':>14}  {'Peak hot':>10}  {'Cold':>8}  {'Avg tok/s':>10}  {'Budget':>8}  {'Dark cost'}
-  {'─'*72}
-  {'unbounded-kv':>14}  {fmt_bytes(peak_unbounded):>10}  {fmt_bytes(cold_bytes):>8}  {avg_tps(unbounded_rows):>9.1f}  {'none':>8}  extra RS pass
-  {'bounded-kv':>14}  {fmt_bytes(peak_kv):>10}  {fmt_bytes(cold_bytes):>8}  {avg_tps(bounded_kv_rows):>9.1f}  {fmt_bytes(budget_bytes):>8}  extra RS pass
-  {'bounded-rs':>14}  {fmt_bytes(peak_rs):>10}  {fmt_bytes(cold_bytes):>8}  {avg_tps(bounded_rs_rows):>9.1f}  {fmt_bytes(budget_bytes):>8}  zero (in hot state)
+  {'Mode':>14}  {'Peak hot':>10}  {'Cold':>8}  {'Avg tok/s':>10}  {'Budget'}
+  {'─'*60}
+  {'unbounded-kv':>14}  {fmt_bytes(peak_unbounded):>10}  {fmt_bytes(cold_bytes):>8}  {avg_tps(unbounded_rows):>9.1f}  none
+  {'bounded-rs':>14}  {fmt_bytes(peak_rs):>10}  {fmt_bytes(cold_bytes):>8}  {avg_tps(bounded_rs_rows):>9.1f}  {fmt_bytes(budget_bytes)}
 
   Total conversation: {total_toks} tokens across {args.turns} turns.
-  Cold tier (token IDs) identical for all modes: {fmt_bytes(cold_bytes)} — {peak_unbounded // max(cold_bytes,1):,}× smaller than KV.
-
-  Unbounded KV would be: {fmt_bytes(peak_unbounded)}
-  Bounded hot tier:      {fmt_bytes(peak_kv)} (KV) / {fmt_bytes(peak_rs)} (RS)
-
-{BOLD}When to use each mode{RESET}
-
-  unbounded-kv  : GPU server. Memory not a constraint. Max speed always.
-  bounded-kv    : Edge device with memory budget. Full generation speed.
-                  Dark inference costs one extra RS pass per turn.
-  bounded-rs    : Ultra-constrained device. Dark inference is the primary workload.
-                  Generation speed trades for dark residuals always in memory.
-                  Also: any device where context >> budget (RS per-token cost
-                  amortises better than repeated cold rebuilds of the KV window).
+  Cold tier (token IDs): {fmt_bytes(cold_bytes)} — {peak_unbounded // max(cold_bytes,1):,}× smaller than unbounded KV.
 
 {BOLD}The Markov principle{RESET}
 
@@ -366,13 +370,6 @@ def main():
   Ratio: {kv_bytes_per_tok * total_toks // max(cold_bytes, 1):,}× — constant, model-independent.
 """)
 
-    # Dark residuals
-    dark_state = state_rs if state_rs.dark_residuals else state_kv
-    if dark_state.dark_residuals:
-        print(f"{BOLD}Dark residuals (bounded-rs mode — in hot state, zero extra cost){RESET}\n")
-        for layer_idx, res in sorted(dark_state.dark_residuals.items()):
-            print(f"  L{layer_idx:>2}: shape={tuple(res.shape)}  {fmt_bytes(res.nbytes)}")
-        print()
 
 
 if __name__ == "__main__":

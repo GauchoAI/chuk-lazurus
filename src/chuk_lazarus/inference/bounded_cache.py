@@ -188,7 +188,9 @@ class BoundedKVEngine:
         t0 = time.perf_counter()
 
         state.token_ids.extend(new_token_ids)
-        state = self._enforce_budget(state)
+        # Reserve headroom for tokens we're about to generate so the hot tier
+        # stays within budget after generation, not just before it.
+        state = self._enforce_budget(state, headroom=max_new_tokens)
 
         path, state, last_out = self._ensure_hot_state(state)
 
@@ -241,11 +243,12 @@ class BoundedKVEngine:
     # Budget enforcement
     # ------------------------------------------------------------------
 
-    def _enforce_budget(self, state: ConversationState) -> ConversationState:
-        if state.window_size <= self.max_hot_tokens:
+    def _enforce_budget(self, state: ConversationState, headroom: int = 0) -> ConversationState:
+        effective_max = max(1, self.max_hot_tokens - headroom)
+        if state.window_size <= effective_max:
             return state
 
-        new_window_start = state.total_tokens - self.max_hot_tokens
+        new_window_start = state.total_tokens - effective_max
         if new_window_start <= state.window_start:
             return state
 
@@ -338,22 +341,15 @@ class BoundedKVEngine:
         """
         Bring RS hot state up to date with the full active window.
 
-        RS hot state = (logits, stored_residuals, seq_len).
-        Unlike KV, stored_residuals can't be extended incrementally without
-        re-running the new tokens through all layers. So the hot path
-        re-prefills all uncached tokens using the compiled RS generator.
+        RS always does a full prefill of the active window each turn —
+        per-layer residuals cannot be extended incrementally.
 
-        In practice: RS mode always does a full RS prefill at the start
-        of each turn (re-computes from token IDs). The per-layer residuals
-        are rebuilt fresh. This is equivalent to the RS plain strategy but
-        compiled and token-by-token for generation.
-
-        Checkpoint warm path: same as KV — skip layers 0..C for the prefix.
+        Path labels reflect window state (not cache hit/miss):
+          grow  — window still growing, no eviction yet
+          full  — window at budget capacity, oldest tokens evicted each turn
         """
-        best = self._best_checkpoint(state)
-        path = "cold"
-        if best is not None and state.hot_state is None:
-            path = "warm"
+        # Path reflects window state, not cache behaviour
+        path = "full" if state.window_start > 0 else "grow"
         # Always full prefill from window token IDs (RS mode doesn't cache between turns)
         logits, stored = self._rs_gen.prefill(
             mx.array(state.window_token_ids)[None]
@@ -390,7 +386,7 @@ class BoundedKVEngine:
             state.token_ids.append(next_tok)
             state.hot_token_count += 1
 
-            if state.total_tokens % self.checkpoint_interval == 0:
+            if self.checkpoint_interval > 0 and state.total_tokens % self.checkpoint_interval == 0:
                 state = self._store_checkpoint(state)
 
             ids      = mx.array([[next_tok]])
@@ -417,7 +413,7 @@ class BoundedKVEngine:
             state.hot_token_count += 1
             seq_len += 1
 
-            if state.total_tokens % self.checkpoint_interval == 0:
+            if self.checkpoint_interval > 0 and state.total_tokens % self.checkpoint_interval == 0:
                 state = self._store_checkpoint(state)
 
             logits, stored = self._rs_gen.step(

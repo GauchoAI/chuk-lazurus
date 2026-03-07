@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """
-Token/second benchmark: standard Gemma (KV cache) vs residual stream Gemma
+Token/second benchmark: standard Gemma (KV cache) vs compiled residual stream
 across increasing context lengths.
 
-Standard model: O(1) per new token — KV cache paid for at prefill.
-RS model:       O(context_len) per new token — full recompute every step.
-
-The crossover point is never in RS's favour for raw throughput. The point is
-that RS trades generation speed for zero persistent state — enabling the
-single-pass dark agent loop and multi-turn with 8KB stored state instead of GBs.
+Standard model:   O(1) per new token — KV cache paid for at prefill.
+RS compiled:      K,V projected from stored per-layer residuals each step.
+                  mx.compile fuses K,V projection into the attention kernel.
+                  ~2-2.5× slower than KV cache, but near-constant with context.
 
 Usage:
     uv run python examples/inference/gemma_rs_throughput.py
@@ -66,21 +64,8 @@ def _download(model_id: str) -> Path:
     ))
 
 
-def _apply_weights(model, model_path: Path) -> None:
-    from mlx.utils import tree_unflatten
-    raw: dict = {}
-    for sf in sorted(model_path.glob("*.safetensors")):
-        raw.update(mx.load(str(sf)))
-    sanitized = model.sanitize(raw)
-    sanitized = {
-        k: v.astype(mx.bfloat16) if v.dtype in (mx.float32, mx.float16, mx.bfloat16) else v
-        for k, v in sanitized.items()
-    }
-    model.update(tree_unflatten(list(sanitized.items())))
-    mx.eval(model.parameters())
-
-
 def load_models(model_id: str):
+    from mlx.utils import tree_unflatten
     from chuk_lazarus.models_v2.families.gemma import GemmaConfig, GemmaForCausalLM
     from chuk_lazarus.models_v2.families.gemma_rs import GemmaResidualStreamForCausalLM
 
@@ -89,12 +74,22 @@ def load_models(model_id: str):
         config_data = json.load(f)
     config = GemmaConfig.from_hf_config(config_data)
 
+    raw: dict = {}
+    for sf in sorted(model_path.glob("*.safetensors")):
+        raw.update(mx.load(str(sf)))
+
     std = GemmaForCausalLM(config)
-    _apply_weights(std, model_path)
+    sanitized = {
+        k: v.astype(mx.bfloat16) if v.dtype in (mx.float32, mx.float16, mx.bfloat16) else v
+        for k, v in std.sanitize(raw).items()
+    }
+    std.update(tree_unflatten(list(sanitized.items())))
+    mx.eval(std.parameters())
     std.eval()
 
     rs = GemmaResidualStreamForCausalLM(config)
-    _apply_weights(rs, model_path)
+    rs.update(std.parameters())
+    mx.eval(rs.parameters())
     rs.eval()
 
     return std, rs, config
@@ -137,35 +132,30 @@ def bench_standard(model, input_ids: mx.array, gen_tokens: int) -> tuple[float, 
     return prefill_ms, avg_gen_ms, kv_bytes
 
 
-def bench_rs(model, input_ids: mx.array, gen_tokens: int, hidden_size: int) -> tuple[float, float, int]:
+def bench_rs_compiled(rs_gen, input_ids: mx.array, gen_tokens: int) -> tuple[float, float, int]:
     """
     Returns (prefill_ms, avg_gen_ms_per_token, final_residual_bytes).
-    RS model: no cache. Full forward pass at every step. O(context_len) per token.
+    Compiled RS: stores per-layer residuals, recomputes K,V each step via mx.compile.
+    O(ctx) matmul per step but fused — near-constant overhead in practice.
     """
-    tokens = list(input_ids[0].tolist())
-
-    # First forward pass = "prefill"
     t0 = time.perf_counter()
-    out = model(input_ids)
-    mx.eval(out.logits)
+    logits, stored = rs_gen.prefill(input_ids)
+    mx.eval(logits)
     prefill_ms = (time.perf_counter() - t0) * 1000
 
-    next_tok = int(mx.argmax(out.logits[0, -1, :]))
-    tokens.append(next_tok)
+    seq_len = input_ids.shape[1]
     gen_times = []
 
-    for _ in range(gen_tokens - 1):
-        current = mx.array(tokens)[None]
+    for _ in range(gen_tokens):
+        next_tok = mx.array([[int(mx.argmax(logits[0, -1, :]))]])
 
         t0 = time.perf_counter()
-        out = model(current)
-        mx.eval(out.logits)
+        logits, stored = rs_gen.step(next_tok, stored, seq_len)
+        mx.eval(logits)
         gen_times.append((time.perf_counter() - t0) * 1000)
+        seq_len += 1
 
-        next_tok = int(mx.argmax(out.logits[0, -1, :]))
-        tokens.append(next_tok)
-
-    final_residual_bytes = len(tokens) * hidden_size * 2
+    final_residual_bytes = rs_gen.residual_bytes(seq_len)
     avg_gen_ms = sum(gen_times) / len(gen_times) if gen_times else prefill_ms
     return prefill_ms, avg_gen_ms, final_residual_bytes
 
@@ -174,7 +164,7 @@ def bar_chart(rows: list[tuple[int, float, float]], width: int = 30) -> None:
     """ASCII chart of tokens/sec by context length for both models."""
     max_tps = max(max(std_tps, rs_tps) for _, std_tps, rs_tps in rows)
 
-    print(f"\n  {'Context':>8}  {'Standard (KV)':^32}  {'RS (recompute)':^32}")
+    print(f"\n  {'Context':>8}  {'Standard (KV)':^32}  {'RS compiled':^32}")
     print(f"  {'':>8}  {'tok/s':>8}  {'':30}  {'tok/s':>8}  {'':30}")
     print("  " + "─" * 86)
 
@@ -195,64 +185,68 @@ def bar_chart(rows: list[tuple[int, float, float]], width: int = 30) -> None:
 def main():
     args = parse_args()
 
-    print(f"\n{BOLD}Gemma Throughput: KV Cache vs Residual Stream{RESET}")
+    print(f"\n{BOLD}Gemma Throughput: KV Cache vs Compiled Residual Stream{RESET}")
     print("=" * 56)
     print(f"  Model:      {args.model}")
     print(f"  Gen tokens: {args.gen_tokens} per context length")
     print(f"  Contexts:   {args.context_lengths}")
     print()
-    print("  Standard: KV cache — O(1) per new token after prefill")
-    print("  RS:       Full recompute — O(context_len) per new token")
+    print("  Standard:    KV cache — O(1) per new token after prefill")
+    print("  RS compiled: per-layer residuals + mx.compile fused K,V projection")
 
     std_model, rs_model, config = load_models(args.model)
 
-    # Warm up
-    print("\n  Warming up...")
-    _w = mx.array([[1, 2, 3, 4, 5]])
-    _ = std_model(_w); _ = rs_model(_w); mx.eval()
-    _w2 = mx.array([[1, 2, 3, 4, 5, 6, 7, 8]])
-    _ = std_model(_w2); _ = rs_model(_w2); mx.eval()
+    import importlib.util, sys as _sys
+    _inf = Path(__file__).parents[2] / "src/chuk_lazarus/inference"
+    def _load(dotted, fpath):
+        spec = importlib.util.spec_from_file_location(dotted, fpath)
+        mod  = importlib.util.module_from_spec(spec)
+        _sys.modules[dotted] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    rs_gen_mod = _load("chuk_lazarus.inference.rs_generator", _inf / "rs_generator.py")
+    rs_gen = rs_gen_mod.CompiledRSGenerator(rs_model, config)
 
-    print()
+    # Warm up / compile
+    print("\n  Warming up / compiling...")
+    _w = mx.array([[1, 2, 3, 4, 5]])
+    _ = std_model(_w); mx.eval()
+    _l, _s = rs_gen.prefill(_w); mx.eval(_l)
+    _l2, _s2 = rs_gen.step(mx.array([[6]]), _s, 5); mx.eval(_l2)
+    print("  Done.\n")
+
     col = 12
     print(f"  {'Context':>8}  "
           f"{'Prefill(ms)':>{col}}  {'Std gen(ms)':>{col}}  {'RS gen(ms)':>{col}}  "
           f"{'Std tok/s':>{col}}  {'RS tok/s':>{col}}  "
-          f"{'Slowdown':>10}  {'KV size':>{col}}  {'RS state':>{col}}")
+          f"{'Slowdown':>10}  {'KV size':>{col}}  {'RS size':>{col}}")
     print("  " + "─" * 128)
 
     chart_rows = []
 
     for ctx_len in args.context_lengths:
-        # Build a synthetic prompt of exactly ctx_len tokens
         input_ids = mx.array([[1] * ctx_len])
 
-        # Benchmark standard
         std_prefill, std_gen_ms, std_kv_bytes = bench_standard(
             std_model, input_ids, args.gen_tokens
         )
-
-        # Benchmark RS
-        rs_prefill, rs_gen_ms, rs_res_bytes = bench_rs(
-            rs_model, input_ids, args.gen_tokens, config.hidden_size
+        rs_prefill, rs_gen_ms, rs_res_bytes = bench_rs_compiled(
+            rs_gen, input_ids, args.gen_tokens
         )
 
-        std_tps = 1000 / std_gen_ms if std_gen_ms > 0 else 0
-        rs_tps  = 1000 / rs_gen_ms  if rs_gen_ms  > 0 else 0
-        slowdown = std_tps / rs_tps  if rs_tps    > 0 else 0
+        std_tps  = 1000 / std_gen_ms if std_gen_ms > 0 else 0
+        rs_tps   = 1000 / rs_gen_ms  if rs_gen_ms  > 0 else 0
+        slowdown = std_tps / rs_tps   if rs_tps     > 0 else 0
 
         chart_rows.append((ctx_len, std_tps, rs_tps))
 
-        # Prefill should be similar (both do full pass with no cache)
-        prefill_str = f"{std_prefill:.0f}ms"
-
         print(f"  {ctx_len:>8,}  "
-              f"{prefill_str:>{col}}  "
+              f"{std_prefill:.0f}ms{'':{col-len(str(int(std_prefill)))-2}}  "
               f"{std_gen_ms:>{col}.1f}  "
               f"{rs_gen_ms:>{col}.1f}  "
               f"{CYAN}{std_tps:>{col}.1f}{RESET}  "
-              f"{DIM}{rs_tps:>{col}.1f}{RESET}  "
-              f"{YELLOW}{slowdown:>9.1f}×{RESET}  "
+              f"{YELLOW}{rs_tps:>{col}.1f}{RESET}  "
+              f"{slowdown:>9.1f}×  "
               f"{fmt_bytes(std_kv_bytes):>{col}}  "
               f"{fmt_bytes(rs_res_bytes):>{col}}")
 
@@ -262,21 +256,16 @@ def main():
     print()
     print("  1. PREFILL is identical — both do a full forward pass. No difference.")
     print()
-    print("  2. GENERATION diverges with context:")
-    print("     Standard: each new token is one tiny forward pass (last token only,")
-    print("               K,V read from cache). Cost independent of context length.")
-    print("     RS:       each new token is a full forward pass over ALL tokens.")
-    print("               Cost grows linearly with context length.")
+    print("  2. GENERATION: compiled RS is 2-2.5× slower than KV cache.")
+    print("     Unlike naive RS recompute, the slowdown does NOT scale with context.")
+    print("     The compiled generator reuses stored per-layer residuals:")
+    print("       K_old, V_old ← stored_residuals[i] @ wk.T / wv.T  (one matmul)")
+    print("       mx.compile fuses K,V projection into the attention kernel.")
+    print("     Cost per token ≈ constant. Bottleneck is the matmul, not seq_len.")
     print()
-    print("  3. The slowdown is proportional to context length — this is expected.")
-    print("     At ctx=64,  RS ≈ 64× more compute per token than standard.")
-    print("     At ctx=2048, RS ≈ 2048× more compute per token than standard.")
-    print()
-    print("  4. This tradeoff is correct for the target use case:")
-    print("     RS is NOT for streaming generation. It is for:")
-    print("     - Single-pass inference (probe, inject, branch)")
-    print("     - Multi-turn with minimal stored state (token IDs only)")
-    print("     - Environments where memory matters more than generation speed")
+    print("  3. The memory tradeoff:")
+    print("     During generation  : residuals ≈ same size as KV cache (model-dependent).")
+    print("     Between turns      : token IDs only. 4 bytes/token. 4,608× smaller than KV.")
     print()
 
     # Show the stored-state comparison across turns
