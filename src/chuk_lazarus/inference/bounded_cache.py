@@ -78,6 +78,7 @@ class ConversationState:
     hot_state: list | None = None
     hot_token_count: int = 0
     window_start: int = 0
+    hot_start: int = 0  # absolute token index of first token in hot_state (RS mode)
 
     # --- Tier 2: warm ---
     checkpoints: list[Checkpoint] = field(default_factory=list)
@@ -252,9 +253,13 @@ class BoundedKVEngine:
         if new_window_start <= state.window_start:
             return state
 
-        state.hot_state       = None
-        state.hot_token_count = 0
-        state.window_start    = new_window_start
+        state.window_start = new_window_start
+
+        # KV mode: can't slide KV cache, must rebuild from scratch
+        # RS mode: hot_state can be slid incrementally — don't clear it here
+        if self.mode == "kv":
+            state.hot_state       = None
+            state.hot_token_count = 0
 
         state.checkpoints = [
             c for c in state.checkpoints
@@ -341,22 +346,54 @@ class BoundedKVEngine:
         """
         Bring RS hot state up to date with the full active window.
 
-        RS always does a full prefill of the active window each turn —
-        per-layer residuals cannot be extended incrementally.
+        Hot path (incremental):
+          1. Slide stored residuals to evict tokens before new window_start.
+          2. Extend with any uncached tokens (new user turn).
+          O(new_tokens × window) instead of O(window²) for re-prefill.
+
+        Cold path: full prefill from window token IDs.
 
         Path labels reflect window state (not cache hit/miss):
           grow  — window still growing, no eviction yet
           full  — window at budget capacity, oldest tokens evicted each turn
         """
-        # Path reflects window state, not cache behaviour
         path = "full" if state.window_start > 0 else "grow"
-        # Always full prefill from window token IDs (RS mode doesn't cache between turns)
+
+        if state.hot_state is not None:
+            stored = state.hot_state
+
+            # Step 1: slide out tokens evicted by budget enforcement
+            evict_count = state.window_start - state.hot_start
+            if evict_count > 0:
+                stored = self._rs_gen.slide(stored, evict_count)
+                state.hot_token_count = max(0, state.hot_token_count - evict_count)
+                state.hot_start = state.window_start
+
+            # Step 2: extend with uncached tokens (new turn's input)
+            uncached = state.window_token_ids[state.hot_token_count:]
+            if not uncached:
+                raise RuntimeError("RS hot path: no uncached tokens after slide — logic error")
+            abs_start = state.hot_start + state.hot_token_count
+            logits, stored = self._rs_gen.extend(
+                mx.array(uncached)[None], stored, abs_start
+            )
+            mx.eval(logits)
+            state.hot_token_count = state.window_size
+
+            state.hot_state = stored
+            state.hot_start = state.window_start
+            # abs_seq_len = position of the NEXT token to generate (0-indexed)
+            abs_seq_len = state.hot_start + state.hot_token_count
+            return path, state, (logits, stored, abs_seq_len)
+
+        # Cold path: full prefill from window token IDs
         logits, stored = self._rs_gen.prefill(
             mx.array(state.window_token_ids)[None]
         )
         mx.eval(logits)
         state.hot_state       = stored
         state.hot_token_count = state.window_size
+        state.hot_start       = state.window_start
 
         # Capture dark residuals from stored (they're per-layer residuals)
         if self.dark_layers:
@@ -365,7 +402,9 @@ class BoundedKVEngine:
                     mx.eval(stored[layer_idx])
                     state.dark_residuals[layer_idx] = stored[layer_idx]
 
-        return path, state, (logits, stored, state.window_size - 1)
+        # abs_seq_len = position of the NEXT token to generate (0-indexed)
+        abs_seq_len = state.hot_start + state.hot_token_count
+        return path, state, (logits, stored, abs_seq_len)
 
     # ------------------------------------------------------------------
     # Generation (mode-dispatched)
@@ -403,7 +442,8 @@ class BoundedKVEngine:
         rs_state: Any,
         max_new_tokens: int,
     ) -> tuple[list[int], ConversationState]:
-        logits, stored, seq_len = rs_state
+        logits, stored, abs_seq_len = rs_state
+        # abs_seq_len = absolute position of the NEXT token to generate (0-indexed)
         generated = []
 
         for _ in range(max_new_tokens):
@@ -411,15 +451,15 @@ class BoundedKVEngine:
             generated.append(next_tok)
             state.token_ids.append(next_tok)
             state.hot_token_count += 1
-            seq_len += 1
 
             if self.checkpoint_interval > 0 and state.total_tokens % self.checkpoint_interval == 0:
                 state = self._store_checkpoint(state)
 
             logits, stored = self._rs_gen.step(
-                mx.array([[next_tok]]), stored, seq_len - 1
+                mx.array([[next_tok]]), stored, abs_seq_len
             )
             mx.eval(logits)
+            abs_seq_len += 1
 
         state.hot_state = stored
         # Update dark residuals from final stored state

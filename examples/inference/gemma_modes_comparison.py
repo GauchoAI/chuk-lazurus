@@ -145,10 +145,11 @@ def run_unbounded_kv(std_model, input_ids_per_turn: list[list[int]], gen_tokens:
     all_ids  = []
     results  = []
 
-    print(f"  {'Turn':>4}  {'Context':>8}  {'Hot':>9}  {'tok/s':>6}")
-    print("  " + "─" * 36)
+    print(f"  {'Turn':>4}  {'Context':>8}  {'Hot':>9}  {'tok/s':>6}  {'t(s)':>5}")
+    print("  " + "─" * 44)
 
     for i, turn_ids in enumerate(input_ids_per_turn, 1):
+        t_turn = time.perf_counter()
         all_ids.extend(turn_ids)
 
         # Feed new tokens through existing cache
@@ -177,6 +178,7 @@ def run_unbounded_kv(std_model, input_ids_per_turn: list[list[int]], gen_tokens:
             mx.eval(out.logits)
             cache = out.cache
         gen_ms = (time.perf_counter() - t0) * 1000
+        total_s = time.perf_counter() - t_turn
 
         kv_bytes = sum(
             k.nbytes + v.nbytes
@@ -184,7 +186,7 @@ def run_unbounded_kv(std_model, input_ids_per_turn: list[list[int]], gen_tokens:
             if k is not None
         )
         tps = gen_tokens / (gen_ms / 1000)
-        print(f"  {i:>4}  {len(all_ids):>8,}  {fmt_bytes(kv_bytes):>9}  {tps:>6.1f}")
+        print(f"  {i:>4}  {len(all_ids):>8,}  {fmt_bytes(kv_bytes):>9}  {tps:>6.1f}  {total_s:>4.1f}s")
 
         results.append({
             "hot_bytes":    kv_bytes,
@@ -291,8 +293,8 @@ def main():
     print("  Done.\n")
 
     def _live_header():
-        print(f"  {'Turn':>4}  {'Path':>5}  {'Context':>8}  {'Window':>7}  {'Hot':>9}  {'Budget%':>7}  {'tok/s':>6}")
-        print("  " + "─" * 58)
+        print(f"  {'Turn':>4}  {'Path':>5}  {'Context':>8}  {'Window':>7}  {'Hot':>9}  {'Budget%':>7}  {'tok/s':>6}  {'t(s)':>5}")
+        print("  " + "─" * 66)
 
     def _live_row(i, stats):
         path = stats.get("path", "?")
@@ -300,12 +302,14 @@ def main():
         bpct = stats.get("budget_used_pct", 0)
         bc   = RED if bpct > 100 else (YELLOW if bpct > 85 else RESET)
         evict = "⚠" if stats.get("window_start", 0) > 0 else " "
+        total_s = stats.get("total_ms", 0) / 1000
         print(f"  {i:>4}  {pc}{path:>5}{RESET}  "
               f"{stats.get('total_tokens', 0):>8,}  "
               f"{stats.get('window_size', 0):>7,}  "
               f"{fmt_bytes(stats.get('hot_bytes', 0)):>9}  "
               f"{evict}{bc}{bpct:>5.1f}%{RESET}  "
-              f"{stats.get('tok_per_sec', 0):>6.1f}")
+              f"{stats.get('tok_per_sec', 0):>6.1f}  "
+              f"{total_s:>4.1f}s")
 
     # ── Mode 1: Unbounded KV ────────────────────────────────────────────
     print(f"\n{BOLD}{CYAN}Mode 1 — Unbounded KV cache{RESET}")
@@ -318,8 +322,9 @@ def main():
     print(f"\n{BOLD}{YELLOW}Mode 2 — Bounded Residual Stream  (budget: {fmt_bytes(budget_bytes)}){RESET}")
     print(f"  No KV cache. Stores the raw residual tensor at each layer instead.")
     print(f"  K and V are recomputed on-the-fly from stored residuals each step.")
-    print(f"  For 12B: residuals are 0.94x the size of KV — fits more in the same budget.")
-    print(f"  Same window-sliding eviction as bounded KV. Same cold tier.\n")
+    print(f"  Incremental: new turns extend stored residuals — no full re-prefill.")
+    print(f"  For 12B: residuals are 0.94× the size of KV — fits more in the same budget.")
+    print(f"  Window slides when budget is hit. Token IDs kept forever in cold tier.\n")
     _live_header()
     state_rs = engine_rs.new_conversation()
     bounded_rs_rows = []
