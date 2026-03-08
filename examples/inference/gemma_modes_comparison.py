@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
 """
-Two-mode inference comparison across a simulated multi-turn conversation.
+Three-mode inference comparison across a simulated multi-turn conversation.
 
-  unbounded-kv  Standard KV cache. No budget limit. Memory grows linearly.
-                The baseline every production system runs today.
-  bounded-rs    Bounded residual stream. Per-layer residuals as hot tier.
-                Hard memory budget. Window slides when budget is hit.
-                For 12B: residuals are 0.94× the size of KV per token.
+  unbounded-kv   Standard KV cache. No budget limit. Memory grows linearly.
+                 The baseline every production system runs today.
+  bounded-rs     Bounded residual stream. Per-layer residuals as hot tier.
+                 K,V recomputed each step from stored residuals. O(S) matmuls.
+                 Hard memory budget. Window slides when budget is hit.
+  bounded-kvd    KV-direct. Stores K,V after prefill, reuses without recompute.
+                 Same memory as standard KV. Approaches standard KV speed.
+                 Window slides in place — no rebuild on eviction.
 
 The comparison shows:
   - Memory growth trajectory across turns (does it bound?)
   - Generation speed per turn and per mode
   - Path taken (cold / hot / warm) per turn
+
+Experiment a9704704 result: KV-direct matches standard KV speed while bounded-rs
+has ~1.1-1.5× overhead from the O(S) K,V recompute at each step.
 
 Usage:
     uv run python examples/inference/gemma_modes_comparison.py
@@ -127,7 +133,8 @@ def load_engine_class():
         spec.loader.exec_module(mod)
         return mod
 
-    _load("chuk_lazarus.inference.rs_generator", inf / "rs_generator.py")
+    _load("chuk_lazarus.inference.rs_generator",  inf / "rs_generator.py")
+    _load("chuk_lazarus.inference.kv_generator",  inf / "kv_generator.py")
     mod = _load("chuk_lazarus.inference.bounded_cache", inf / "bounded_cache.py")
     return mod.BoundedKVEngine
 
@@ -267,15 +274,21 @@ def main():
           f"(RS is {res_ratio:.2f}× {'larger' if res_ratio > 1 else 'smaller'})")
     print(f"  Max tokens in budget — RS: {budget_bytes // rs_bytes_per_tok}")
 
-    # Build engine
+    # Build engines
     engine_rs = BoundedKVEngine(
         std_model=std_model, rs_model=rs_model, config=config,
         budget_bytes=budget_bytes, generation_mode="rs",
         checkpoint_interval=args.checkpoint_interval,
         dark_layers=args.dark_layers,
     )
+    engine_kvd = BoundedKVEngine(
+        std_model=std_model, rs_model=rs_model, config=config,
+        budget_bytes=budget_bytes, generation_mode="kv_direct",
+        checkpoint_interval=args.checkpoint_interval,
+        dark_layers=args.dark_layers,
+    )
 
-    # Synthetic conversation turns
+    # Synthetic conversation turns (same for all modes)
     turns = [
         [((t * 7 + i * 13) % 8000) + 1
          for i in range(args.tokens_per_turn + (t % 3) * 10)]
@@ -290,6 +303,10 @@ def main():
     mx.eval(_l)
     _l2, _s2 = engine_rs._rs_gen.step(mx.array([[6]]), _s, 5)
     mx.eval(_l2)
+    _l3, _k = engine_kvd._kv_gen.prefill(_w)
+    mx.eval(_l3)
+    _l4, _k2 = engine_kvd._kv_gen.step(mx.array([[6]]), _k, 5)
+    mx.eval(_l4)
     print("  Done.\n")
 
     def _live_header():
@@ -320,10 +337,9 @@ def main():
 
     # ── Mode 2: Bounded RS ──────────────────────────────────────────────
     print(f"\n{BOLD}{YELLOW}Mode 2 — Bounded Residual Stream  (budget: {fmt_bytes(budget_bytes)}){RESET}")
-    print(f"  No KV cache. Stores the raw residual tensor at each layer instead.")
-    print(f"  K and V are recomputed on-the-fly from stored residuals each step.")
+    print(f"  Stores the raw residual tensor at each layer instead of K,V.")
+    print(f"  K and V recomputed on-the-fly from stored residuals each step. O(S) matmuls.")
     print(f"  Incremental: new turns extend stored residuals — no full re-prefill.")
-    print(f"  For 12B: residuals are 0.94× the size of KV — fits more in the same budget.")
     print(f"  Window slides when budget is hit. Token IDs kept forever in cold tier.\n")
     _live_header()
     state_rs = engine_rs.new_conversation()
@@ -335,14 +351,33 @@ def main():
         bounded_rs_rows.append(stats)
         _live_row(i, stats)
 
+    # ── Mode 3: Bounded KV-direct ────────────────────────────────────────
+    print(f"\n{BOLD}{GREEN}Mode 3 — Bounded KV-Direct  (budget: {fmt_bytes(budget_bytes)}){RESET}")
+    print(f"  Stores K,V directly after prefill. No recompute at step time.")
+    print(f"  Same memory as standard KV. Approaches standard KV speed.")
+    print(f"  Window slides in place (slice K,V arrays) — no rebuild on eviction.\n")
+    _live_header()
+    state_kvd = engine_kvd.new_conversation()
+    bounded_kvd_rows = []
+    for i, turn_ids in enumerate(turns, 1):
+        _, state_kvd, stats = engine_kvd.process_turn(
+            state_kvd, turn_ids, max_new_tokens=args.gen_tokens
+        )
+        bounded_kvd_rows.append(stats)
+        _live_row(i, stats)
+
     # Display results
     print_turn_table(
         f"Unbounded KV  (no budget — grows to {fmt_bytes(unbounded_rows[-1]['hot_bytes'])})",
         CYAN, unbounded_rows
     )
     print_turn_table(
-        f"Bounded RS    (budget={fmt_bytes(budget_bytes)}, window slides)",
+        f"Bounded RS    (budget={fmt_bytes(budget_bytes)}, K,V recomputed each step)",
         YELLOW, bounded_rs_rows
+    )
+    print_turn_table(
+        f"Bounded KVD   (budget={fmt_bytes(budget_bytes)}, K,V stored — no recompute)",
+        GREEN, bounded_kvd_rows
     )
 
     # Summary
@@ -351,17 +386,23 @@ def main():
 
     peak_unbounded = unbounded_rows[-1]["hot_bytes"]
     peak_rs        = max(r.get("hot_bytes", 0) for r in bounded_rs_rows)
+    peak_kvd       = max(r.get("hot_bytes", 0) for r in bounded_kvd_rows)
 
     total_toks     = unbounded_rows[-1]["total_tokens"]
     cold_bytes     = total_toks * 4
 
+    tps_kv  = avg_tps(unbounded_rows)
+    tps_rs  = avg_tps(bounded_rs_rows)
+    tps_kvd = avg_tps(bounded_kvd_rows)
+
     print(f"""
 {BOLD}Summary{RESET}
 
-  {'Mode':>14}  {'Peak hot':>10}  {'Cold':>8}  {'Avg tok/s':>10}  {'Budget'}
-  {'─'*60}
-  {'unbounded-kv':>14}  {fmt_bytes(peak_unbounded):>10}  {fmt_bytes(cold_bytes):>8}  {avg_tps(unbounded_rows):>9.1f}  none
-  {'bounded-rs':>14}  {fmt_bytes(peak_rs):>10}  {fmt_bytes(cold_bytes):>8}  {avg_tps(bounded_rs_rows):>9.1f}  {fmt_bytes(budget_bytes)}
+  {'Mode':>14}  {'Peak hot':>10}  {'Cold':>8}  {'Avg tok/s':>10}  {'vs KV':>6}  {'Budget'}
+  {'─'*68}
+  {'unbounded-kv':>14}  {fmt_bytes(peak_unbounded):>10}  {fmt_bytes(cold_bytes):>8}  {tps_kv:>9.1f}  {'1.00×':>6}  none
+  {'bounded-rs':>14}  {fmt_bytes(peak_rs):>10}  {fmt_bytes(cold_bytes):>8}  {tps_rs:>9.1f}  {tps_rs/tps_kv:>5.2f}×  {fmt_bytes(budget_bytes)}
+  {'bounded-kvd':>14}  {fmt_bytes(peak_kvd):>10}  {fmt_bytes(cold_bytes):>8}  {tps_kvd:>9.1f}  {tps_kvd/tps_kv:>5.2f}×  {fmt_bytes(budget_bytes)}
 
   Total conversation: {total_toks} tokens across {args.turns} turns.
   Cold tier (token IDs): {fmt_bytes(cold_bytes)} — {peak_unbounded // max(cold_bytes,1):,}× smaller than unbounded KV.
@@ -373,6 +414,22 @@ def main():
   {total_toks} tokens of conversation history = {fmt_bytes(cold_bytes)}.
   Same conversation in KV cache = {fmt_bytes(kv_bytes_per_tok * total_toks)}.
   Ratio: {kv_bytes_per_tok * total_toks // max(cold_bytes, 1):,}× — constant, model-independent.
+
+{BOLD}KV-direct result{RESET}
+
+  Generation speed (this benchmark, {args.gen_tokens} tokens/turn):
+    KV-direct {tps_kvd/tps_rs:.2f}× faster than bounded-RS.
+    Both show overhead vs unbounded KV due to short generation windows
+    (fixed per-turn extend cost amortises poorly over {args.gen_tokens} tokens).
+    For longer generation windows, KV-direct matches standard KV speed.
+    See gemma_kv_direct.py for isolated generation benchmarks.
+
+  Context window within same budget:
+    bounded-rs  : {budget_bytes // (config.hidden_size * 2 * config.num_hidden_layers):,} tokens  (residuals {config.hidden_size * 2 * config.num_hidden_layers // 1024} KB/token)
+    bounded-kvd : {budget_bytes // (2 * config.num_key_value_heads * config.head_dim * 2 * config.num_hidden_layers):,} tokens  (KV {2 * config.num_key_value_heads * config.head_dim * 2 * config.num_hidden_layers // 1024} KB/token)
+    {"KVD fits more context: residuals are larger than KV for this model." if config.hidden_size > 2 * config.num_key_value_heads * config.head_dim else "Equal: hidden_size = 2 × nkv × head_dim for this model."}
+
+  Next: rank-15 K compression — 21× KV storage reduction, no retraining required.
 """)
 
 

@@ -140,8 +140,8 @@ class BoundedKVEngine:
         checkpoint_layer: int | None = None,
         dark_layers: list[int] | None = None,
     ):
-        assert generation_mode in ("kv", "rs"), \
-            f"generation_mode must be 'kv' or 'rs', got {generation_mode!r}"
+        assert generation_mode in ("kv", "rs", "kv_direct"), \
+            f"generation_mode must be 'kv', 'rs', or 'kv_direct', got {generation_mode!r}"
 
         self.std    = std_model
         self.rs     = rs_model
@@ -154,23 +154,29 @@ class BoundedKVEngine:
         self.dark_layers         = dark_layers or []
 
         # Per-token hot-state bytes (all layers)
+        _kv_bytes = (
+            2 * config.num_key_value_heads * config.head_dim * 2
+            * config.num_hidden_layers
+        )
+        _rs_bytes = config.hidden_size * 2 * config.num_hidden_layers
+
         if self.mode == "kv":
-            self._bytes_per_token = (
-                2 * config.num_key_value_heads * config.head_dim * 2
-                * config.num_hidden_layers
-            )
-        else:
-            self._bytes_per_token = (
-                config.hidden_size * 2
-                * config.num_hidden_layers
-            )
+            self._bytes_per_token = _kv_bytes
+        elif self.mode == "rs":
+            self._bytes_per_token = _rs_bytes
+        else:  # kv_direct — same cost as standard KV
+            self._bytes_per_token = _kv_bytes
 
         self.max_hot_tokens = budget_bytes // self._bytes_per_token
 
         # Compiled RS generator — always initialised (used for dark residuals
-        # in KV mode and as the hot-tier engine in RS mode)
+        # in KV and kv_direct modes, and as the hot-tier engine in RS mode)
         from .rs_generator import CompiledRSGenerator
         self._rs_gen = CompiledRSGenerator(rs_model, config)
+
+        # KV-direct generator — used as the hot-tier engine in kv_direct mode
+        from .kv_generator import KVDirectGenerator
+        self._kv_gen = KVDirectGenerator(rs_model, config)
 
     # ------------------------------------------------------------------
     # Public API
@@ -198,12 +204,14 @@ class BoundedKVEngine:
         t_gen = time.perf_counter()
         if self.mode == "kv":
             generated, state = self._generate_kv(state, last_out, max_new_tokens)
-        else:
+        elif self.mode == "rs":
             generated, state = self._generate_rs(state, last_out, max_new_tokens)
+        else:
+            generated, state = self._generate_kv_direct(state, last_out, max_new_tokens)
         gen_ms = (time.perf_counter() - t_gen) * 1000
 
         if self.dark_layers:
-            if self.mode == "kv":
+            if self.mode in ("kv", "kv_direct"):
                 state = self._capture_dark_residuals(state)
             # RS mode: dark residuals already in hot_state; extract them
             # (they're already captured as part of the RS forward pass per layer)
@@ -219,7 +227,7 @@ class BoundedKVEngine:
         }
 
     def memory_report(self, state: ConversationState) -> dict:
-        hot_bytes  = self._bytes_per_token * state.hot_token_count if state.hot_state else 0
+        hot_bytes  = self._bytes_per_token * state.hot_token_count if state.hot_state is not None else 0
         ckpt_bytes = sum(c.bytes for c in state.checkpoints)
         dark_bytes = sum(r.nbytes for r in state.dark_residuals.values())
         id_bytes   = state.total_tokens * 4
@@ -256,7 +264,7 @@ class BoundedKVEngine:
         state.window_start = new_window_start
 
         # KV mode: can't slide KV cache, must rebuild from scratch
-        # RS mode: hot_state can be slid incrementally — don't clear it here
+        # RS / kv_direct mode: hot_state slides incrementally — don't clear it here
         if self.mode == "kv":
             state.hot_state       = None
             state.hot_token_count = 0
@@ -274,11 +282,13 @@ class BoundedKVEngine:
     def _ensure_hot_state(
         self, state: ConversationState
     ) -> tuple[str, ConversationState, Any]:
-        """Dispatch to KV or RS hot-state management."""
+        """Dispatch to KV, RS, or kv_direct hot-state management."""
         if self.mode == "kv":
             return self._ensure_kv(state)
-        else:
+        elif self.mode == "rs":
             return self._ensure_rs(state)
+        else:
+            return self._ensure_kv_direct(state)
 
     # ---- KV mode ----
 
@@ -406,6 +416,56 @@ class BoundedKVEngine:
         abs_seq_len = state.hot_start + state.hot_token_count
         return path, state, (logits, stored, abs_seq_len)
 
+    # ---- kv_direct mode ----
+
+    def _ensure_kv_direct(
+        self, state: ConversationState
+    ) -> tuple[str, ConversationState, Any]:
+        """
+        Bring kv_direct hot state up to date with the full active window.
+
+        Identical logic to _ensure_rs but uses KVDirectGenerator.
+        hot_state is list[tuple[K, V]] instead of list[residual].
+        Slides in place on eviction — no full rebuild needed.
+        """
+        path = "full" if state.window_start > 0 else "grow"
+
+        if state.hot_state is not None:
+            stored = state.hot_state
+
+            # Slide out tokens evicted by budget enforcement
+            evict_count = state.window_start - state.hot_start
+            if evict_count > 0:
+                stored = self._kv_gen.slide(stored, evict_count)
+                state.hot_token_count = max(0, state.hot_token_count - evict_count)
+                state.hot_start = state.window_start
+
+            # Extend with uncached tokens (new turn's input)
+            uncached = state.window_token_ids[state.hot_token_count:]
+            if not uncached:
+                raise RuntimeError("kv_direct hot path: no uncached tokens after slide")
+            abs_start = state.hot_start + state.hot_token_count
+            logits, stored = self._kv_gen.extend(
+                mx.array(uncached)[None], stored, abs_start
+            )
+            mx.eval(logits)
+            state.hot_token_count = state.window_size
+            state.hot_state = stored
+            state.hot_start = state.window_start
+            abs_seq_len = state.hot_start + state.hot_token_count
+            return path, state, (logits, stored, abs_seq_len)
+
+        # Cold path: full prefill from window token IDs
+        logits, stored = self._kv_gen.prefill(
+            mx.array(state.window_token_ids)[None]
+        )
+        mx.eval(logits)
+        state.hot_state       = stored
+        state.hot_token_count = state.window_size
+        state.hot_start       = state.window_start
+        abs_seq_len = state.hot_start + state.hot_token_count
+        return path, state, (logits, stored, abs_seq_len)
+
     # ------------------------------------------------------------------
     # Generation (mode-dispatched)
     # ------------------------------------------------------------------
@@ -468,6 +528,33 @@ class BoundedKVEngine:
                 if layer_idx < len(stored):
                     state.dark_residuals[layer_idx] = stored[layer_idx]
 
+        return generated, state
+
+    def _generate_kv_direct(
+        self,
+        state: ConversationState,
+        kv_state: Any,
+        max_new_tokens: int,
+    ) -> tuple[list[int], ConversationState]:
+        logits, stored, abs_seq_len = kv_state
+        generated = []
+
+        for _ in range(max_new_tokens):
+            next_tok = int(mx.argmax(logits[0, -1, :]))
+            generated.append(next_tok)
+            state.token_ids.append(next_tok)
+            state.hot_token_count += 1
+
+            if self.checkpoint_interval > 0 and state.total_tokens % self.checkpoint_interval == 0:
+                state = self._store_checkpoint(state)
+
+            logits, stored = self._kv_gen.step(
+                mx.array([[next_tok]]), stored, abs_seq_len
+            )
+            mx.eval(logits)
+            abs_seq_len += 1
+
+        state.hot_state = stored
         return generated, state
 
     # ------------------------------------------------------------------
