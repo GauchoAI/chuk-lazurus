@@ -46,6 +46,9 @@ uv add "chuk-lazarus[openai]"
 
 # For faster tokenization (optional MLX backend)
 uv add "chuk-lazarus[fast]"
+
+# For the inference server and Python client
+uv add "chuk-lazarus[server]"
 ```
 
 After installation, use the `chuk-lazarus` command directly:
@@ -274,6 +277,73 @@ FunctionGemma is a 270M parameter model optimized for on-device function calling
 - On-device agents
 
 See [docs/inference.md](docs/inference.md) for detailed inference documentation.
+
+### Inference Server
+
+Serve any model as an OpenAI-compatible HTTP API — works with mcp-cli, LangChain, the `openai` SDK, and any other OpenAI-compatible client:
+
+```bash
+# Install server dependencies
+uv add "chuk-lazarus[server]"
+
+# Start the server (downloads model on first run)
+lazarus serve --model google/gemma-3-4b-it
+
+# With authentication
+lazarus serve --model google/gemma-3-4b-it --api-key mysecret
+```
+
+The server starts at `http://localhost:8080`. OpenAI-compatible endpoints are at `/v1`:
+
+```bash
+# curl
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "google/gemma-3-4b-it", "messages": [{"role": "user", "content": "Hello!"}]}'
+
+# openai SDK
+python -c "
+from openai import OpenAI
+client = OpenAI(base_url='http://localhost:8080/v1', api_key='lazarus')
+print(client.chat.completions.create(
+    model='google/gemma-3-4b-it',
+    messages=[{'role': 'user', 'content': 'Hello!'}]
+).choices[0].message.content)
+"
+```
+
+Or use the built-in Python client library:
+
+```python
+from chuk_lazarus.client import LazarusClient, ChatMessage, ClientRole
+
+with LazarusClient() as client:
+    # Non-streaming
+    response = client.chat(
+        model="google/gemma-3-4b-it",
+        messages=[ChatMessage(role=ClientRole.USER, content="Hello!")],
+    )
+    print(response.content)
+
+    # Streaming
+    for chunk in client.stream_chat(
+        model="google/gemma-3-4b-it",
+        messages=[ChatMessage(role=ClientRole.USER, content="Count to ten.")],
+    ):
+        print(chunk, end="", flush=True)
+```
+
+**Use with mcp-cli:**
+
+```bash
+# Start the server
+lazarus-serve --model google/gemma-3-4b-it --api-key lazarus
+
+# In another terminal
+mcp-cli chat --provider lazarus --server time --model google/gemma-3-4b-it
+```
+
+See [docs/server.md](docs/server.md) for the full server guide and [docs/client.md](docs/client.md) for the client library.
 
 ### Introspection (Model Analysis)
 
@@ -548,6 +618,8 @@ If the tokenizer or data changes, fingerprint mismatch is detected before traini
 - [CLI Reference](docs/cli.md) - Command-line interface documentation
 - [Models Guide](docs/models.md) - Composable model architecture, components, LoRA adapters
 - [Inference Guide](docs/inference.md) - Run inference with pretrained HuggingFace models
+- [Inference Server](docs/server.md) - OpenAI-compatible HTTP server for serving models
+- [Client Library](docs/client.md) - Python client for the inference server
 - [Introspection Guide](docs/introspection.md) - Logit lens, attention visualization, model analysis
 - [Tokenizers Guide](docs/tokenizers.md) - Comprehensive tokenizer toolkit
 - [Batching Guide](docs/batching.md) - Token-budget batching, packing, distributed training

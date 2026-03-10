@@ -226,6 +226,44 @@ lazarus tokenizer compare \
   --text "The quick brown fox jumps over the lazy dog."
 ```
 
+### serve
+
+Start the OpenAI-compatible HTTP inference server.
+
+```bash
+lazarus serve [OPTIONS]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--model` / `-m` | required | HuggingFace model ID or local path |
+| `--host` | `0.0.0.0` | Bind address |
+| `--port` / `-p` | `8080` | Port |
+| `--protocols` | `openai` | Comma-separated: `openai` (others planned) |
+| `--api-key` | None | Bearer token — if set, all requests must include `Authorization: Bearer <key>` |
+| `--max-tokens` | `512` | Default `max_tokens` when callers do not specify one |
+
+Examples:
+
+```bash
+# Basic server
+lazarus serve --model google/gemma-3-4b-it
+
+# With auth and a custom port
+lazarus serve --model google/gemma-3-1b-it --port 9000 --api-key mysecret
+
+# Higher token budget
+lazarus serve --model google/gemma-3-1b-it --max-tokens 2048
+```
+
+The standalone `lazarus-serve` script is an alias for `lazarus serve`:
+
+```bash
+lazarus-serve --model google/gemma-3-4b-it
+```
+
+See [server.md](server.md) for the full server guide including endpoints, tool calling, and mcp-cli integration.
+
 ### introspect
 
 Mechanistic interpretability tools for understanding model internals. See [introspection.md](introspection.md) for full documentation.
