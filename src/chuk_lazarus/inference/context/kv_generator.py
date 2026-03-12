@@ -46,6 +46,10 @@ from __future__ import annotations
 
 import mlx.core as mx
 
+# Dtype used for attention masks — bfloat16 matches the weight precision and
+# avoids precision-loss issues when added to QK^T scores.
+_MASK_DTYPE = mx.bfloat16
+
 
 class KVDirectGenerator:
     """
@@ -71,7 +75,7 @@ class KVDirectGenerator:
 
     def prefill(
         self,
-        input_ids: mx.array,                    # (1, S)
+        input_ids: mx.array,  # (1, S)
     ) -> tuple[mx.array, list[tuple[mx.array, mx.array]]]:
         """
         Full forward pass. Returns (logits, per_layer_kv).
@@ -83,7 +87,7 @@ class KVDirectGenerator:
         backbone = self.model.model
         B, S = input_ids.shape
 
-        h = backbone._embed(input_ids)          # (B, S, hidden)
+        h = backbone._embed(input_ids)  # (B, S, hidden)
         kv_store: list[tuple[mx.array, mx.array]] = []
 
         for i, layer in enumerate(backbone.layers):
@@ -112,43 +116,74 @@ class KVDirectGenerator:
 
     def extend(
         self,
-        new_token_ids: mx.array,                         # (1, N)
-        kv_store: list[tuple[mx.array, mx.array]],       # list[L] of (K, V) each (1, nkv, S, dh)
-        abs_start: int,                                  # absolute position of first new token
+        new_token_ids: mx.array,  # (1, N)
+        kv_store: list[tuple[mx.array, mx.array]],  # list[L] of (K, V) each (1, nkv, S, dh)
+        abs_start: int,  # absolute position of first new token
     ) -> tuple[mx.array, list[tuple[mx.array, mx.array]]]:
         """
         Process N new tokens against existing K,V store in one batched pass.
 
-        New tokens attend to all S stored positions (fully visible) plus
-        each other causally (token i sees tokens 0..i among the N new ones).
+        New tokens attend to stored positions (respecting sliding window per
+        layer) plus each other causally.
 
         Returns (logits_for_N_tokens, extended_kv_store).
         extended_kv_store[i] has K,V of shape (1, nkv, S+N, head_dim).
+
+        Sliding-window note
+        -------------------
+        Gemma 3 uses sliding-window attention (sw=512) for 5/6 of its layers.
+        Showing those layers all S stored positions when S >> sw injects
+        attention patterns far outside training distribution, causing garbage
+        outputs.  We precompute a per-layer mask: global layers see all S
+        stored positions; sliding-window layers see only the last sw stored
+        positions (which always includes the fact, since the fact is placed
+        at the end of each window).
         """
         backbone = self.model.model
         B, N = new_token_ids.shape
-        S = kv_store[0][0].shape[2]             # sequence length of stored K
+        S = kv_store[0][0].shape[2]  # sequence length of stored K
 
-        h = backbone._embed(new_token_ids)      # (B, N, hidden)
+        h = backbone._embed(new_token_ids)  # (B, N, hidden)
 
-        # Causal mask: new tokens see all S stored + causal among themselves
-        neg_inf    = mx.full((N, N), -1e9, dtype=mx.bfloat16)
-        causal_new = mx.triu(neg_inf, k=1)       # (N, N) upper-tri = future
-        stored_vis = mx.zeros((N, S), dtype=mx.bfloat16)
-        mask = mx.concatenate([stored_vis, causal_new], axis=-1)[None, None]  # (1,1,N,S+N)
+        # Causal component: same for all layers
+        causal_new = mx.triu(
+            mx.full((N, N), -1e9, dtype=_MASK_DTYPE), k=1
+        )  # (N, N) upper-tri blocks future
+
+        # Sliding-window config (GemmaConfig exposes these; other configs may not)
+        sw = getattr(self.config, "sliding_window", None)
+        has_sw_cfg = sw is not None and hasattr(self.config, "is_global_layer")
+
+        # Global mask: all S stored positions visible
+        global_mask = mx.concatenate([mx.zeros((N, S), dtype=_MASK_DTYPE), causal_new], axis=-1)[
+            None, None
+        ]  # (1,1,N,S+N)
+
+        # Sliding-window mask: only last sw stored positions visible
+        if has_sw_cfg and S > sw:
+            sw_stored = mx.concatenate(
+                [
+                    mx.full((N, S - sw), -1e9, dtype=_MASK_DTYPE),
+                    mx.zeros((N, sw), dtype=_MASK_DTYPE),
+                ],
+                axis=-1,
+            )
+        else:
+            sw_stored = mx.zeros((N, S), dtype=_MASK_DTYPE)
+        sw_mask = mx.concatenate([sw_stored, causal_new], axis=-1)[None, None]
 
         new_kv_store: list[tuple[mx.array, mx.array]] = []
 
         for i, layer in enumerate(backbone.layers):
-            k_old, v_old = kv_store[i]          # (B, nkv, S, head_dim)
+            k_old, v_old = kv_store[i]  # (B, nkv, S, head_dim)
             attn = layer.self_attn
-            nq  = attn.num_heads
+            nq = attn.num_heads
             nkv = attn.num_kv_heads
-            dh  = attn.head_dim
+            dh = attn.head_dim
 
-            x_new = layer.input_layernorm(h)    # (B, N, hidden)
+            x_new = layer.input_layernorm(h)  # (B, N, hidden)
 
-            q_new = attn.q_proj(x_new).reshape(B, N, nq,  dh).transpose(0, 2, 1, 3)
+            q_new = attn.q_proj(x_new).reshape(B, N, nq, dh).transpose(0, 2, 1, 3)
             k_new = attn.k_proj(x_new).reshape(B, N, nkv, dh).transpose(0, 2, 1, 3)
             v_new = attn.v_proj(x_new).reshape(B, N, nkv, dh).transpose(0, 2, 1, 3)
 
@@ -169,8 +204,12 @@ class KVDirectGenerator:
             else:
                 k_rpt, v_rpt = k_all, v_all
 
+            # Select mask: global layers see everything; SW layers see last sw
+            is_global = (not has_sw_cfg) or self.config.is_global_layer(i)
+            mask_i = global_mask if is_global else sw_mask
+
             attn_out = mx.fast.scaled_dot_product_attention(
-                q_new, k_rpt, v_rpt, scale=attn.scale, mask=mask
+                q_new, k_rpt, v_rpt, scale=attn.scale, mask=mask_i
             )
             attn_out = attn_out.transpose(0, 2, 1, 3).reshape(B, N, -1)
             attn_out = attn.o_proj(attn_out)
@@ -182,7 +221,7 @@ class KVDirectGenerator:
             new_kv_store.append((k_all, v_all))
 
         h_norm = backbone.norm(h)
-        logits  = self.model._unembed(h_norm)   # (B, N, vocab)
+        logits = self.model._unembed(h_norm)  # (B, N, vocab)
 
         mx.eval(logits, *[t for pair in new_kv_store for t in pair])
         return logits, new_kv_store
@@ -200,10 +239,7 @@ class KVDirectGenerator:
         Drop the first evict_count tokens from every layer's K,V store.
         O(1) — just a slice, no recomputation.
         """
-        return [
-            (k[:, :, evict_count:, :], v[:, :, evict_count:, :])
-            for k, v in kv_store
-        ]
+        return [(k[:, :, evict_count:, :], v[:, :, evict_count:, :]) for k, v in kv_store]
 
     # ------------------------------------------------------------------
     # Single-token step (compiled)
@@ -211,9 +247,9 @@ class KVDirectGenerator:
 
     def _raw_step(
         self,
-        new_token_ids: mx.array,                         # (1, 1)
-        kv_store: list[tuple[mx.array, mx.array]],       # list[L] of (K, V) each (1, nkv, S, dh)
-        seq_len: int,                                    # absolute position of the new token
+        new_token_ids: mx.array,  # (1, 1)
+        kv_store: list[tuple[mx.array, mx.array]],  # list[L] of (K, V) each (1, nkv, S, dh)
+        seq_len: int,  # absolute position of the new token
     ) -> tuple[mx.array, list[tuple[mx.array, mx.array]]]:
         """
         Process one new token against stored K,V.
@@ -235,15 +271,15 @@ class KVDirectGenerator:
         new_kv_store: list[tuple[mx.array, mx.array]] = []
 
         for i, layer in enumerate(backbone.layers):
-            k_old, v_old = kv_store[i]          # (B, nkv, S, head_dim)
+            k_old, v_old = kv_store[i]  # (B, nkv, S, head_dim)
             attn = layer.self_attn
-            nq  = attn.num_heads
+            nq = attn.num_heads
             nkv = attn.num_kv_heads
-            dh  = attn.head_dim
+            dh = attn.head_dim
 
             x_new = layer.input_layernorm(h_new)
 
-            q_new = attn.q_proj(x_new).reshape(B, 1, nq,  dh).transpose(0, 2, 1, 3)
+            q_new = attn.q_proj(x_new).reshape(B, 1, nq, dh).transpose(0, 2, 1, 3)
             k_new = attn.k_proj(x_new).reshape(B, 1, nkv, dh).transpose(0, 2, 1, 3)
             v_new = attn.v_proj(x_new).reshape(B, 1, nkv, dh).transpose(0, 2, 1, 3)
 
@@ -263,21 +299,40 @@ class KVDirectGenerator:
             else:
                 k_rpt, v_rpt = k_all, v_all
 
-            # No mask needed: single query, causal is guaranteed by seq order
-            attn_out = mx.fast.scaled_dot_product_attention(
-                q_new, k_rpt, v_rpt, scale=attn.scale
-            )
+            # Apply sliding-window mask for non-global layers when the stored
+            # KV exceeds the window size.  Single query → mask shape (1,1,1,total).
+            sw = getattr(self.config, "sliding_window", None)
+            has_sw_cfg = sw is not None and hasattr(self.config, "is_global_layer")
+            is_global_l = (not has_sw_cfg) or self.config.is_global_layer(i)
+            total = k_all.shape[2]  # S + 1
+
+            if (not is_global_l) and has_sw_cfg and total > sw:
+                step_mask = mx.concatenate(
+                    [
+                        mx.full((1, 1, 1, total - sw), -1e9, dtype=_MASK_DTYPE),
+                        mx.zeros((1, 1, 1, sw), dtype=_MASK_DTYPE),
+                    ],
+                    axis=-1,
+                )
+                attn_out = mx.fast.scaled_dot_product_attention(
+                    q_new, k_rpt, v_rpt, scale=attn.scale, mask=step_mask
+                )
+            else:
+                # Global layer or total ≤ sw: no mask needed
+                attn_out = mx.fast.scaled_dot_product_attention(
+                    q_new, k_rpt, v_rpt, scale=attn.scale
+                )
             attn_out = attn_out.transpose(0, 2, 1, 3).reshape(B, 1, -1)
             attn_out = attn.o_proj(attn_out)
 
             h_new = h_new + layer.post_attention_layernorm(attn_out)
             ffn_out = layer.mlp(layer.pre_feedforward_layernorm(h_new))
-            h_new   = h_new + layer.post_feedforward_layernorm(ffn_out)
+            h_new = h_new + layer.post_feedforward_layernorm(ffn_out)
 
             new_kv_store.append((k_all, v_all))
 
         h_final = backbone.norm(h_new)
-        logits  = self.model._unembed(h_final)
+        logits = self.model._unembed(h_final)
         return logits, new_kv_store
 
     def step(
@@ -288,6 +343,21 @@ class KVDirectGenerator:
     ) -> tuple[mx.array, list[tuple[mx.array, mx.array]]]:
         """Compiled single-token step. See _raw_step for details."""
         return self._step(new_token_ids, kv_store, seq_len)
+
+    def step_uncompiled(
+        self,
+        new_token_ids: mx.array,
+        kv_store: list[tuple[mx.array, mx.array]],
+        seq_len: int,
+    ) -> tuple[mx.array, list[tuple[mx.array, mx.array]]]:
+        """
+        Uncompiled single-token step.
+
+        Use instead of step() when the kv_store was built from extend() over a
+        dynamically-sized replayed context — mx.compile(shapeless=True) can mis-trace
+        in that case and raise broadcast shape errors.
+        """
+        return self._raw_step(new_token_ids, kv_store, seq_len)
 
     # ------------------------------------------------------------------
     # Memory accounting
@@ -302,19 +372,16 @@ class KVDirectGenerator:
                      = same as full-residual RS store (since hidden = 2×nkv×head_dim)
         """
         return (
-            2                                       # K and V
-            * self.config.num_key_value_heads       # nkv heads
-            * self.config.head_dim                  # head_dim
+            2  # K and V
+            * self.config.num_key_value_heads  # nkv heads
+            * self.config.head_dim  # head_dim
             * seq_len
-            * self.config.num_hidden_layers         # all layers
-            * 2                                     # bfloat16
+            * self.config.num_hidden_layers  # all layers
+            * 2  # bfloat16
         )
 
     def residual_equivalent_bytes(self, seq_len: int) -> int:
         """Bytes that RS residual store would use for the same seq_len."""
         return (
-            self.config.hidden_size
-            * seq_len
-            * self.config.num_hidden_layers
-            * 2                                     # bfloat16
+            self.config.hidden_size * seq_len * self.config.num_hidden_layers * 2  # bfloat16
         )

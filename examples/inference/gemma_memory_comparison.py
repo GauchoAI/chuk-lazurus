@@ -23,26 +23,30 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import mlx.core as mx
-import numpy as np
 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def parse_args():
     p = argparse.ArgumentParser(description="Gemma memory growth comparison")
-    p.add_argument("--measure", action="store_true",
-                   help="Also measure real allocations (requires model download)")
-    p.add_argument("--model", default="mlx-community/gemma-3-270m-it-bf16",
-                   help="Model ID for --measure mode")
-    p.add_argument("--max-seq", type=int, default=4096,
-                   help="Maximum sequence length to plot")
+    p.add_argument(
+        "--measure",
+        action="store_true",
+        help="Also measure real allocations (requires model download)",
+    )
+    p.add_argument(
+        "--model", default="mlx-community/gemma-3-270m-it-bf16", help="Model ID for --measure mode"
+    )
+    p.add_argument("--max-seq", type=int, default=4096, help="Maximum sequence length to plot")
     return p.parse_args()
 
 
 # ---------------------------------------------------------------------------
 # Gemma model configurations
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class GemmaSpec:
@@ -55,11 +59,11 @@ class GemmaSpec:
 
 
 GEMMA_SPECS = [
-    GemmaSpec("270M",  num_layers=18, hidden_size=640,  num_kv_heads=1, head_dim=256),
-    GemmaSpec("1B",    num_layers=26, hidden_size=1152, num_kv_heads=1, head_dim=256),
-    GemmaSpec("4B",    num_layers=34, hidden_size=2560, num_kv_heads=4, head_dim=256),
-    GemmaSpec("12B",   num_layers=48, hidden_size=3840, num_kv_heads=8, head_dim=256),
-    GemmaSpec("27B",   num_layers=62, hidden_size=5120, num_kv_heads=8, head_dim=256),
+    GemmaSpec("270M", num_layers=18, hidden_size=640, num_kv_heads=1, head_dim=256),
+    GemmaSpec("1B", num_layers=26, hidden_size=1152, num_kv_heads=1, head_dim=256),
+    GemmaSpec("4B", num_layers=34, hidden_size=2560, num_kv_heads=4, head_dim=256),
+    GemmaSpec("12B", num_layers=48, hidden_size=3840, num_kv_heads=8, head_dim=256),
+    GemmaSpec("27B", num_layers=62, hidden_size=5120, num_kv_heads=8, head_dim=256),
 ]
 
 CONTEXT_LENGTHS = [16, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768]
@@ -68,6 +72,7 @@ CONTEXT_LENGTHS = [16, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768]
 # ---------------------------------------------------------------------------
 # Memory formulae
 # ---------------------------------------------------------------------------
+
 
 def kv_cache_bytes(spec: GemmaSpec, seq_len: int) -> int:
     """
@@ -92,24 +97,26 @@ def residual_bytes(spec: GemmaSpec, seq_len: int) -> int:
 def fmt_bytes(n: int) -> str:
     if n < 1024:
         return f"{n} B"
-    if n < 1024 ** 2:
-        return f"{n/1024:.1f} KB"
-    if n < 1024 ** 3:
-        return f"{n/1024**2:.1f} MB"
-    return f"{n/1024**3:.2f} GB"
+    if n < 1024**2:
+        return f"{n / 1024:.1f} KB"
+    if n < 1024**3:
+        return f"{n / 1024**2:.1f} MB"
+    return f"{n / 1024**3:.2f} GB"
 
 
 # ---------------------------------------------------------------------------
 # Display helpers
 # ---------------------------------------------------------------------------
 
-BOLD  = "\033[1m"
+BOLD = "\033[1m"
 GREEN = "\033[92m"
-CYAN  = "\033[96m"
-DIM   = "\033[2m"
+RED = "\033[91m"
+CYAN = "\033[96m"
+DIM = "\033[2m"
 RESET = "\033[0m"
 
 BAR_CHARS = "▏▎▍▌▋▊▉█"
+
 
 def bar(value: float, max_value: float, width: int = 40) -> str:
     filled = int(round(value / max_value * width))
@@ -117,25 +124,31 @@ def bar(value: float, max_value: float, width: int = 40) -> str:
 
 
 def print_theoretical(spec: GemmaSpec, context_lengths: list[int]) -> None:
-    print(f"\n{BOLD}Gemma {spec.name}  "
-          f"({spec.num_layers} layers · hidden={spec.hidden_size} · "
-          f"kv_heads={spec.num_kv_heads} · head_dim={spec.head_dim}){RESET}")
-    print(f"  {'Seq len':>8}  {'KV cache':>12}  {'Residual':>12}  {'Ratio':>8}  "
-          f"  KV cache bar              Residual bar")
+    print(
+        f"\n{BOLD}Gemma {spec.name}  "
+        f"({spec.num_layers} layers · hidden={spec.hidden_size} · "
+        f"kv_heads={spec.num_kv_heads} · head_dim={spec.head_dim}){RESET}"
+    )
+    print(
+        f"  {'Seq len':>8}  {'KV cache':>12}  {'Residual':>12}  {'Ratio':>8}  "
+        f"  KV cache bar              Residual bar"
+    )
     print("  " + "─" * 90)
 
     max_kv = kv_cache_bytes(spec, context_lengths[-1])
 
     for seq in context_lengths:
-        kv   = kv_cache_bytes(spec, seq)
-        res  = residual_bytes(spec, seq)
+        kv = kv_cache_bytes(spec, seq)
+        res = residual_bytes(spec, seq)
         ratio = kv / res
 
-        kv_bar  = bar(kv,  max_kv, width=30)
+        kv_bar = bar(kv, max_kv, width=30)
         res_bar = bar(res, max_kv, width=30)
 
-        print(f"  {seq:>8,}  {fmt_bytes(kv):>12}  {fmt_bytes(res):>12}  {ratio:>7.1f}×"
-              f"  {CYAN}{kv_bar}{RESET}  {DIM}{res_bar}{RESET}")
+        print(
+            f"  {seq:>8,}  {fmt_bytes(kv):>12}  {fmt_bytes(res):>12}  {ratio:>7.1f}×"
+            f"  {CYAN}{kv_bar}{RESET}  {DIM}{res_bar}{RESET}"
+        )
 
 
 def print_summary_table(context_lengths: list[int]) -> None:
@@ -150,9 +163,9 @@ def print_summary_table(context_lengths: list[int]) -> None:
         row = f"  {seq:>8,}  "
         parts = []
         for spec in GEMMA_SPECS:
-            kv  = kv_cache_bytes(spec, seq)
+            kv = kv_cache_bytes(spec, seq)
             res = residual_bytes(spec, seq)
-            parts.append(f"{kv/res:>{col_width}.1f}×")
+            parts.append(f"{kv / res:>{col_width}.1f}×")
         print(row + "  ".join(parts))
 
     print()
@@ -163,27 +176,34 @@ def print_summary_table(context_lengths: list[int]) -> None:
     print()
     for spec in GEMMA_SPECS:
         const_ratio = 2 * spec.num_layers * spec.num_kv_heads * spec.head_dim / spec.hidden_size
-        print(f"    Gemma {spec.name:<4}: ratio = {const_ratio:.1f}× (independent of sequence length)")
+        print(
+            f"    Gemma {spec.name:<4}: ratio = {const_ratio:.1f}× (independent of sequence length)"
+        )
 
 
 # ---------------------------------------------------------------------------
 # Measured section
 # ---------------------------------------------------------------------------
 
+
 def _download(model_id: str) -> Path:
     local = Path(model_id)
     if local.exists() and local.is_dir():
         return local
     from huggingface_hub import snapshot_download
+
     print(f"  Downloading {model_id} ...")
-    return Path(snapshot_download(
-        model_id,
-        allow_patterns=["*.json", "*.safetensors", "*.model", "tokenizer*"],
-    ))
+    return Path(
+        snapshot_download(
+            model_id,
+            allow_patterns=["*.json", "*.safetensors", "*.model", "tokenizer*"],
+        )
+    )
 
 
 def _apply_weights(model, model_path: Path) -> None:
     from mlx.utils import tree_unflatten
+
     raw: dict = {}
     for sf in sorted(model_path.glob("*.safetensors")):
         raw.update(mx.load(str(sf)))
@@ -219,8 +239,10 @@ def measure_memory(model_id: str, context_lengths: list[int]) -> None:
         num_kv_heads=config.num_key_value_heads or config.num_attention_heads,
         head_dim=config.head_dim,
     )
-    print(f"  {config.num_hidden_layers} layers · hidden={config.hidden_size} · "
-          f"kv_heads={spec.num_kv_heads} · head_dim={spec.head_dim}")
+    print(
+        f"  {config.num_hidden_layers} layers · hidden={config.hidden_size} · "
+        f"kv_heads={spec.num_kv_heads} · head_dim={spec.head_dim}"
+    )
 
     print("\n  Loading standard GemmaForCausalLM ...")
     standard = GemmaForCausalLM(config)
@@ -233,8 +255,10 @@ def measure_memory(model_id: str, context_lengths: list[int]) -> None:
     rs_model.eval()
 
     print()
-    print(f"  {'Seq len':>8}  {'KV measured':>14}  {'RS measured':>14}  "
-          f"{'KV theory':>12}  {'RS theory':>12}  {'Ratio (meas)':>14}")
+    print(
+        f"  {'Seq len':>8}  {'KV measured':>14}  {'RS measured':>14}  "
+        f"{'KV theory':>12}  {'RS theory':>12}  {'Ratio (meas)':>14}"
+    )
     print("  " + "─" * 92)
 
     for seq_len in context_lengths:
@@ -246,7 +270,6 @@ def measure_memory(model_id: str, context_lengths: list[int]) -> None:
 
         # --- Standard: run forward, collect cache, measure cache tensors ---
         mx.metal.clear_cache()
-        mem_before = mx.metal.get_active_memory()
 
         std_out = standard(input_ids)
         mx.eval(std_out.logits)
@@ -269,21 +292,24 @@ def measure_memory(model_id: str, context_lengths: list[int]) -> None:
 
         residual_bytes_measured = rs_out.residual.nbytes
 
-        kv_theory  = kv_cache_bytes(spec, seq_len)
+        kv_theory = kv_cache_bytes(spec, seq_len)
         res_theory = residual_bytes(spec, seq_len)
         ratio = cache_bytes_measured / residual_bytes_measured if residual_bytes_measured > 0 else 0
 
-        print(f"  {seq_len:>8,}  "
-              f"{fmt_bytes(cache_bytes_measured):>14}  "
-              f"{fmt_bytes(residual_bytes_measured):>14}  "
-              f"{fmt_bytes(kv_theory):>12}  "
-              f"{fmt_bytes(res_theory):>12}  "
-              f"{ratio:>13.1f}×")
+        print(
+            f"  {seq_len:>8,}  "
+            f"{fmt_bytes(cache_bytes_measured):>14}  "
+            f"{fmt_bytes(residual_bytes_measured):>14}  "
+            f"{fmt_bytes(kv_theory):>12}  "
+            f"{fmt_bytes(res_theory):>12}  "
+            f"{ratio:>13.1f}×"
+        )
 
 
 # ---------------------------------------------------------------------------
 # Zero KV loss proof
 # ---------------------------------------------------------------------------
+
 
 def recompute_kv_from_residual(
     rs_model,
@@ -311,12 +337,14 @@ def recompute_kv_from_residual(
     normed = block.input_layernorm(pre_layer_residual)
 
     # Project K and V
-    keys   = attn.k_proj(normed)
+    keys = attn.k_proj(normed)
     values = attn.v_proj(normed)
 
     # Reshape: (batch, seq, kv_heads * head_dim) → (batch, kv_heads, seq, head_dim)
-    keys   = keys.reshape(batch_size, seq_len, attn.num_kv_heads, attn.head_dim).transpose(0, 2, 1, 3)
-    values = values.reshape(batch_size, seq_len, attn.num_kv_heads, attn.head_dim).transpose(0, 2, 1, 3)
+    keys = keys.reshape(batch_size, seq_len, attn.num_kv_heads, attn.head_dim).transpose(0, 2, 1, 3)
+    values = values.reshape(batch_size, seq_len, attn.num_kv_heads, attn.head_dim).transpose(
+        0, 2, 1, 3
+    )
 
     # Q/K normalization (Gemma-specific)
     keys = attn.k_norm(keys)
@@ -345,9 +373,10 @@ def prove_zero_kv_loss(model_id: str, prompt: str = "The Markov property states 
     If K,V are recoverable from the residual with diff=0, the cache is
     storing nothing that the residual doesn't already encode.
     """
+    from transformers import AutoTokenizer
+
     from chuk_lazarus.models_v2.families.gemma import GemmaConfig, GemmaForCausalLM
     from chuk_lazarus.models_v2.families.gemma_rs import GemmaResidualStreamForCausalLM
-    from transformers import AutoTokenizer
 
     print(f"\n{BOLD}=== PROOF: Zero KV information loss ==={RESET}")
     print(f"Prompt: {repr(prompt)}")
@@ -388,8 +417,10 @@ def prove_zero_kv_loss(model_id: str, prompt: str = "The Markov property states 
     num_layers = config.num_hidden_layers
 
     # Step 2+3+4: for each layer, recover K,V from the residual, compare to cache
-    print(f"  {'Layer':>6}  {'Type':>8}  {'Cached K (bytes)':>18}  "
-          f"{'K diff':>12}  {'V diff':>12}  {'Result':>8}")
+    print(
+        f"  {'Layer':>6}  {'Type':>8}  {'Cached K (bytes)':>18}  "
+        f"{'K diff':>12}  {'V diff':>12}  {'Result':>8}"
+    )
     print("  " + "─" * 78)
 
     all_pass = True
@@ -422,8 +453,10 @@ def prove_zero_kv_loss(model_id: str, prompt: str = "The Markov property states 
             all_pass = False
 
         status = f"{GREEN}PASS{RESET}" if passed else f"{RED}FAIL{RESET}"
-        print(f"  {layer_idx:>6}  {layer_type:>8}  {fmt_bytes(k_bytes):>18}  "
-              f"{k_diff:>12.2e}  {v_diff:>12.2e}  {status}")
+        print(
+            f"  {layer_idx:>6}  {layer_type:>8}  {fmt_bytes(k_bytes):>18}  "
+            f"{k_diff:>12.2e}  {v_diff:>12.2e}  {status}"
+        )
 
     print()
     print(f"  Global max K diff across all {num_layers} layers: {max_k_diff_global:.2e}")
@@ -431,7 +464,9 @@ def prove_zero_kv_loss(model_id: str, prompt: str = "The Markov property states 
     print()
 
     if all_pass:
-        print(f"  {GREEN}{BOLD}All layers: diff = 0.0  — the KV cache is exactly recoverable from the residual.{RESET}")
+        print(
+            f"  {GREEN}{BOLD}All layers: diff = 0.0  — the KV cache is exactly recoverable from the residual.{RESET}"
+        )
         print()
         print("  Conclusion:")
         print("    K_layer_N = f(residual_before_layer_N)  — deterministic, lossless")
@@ -447,10 +482,11 @@ def prove_zero_kv_loss(model_id: str, prompt: str = "The Markov property states 
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main():
     args = parse_args()
 
-    context_lengths = [l for l in CONTEXT_LENGTHS if l <= args.max_seq]
+    context_lengths = [ctx for ctx in CONTEXT_LENGTHS if ctx <= args.max_seq]
     if not context_lengths:
         context_lengths = CONTEXT_LENGTHS
 
@@ -475,7 +511,9 @@ def main():
     else:
         print(f"{DIM}Run with --measure to also measure real MLX metal allocations{RESET}")
         print(f"{DIM}and prove zero KV information loss across all layers.{RESET}")
-        print(f"{DIM}Example: uv run python examples/inference/gemma_memory_comparison.py --measure{RESET}")
+        print(
+            f"{DIM}Example: uv run python examples/inference/gemma_memory_comparison.py --measure{RESET}"
+        )
         print()
 
 

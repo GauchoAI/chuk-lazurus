@@ -33,13 +33,13 @@ from pathlib import Path
 
 import mlx.core as mx
 
-BOLD   = "\033[1m"
-GREEN  = "\033[92m"
-CYAN   = "\033[96m"
+BOLD = "\033[1m"
+GREEN = "\033[92m"
+CYAN = "\033[96m"
 YELLOW = "\033[93m"
-DIM    = "\033[2m"
-RED    = "\033[91m"
-RESET  = "\033[0m"
+DIM = "\033[2m"
+RED = "\033[91m"
+RESET = "\033[0m"
 
 # A real multi-turn conversation about the Markov property in transformers.
 # Each entry is a user message. The model continues from whatever it last said.
@@ -55,16 +55,18 @@ CONVERSATION = [
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--model", default="mlx-community/gemma-3-270m-it-bf16")
-    p.add_argument("--gen-tokens", type=int, default=35,
-                   help="Tokens to generate per turn")
+    p.add_argument("--gen-tokens", type=int, default=35, help="Tokens to generate per turn")
     return p.parse_args()
 
 
 def fmt_bytes(n: int) -> str:
-    if n < 1024:       return f"{n} B"
-    if n < 1024**2:    return f"{n/1024:.1f} KB"
-    if n < 1024**3:    return f"{n/1024**2:.1f} MB"
-    return f"{n/1024**3:.2f} GB"
+    if n < 1024:
+        return f"{n} B"
+    if n < 1024**2:
+        return f"{n / 1024:.1f} KB"
+    if n < 1024**3:
+        return f"{n / 1024**2:.1f} MB"
+    return f"{n / 1024**3:.2f} GB"
 
 
 def _download(model_id: str) -> Path:
@@ -72,15 +74,19 @@ def _download(model_id: str) -> Path:
     if local.exists() and local.is_dir():
         return local
     from huggingface_hub import snapshot_download
+
     print(f"  Downloading {model_id}...")
-    return Path(snapshot_download(
-        model_id,
-        allow_patterns=["*.json", "*.safetensors", "*.model", "tokenizer*"],
-    ))
+    return Path(
+        snapshot_download(
+            model_id,
+            allow_patterns=["*.json", "*.safetensors", "*.model", "tokenizer*"],
+        )
+    )
 
 
 def _apply_weights(model, model_path: Path) -> None:
     from mlx.utils import tree_unflatten
+
     raw: dict = {}
     for sf in sorted(model_path.glob("*.safetensors")):
         raw.update(mx.load(str(sf)))
@@ -94,9 +100,10 @@ def _apply_weights(model, model_path: Path) -> None:
 
 
 def load_models(model_id: str):
+    from transformers import AutoTokenizer
+
     from chuk_lazarus.models_v2.families.gemma import GemmaConfig, GemmaForCausalLM
     from chuk_lazarus.models_v2.families.gemma_rs import GemmaResidualStreamForCausalLM
-    from transformers import AutoTokenizer
 
     model_path = _download(model_id)
     with open(model_path / "config.json") as f:
@@ -133,6 +140,7 @@ def kv_cache_bytes(cache) -> int:
 # Standard multi-turn: maintain KV cache across turns
 # ---------------------------------------------------------------------------
 
+
 class StandardMultiTurn:
     """
     Demonstrates KV cache memory cost for multi-turn conversations.
@@ -148,6 +156,7 @@ class StandardMultiTurn:
     rounding that eventually flips argmax. Using full-sequence for both keeps
     the comparison clean and the outputs numerically identical.
     """
+
     def __init__(self, model, config):
         self.model = model
         self.config = config
@@ -181,13 +190,20 @@ class StandardMultiTurn:
     def stored_state_bytes(self) -> int:
         """Theoretical KV cache bytes for current conversation length."""
         L = len(self.token_ids)
-        return (2 * self.config.num_hidden_layers * self.config.num_key_value_heads
-                * L * self.config.head_dim * 2)
+        return (
+            2
+            * self.config.num_hidden_layers
+            * self.config.num_key_value_heads
+            * L
+            * self.config.head_dim
+            * 2
+        )
 
 
 # ---------------------------------------------------------------------------
 # RS multi-turn: store token IDs only, recompute full prefill each turn
 # ---------------------------------------------------------------------------
+
 
 class RSMultiTurn:
     """
@@ -195,6 +211,7 @@ class RSMultiTurn:
     At each turn, recomputes the full prefill from scratch.
     Zero persistent KV state.
     """
+
     def __init__(self, model, hidden_size: int):
         self.model = model
         self.hidden_size = hidden_size
@@ -239,6 +256,7 @@ class RSMultiTurn:
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main():
     args = parse_args()
 
@@ -254,11 +272,13 @@ def main():
     std_model, rs_model, tokenizer, config = load_models(args.model)
 
     std_session = StandardMultiTurn(std_model, config)
-    rs_session  = RSMultiTurn(rs_model, config.hidden_size)
+    rs_session = RSMultiTurn(rs_model, config.hidden_size)
 
     # Warm up
     _w = mx.array([[1, 2, 3]])
-    _ = std_model(_w); _ = rs_model(_w); mx.eval()
+    _ = std_model(_w)
+    _ = rs_model(_w)
+    mx.eval()
 
     print()
 
@@ -267,7 +287,7 @@ def main():
     all_match = True
 
     for turn_idx, user_message in enumerate(CONVERSATION):
-        print(f"\n{BOLD}{'─'*56}{RESET}")
+        print(f"\n{BOLD}{'─' * 56}{RESET}")
         print(f"{BOLD}Turn {turn_idx + 1}{RESET}  {DIM}User: {user_message}{RESET}")
         print()
 
@@ -279,7 +299,6 @@ def main():
         rs_gen, rs_prefill, rs_gen_ms = rs_session.turn(new_toks, args.gen_tokens)
 
         std_text = tokenizer.decode(std_gen)
-        rs_text  = tokenizer.decode(rs_gen)
 
         match = std_gen == rs_gen
         if not match:
@@ -293,50 +312,56 @@ def main():
 
         # State comparison
         std_stored = std_session.stored_state_bytes
-        rs_stored  = rs_session.stored_state_bytes
+        rs_stored = rs_session.stored_state_bytes
 
         print(f"  {'':30}  {'Standard':>16}  {'RS':>16}  {'Ratio':>8}")
-        print(f"  {'─'*72}")
-        print(f"  {'Stored state between turns':30}  "
-              f"{CYAN}{fmt_bytes(std_stored):>16}{RESET}  "
-              f"{DIM}{fmt_bytes(rs_stored):>16}{RESET}  "
-              f"{YELLOW}{std_stored/rs_stored:>7.0f}×{RESET}")
-        print(f"  {'Prefill this turn (ms)':30}  "
-              f"{std_prefill:>16.0f}  "
-              f"{rs_prefill:>16.0f}  "
-              f"{'':>8}")
-        print(f"  {'Avg gen ms/token':30}  "
-              f"{std_gen_ms:>16.1f}  "
-              f"{rs_gen_ms:>16.1f}  "
-              f"{'':>8}")
-        print(f"  {'Total conversation tokens':30}  "
-              f"{len(std_session.token_ids):>16,}  "
-              f"{len(rs_session.token_ids):>16,}  "
-              f"{'':>8}")
+        print(f"  {'─' * 72}")
+        print(
+            f"  {'Stored state between turns':30}  "
+            f"{CYAN}{fmt_bytes(std_stored):>16}{RESET}  "
+            f"{DIM}{fmt_bytes(rs_stored):>16}{RESET}  "
+            f"{YELLOW}{std_stored / rs_stored:>7.0f}×{RESET}"
+        )
+        print(
+            f"  {'Prefill this turn (ms)':30}  {std_prefill:>16.0f}  {rs_prefill:>16.0f}  {'':>8}"
+        )
+        print(f"  {'Avg gen ms/token':30}  {std_gen_ms:>16.1f}  {rs_gen_ms:>16.1f}  {'':>8}")
+        print(
+            f"  {'Total conversation tokens':30}  "
+            f"{len(std_session.token_ids):>16,}  "
+            f"{len(rs_session.token_ids):>16,}  "
+            f"{'':>8}"
+        )
 
-        state_history.append({
-            "turn": turn_idx + 1,
-            "tokens": len(rs_session.token_ids),
-            "std_stored": std_stored,
-            "rs_stored": rs_stored,
-        })
+        state_history.append(
+            {
+                "turn": turn_idx + 1,
+                "tokens": len(rs_session.token_ids),
+                "std_stored": std_stored,
+                "rs_stored": rs_stored,
+            }
+        )
 
     # Summary table
-    print(f"\n\n{BOLD}{'='*56}{RESET}")
+    print(f"\n\n{BOLD}{'=' * 56}{RESET}")
     print(f"{BOLD}Summary: Stored state growth across turns{RESET}")
     print()
-    print(f"  {'Turn':>6}  {'Tokens':>8}  {'Std stored (KV)':>18}  "
-          f"{'RS stored (IDs)':>18}  {'Ratio':>8}  {'Savings':>12}")
+    print(
+        f"  {'Turn':>6}  {'Tokens':>8}  {'Std stored (KV)':>18}  "
+        f"{'RS stored (IDs)':>18}  {'Ratio':>8}  {'Savings':>12}"
+    )
     print("  " + "─" * 76)
 
     for row in state_history:
-        ratio   = row["std_stored"] / row["rs_stored"]
+        ratio = row["std_stored"] / row["rs_stored"]
         savings = row["std_stored"] - row["rs_stored"]
-        print(f"  {row['turn']:>6}  {row['tokens']:>8,}  "
-              f"{CYAN}{fmt_bytes(row['std_stored']):>18}{RESET}  "
-              f"{DIM}{fmt_bytes(row['rs_stored']):>18}{RESET}  "
-              f"{YELLOW}{ratio:>7.0f}×{RESET}  "
-              f"{fmt_bytes(savings):>12}")
+        print(
+            f"  {row['turn']:>6}  {row['tokens']:>8,}  "
+            f"{CYAN}{fmt_bytes(row['std_stored']):>18}{RESET}  "
+            f"{DIM}{fmt_bytes(row['rs_stored']):>18}{RESET}  "
+            f"{YELLOW}{ratio:>7.0f}×{RESET}  "
+            f"{fmt_bytes(savings):>12}"
+        )
 
     print()
     if all_match:
@@ -346,38 +371,51 @@ def main():
 
     # Extrapolation to realistic conversation lengths
     print()
-    print(f"{BOLD}Extrapolation: stored state at scale (Gemma {config.num_hidden_layers}L, "
-          f"hidden={config.hidden_size}, kv_heads={config.num_key_value_heads}){RESET}")
+    print(
+        f"{BOLD}Extrapolation: stored state at scale (Gemma {config.num_hidden_layers}L, "
+        f"hidden={config.hidden_size}, kv_heads={config.num_key_value_heads}){RESET}"
+    )
     print()
-    print(f"  {'History':>8}  {'KV cache stored':>18}  {'Token IDs stored':>18}  "
-          f"{'Ratio':>8}  {'1000 sessions KV':>18}  {'1000 sessions RS':>18}")
+    print(
+        f"  {'History':>8}  {'KV cache stored':>18}  {'Token IDs stored':>18}  "
+        f"{'Ratio':>8}  {'1000 sessions KV':>18}  {'1000 sessions RS':>18}"
+    )
     print("  " + "─" * 96)
 
     for n_tokens in [1_000, 4_000, 16_000, 64_000, 128_000]:
-        kv_bytes = (2 * config.num_hidden_layers * config.num_key_value_heads
-                    * n_tokens * config.head_dim * 2)
+        kv_bytes = (
+            2
+            * config.num_hidden_layers
+            * config.num_key_value_heads
+            * n_tokens
+            * config.head_dim
+            * 2
+        )
         id_bytes = n_tokens * 4
-        ratio    = kv_bytes / id_bytes
+        ratio = kv_bytes / id_bytes
 
-        print(f"  {n_tokens:>8,}  "
-              f"{CYAN}{fmt_bytes(kv_bytes):>18}{RESET}  "
-              f"{DIM}{fmt_bytes(id_bytes):>18}{RESET}  "
-              f"{YELLOW}{ratio:>7.0f}×{RESET}  "
-              f"{fmt_bytes(kv_bytes * 1000):>18}  "
-              f"{fmt_bytes(id_bytes * 1000):>18}")
+        print(
+            f"  {n_tokens:>8,}  "
+            f"{CYAN}{fmt_bytes(kv_bytes):>18}{RESET}  "
+            f"{DIM}{fmt_bytes(id_bytes):>18}{RESET}  "
+            f"{YELLOW}{ratio:>7.0f}×{RESET}  "
+            f"{fmt_bytes(kv_bytes * 1000):>18}  "
+            f"{fmt_bytes(id_bytes * 1000):>18}"
+        )
 
     print()
-    print(f"  At 128K tokens × 1000 concurrent sessions:")
+    print("  At 128K tokens × 1000 concurrent sessions:")
 
-    kv_128k = (2 * config.num_hidden_layers * config.num_key_value_heads
-               * 128_000 * config.head_dim * 2)
+    kv_128k = (
+        2 * config.num_hidden_layers * config.num_key_value_heads * 128_000 * config.head_dim * 2
+    )
     id_128k = 128_000 * 4
 
     print(f"    Standard (KV): {fmt_bytes(kv_128k * 1000)}  ← needs a cluster")
     print(f"    RS (IDs):      {fmt_bytes(id_128k * 1000)}  ← fits on a laptop")
     print()
-    print(f"  Ratio: {kv_128k/id_128k:.0f}× — and this ratio is constant,")
-    print(f"  independent of history length.")
+    print(f"  Ratio: {kv_128k / id_128k:.0f}× — and this ratio is constant,")
+    print("  independent of history length.")
     print()
 
 

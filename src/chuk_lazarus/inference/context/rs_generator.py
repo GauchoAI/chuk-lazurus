@@ -76,17 +76,15 @@ class CompiledRSGenerator:
     """
 
     def __init__(self, rs_model, config):
-        self.model  = rs_model
+        self.model = rs_model
         self.config = config
-        self._step  = mx.compile(self._raw_step, shapeless=True)
+        self._step = mx.compile(self._raw_step, shapeless=True)
 
     # ------------------------------------------------------------------
     # Prefill — full forward from token IDs
     # ------------------------------------------------------------------
 
-    def prefill(
-        self, input_ids: mx.array
-    ) -> tuple[mx.array, list[mx.array]]:
+    def prefill(self, input_ids: mx.array) -> tuple[mx.array, list[mx.array]]:
         """
         Full forward pass. Returns (logits, per_layer_residuals).
 
@@ -99,7 +97,7 @@ class CompiledRSGenerator:
         layer_inputs: list[mx.array] = []
 
         for i, layer in enumerate(backbone.layers):
-            layer_inputs.append(h)          # pre-layer-i residual
+            layer_inputs.append(h)  # pre-layer-i residual
             mask = backbone._mask_for_layer(i, h)
             h = layer(h, mask=mask)
 
@@ -114,9 +112,9 @@ class CompiledRSGenerator:
 
     def extend(
         self,
-        new_token_ids: mx.array,          # (1, N)
-        stored_residuals: list[mx.array], # list[L] of (1, S, hidden)
-        abs_start: int,                   # absolute position of first NEW token
+        new_token_ids: mx.array,  # (1, N)
+        stored_residuals: list[mx.array],  # list[L] of (1, S, hidden)
+        abs_start: int,  # absolute position of first NEW token
     ) -> tuple[mx.array, list[mx.array]]:
         """
         Process N new tokens against existing stored residuals in one pass.
@@ -129,36 +127,36 @@ class CompiledRSGenerator:
         extended_stored[i] has shape (1, S+N, hidden).
         """
         backbone = self.model.model
-        B, N     = new_token_ids.shape
-        S        = stored_residuals[0].shape[1]
+        B, N = new_token_ids.shape
+        S = stored_residuals[0].shape[1]
 
         h = backbone._embed(new_token_ids)  # (B, N, hidden)
 
         # Causal mask: (1, 1, N, S+N)
         # New token i can attend to all S stored + new tokens 0..i
-        neg_inf    = mx.full((N, N), -1e9, dtype=mx.bfloat16)
-        causal_new = mx.triu(neg_inf, k=1)              # (N, N) upper tri = future
-        stored_vis = mx.zeros((N, S), dtype=mx.bfloat16) # (N, S) all visible
+        neg_inf = mx.full((N, N), -1e9, dtype=mx.bfloat16)
+        causal_new = mx.triu(neg_inf, k=1)  # (N, N) upper tri = future
+        stored_vis = mx.zeros((N, S), dtype=mx.bfloat16)  # (N, S) all visible
         mask = mx.concatenate([stored_vis, causal_new], axis=-1)[None, None]  # (1,1,N,S+N)
 
         new_pre: list[mx.array] = []  # pre-layer-i residuals for new tokens
 
         for i, layer in enumerate(backbone.layers):
-            attn  = layer.self_attn
+            attn = layer.self_attn
             h_old = stored_residuals[i]  # (B, S, hidden)
 
-            new_pre.append(h)            # save pre-layer-i h (correct residual to store)
+            new_pre.append(h)  # save pre-layer-i h (correct residual to store)
 
-            x_old = layer.input_layernorm(h_old)   # (B, S, hidden)
-            x_new = layer.input_layernorm(h)        # (B, N, hidden)
+            x_old = layer.input_layernorm(h_old)  # (B, S, hidden)
+            x_new = layer.input_layernorm(h)  # (B, N, hidden)
 
-            nq  = attn.num_heads
+            nq = attn.num_heads
             nkv = attn.num_kv_heads
-            dh  = attn.head_dim
+            dh = attn.head_dim
 
             k_old = attn.k_proj(x_old).reshape(B, S, nkv, dh).transpose(0, 2, 1, 3)
             v_old = attn.v_proj(x_old).reshape(B, S, nkv, dh).transpose(0, 2, 1, 3)
-            q_new = attn.q_proj(x_new).reshape(B, N, nq,  dh).transpose(0, 2, 1, 3)
+            q_new = attn.q_proj(x_new).reshape(B, N, nq, dh).transpose(0, 2, 1, 3)
             k_new = attn.k_proj(x_new).reshape(B, N, nkv, dh).transpose(0, 2, 1, 3)
             v_new = attn.v_proj(x_new).reshape(B, N, nkv, dh).transpose(0, 2, 1, 3)
 
@@ -190,7 +188,7 @@ class CompiledRSGenerator:
             h = h + layer.post_feedforward_layernorm(ffn_out)
 
         h_norm = backbone.norm(h)
-        logits  = self.model._unembed(h_norm)  # (B, N, vocab)
+        logits = self.model._unembed(h_norm)  # (B, N, vocab)
 
         # Extend stored with pre-layer residuals of new tokens
         extended = [
@@ -222,9 +220,9 @@ class CompiledRSGenerator:
 
     def _raw_step(
         self,
-        new_token_ids: mx.array,            # (1, 1)
-        stored_residuals: list[mx.array],   # list[L] of (1, S, hidden)
-        seq_len: int,                       # absolute position of the new token
+        new_token_ids: mx.array,  # (1, 1)
+        stored_residuals: list[mx.array],  # list[L] of (1, S, hidden)
+        seq_len: int,  # absolute position of the new token
     ) -> tuple[mx.array, list[mx.array]]:
         """
         Process one new token against stored residuals.
@@ -242,24 +240,24 @@ class CompiledRSGenerator:
         new_layer_inputs: list[mx.array] = []
 
         for i, layer in enumerate(backbone.layers):
-            attn  = layer.self_attn
+            attn = layer.self_attn
             h_old = stored_residuals[i]  # (1, S, hidden)
 
-            h_pre = h_new   # pre-layer-i residual for new token (store this)
+            h_pre = h_new  # pre-layer-i residual for new token (store this)
 
             x_old = layer.input_layernorm(h_old)
             x_new = layer.input_layernorm(h_new)
 
             B, S_old, _ = h_old.shape
-            nq  = attn.num_heads
+            nq = attn.num_heads
             nkv = attn.num_kv_heads
-            dh  = attn.head_dim
+            dh = attn.head_dim
 
             k_old = attn.k_proj(x_old).reshape(B, S_old, nkv, dh).transpose(0, 2, 1, 3)
             v_old = attn.v_proj(x_old).reshape(B, S_old, nkv, dh).transpose(0, 2, 1, 3)
-            q_new = attn.q_proj(x_new).reshape(B, 1,     nq,  dh).transpose(0, 2, 1, 3)
-            k_new = attn.k_proj(x_new).reshape(B, 1,     nkv, dh).transpose(0, 2, 1, 3)
-            v_new = attn.v_proj(x_new).reshape(B, 1,     nkv, dh).transpose(0, 2, 1, 3)
+            q_new = attn.q_proj(x_new).reshape(B, 1, nq, dh).transpose(0, 2, 1, 3)
+            k_new = attn.k_proj(x_new).reshape(B, 1, nkv, dh).transpose(0, 2, 1, 3)
+            v_new = attn.v_proj(x_new).reshape(B, 1, nkv, dh).transpose(0, 2, 1, 3)
 
             q_new = attn.q_norm(q_new)
             k_old = attn.k_norm(k_old)
@@ -278,23 +276,19 @@ class CompiledRSGenerator:
                 k_all = mx.repeat(k_all, attn.n_rep, axis=1)
                 v_all = mx.repeat(v_all, attn.n_rep, axis=1)
 
-            attn_out = mx.fast.scaled_dot_product_attention(
-                q_new, k_all, v_all, scale=attn.scale
-            )
+            attn_out = mx.fast.scaled_dot_product_attention(q_new, k_all, v_all, scale=attn.scale)
             attn_out = attn_out.transpose(0, 2, 1, 3).reshape(B, 1, -1)
             attn_out = attn.o_proj(attn_out)
 
             h_new = h_new + layer.post_attention_layernorm(attn_out)
             ffn_out = layer.mlp(layer.pre_feedforward_layernorm(h_new))
-            h_new   = h_new + layer.post_feedforward_layernorm(ffn_out)
+            h_new = h_new + layer.post_feedforward_layernorm(ffn_out)
 
             # Store pre-layer-i residual (h_pre), not post-layer-i (h_new)
-            new_layer_inputs.append(
-                mx.concatenate([stored_residuals[i], h_pre], axis=1)
-            )
+            new_layer_inputs.append(mx.concatenate([stored_residuals[i], h_pre], axis=1))
 
         h_final = backbone.norm(h_new)
-        logits  = self.model._unembed(h_final)
+        logits = self.model._unembed(h_final)
         return logits, new_layer_inputs
 
     def step(
@@ -305,6 +299,15 @@ class CompiledRSGenerator:
     ) -> tuple[mx.array, list[mx.array]]:
         """Compiled single-token step. See _raw_step for details."""
         return self._step(new_token_ids, stored_residuals, seq_len)
+
+    def step_uncompiled(
+        self,
+        new_token_ids: mx.array,
+        stored_residuals: list[mx.array],
+        seq_len: int,
+    ) -> tuple[mx.array, list[mx.array]]:
+        """Uncompiled single-token step. Mirrors KVDirectGenerator.step_uncompiled."""
+        return self._raw_step(new_token_ids, stored_residuals, seq_len)
 
     # ------------------------------------------------------------------
     # Memory accounting
@@ -317,7 +320,10 @@ class CompiledRSGenerator:
     def kv_equivalent_bytes(self, seq_len: int) -> int:
         """KV cache bytes that would be used for the same seq_len."""
         return (
-            2 * self.config.num_hidden_layers
+            2
+            * self.config.num_hidden_layers
             * self.config.num_key_value_heads
-            * seq_len * self.config.head_dim * 2
+            * seq_len
+            * self.config.head_dim
+            * 2
         )

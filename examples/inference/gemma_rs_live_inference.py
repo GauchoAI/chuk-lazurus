@@ -20,24 +20,23 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import time
 from pathlib import Path
 
 import mlx.core as mx
-import mlx.nn as nn
 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def parse_args():
     p = argparse.ArgumentParser(description="RS model live inference demo")
     p.add_argument("--model", default="mlx-community/gemma-3-270m-it-bf16")
     p.add_argument("--tokens", type=int, default=50, help="Tokens to generate")
-    p.add_argument("--context", default="medium",
-                   choices=["short", "medium", "long"],
-                   help="Prompt length")
+    p.add_argument(
+        "--context", default="medium", choices=["short", "medium", "long"], help="Prompt length"
+    )
     p.add_argument("--prompt", default=None, help="Custom prompt text")
     return p.parse_args()
 
@@ -51,7 +50,6 @@ PROMPTS = {
         "The Markov property states that the future is independent of the past "
         "given the present. In a transformer,"
     ),
-
     "medium": (
         "The Markov property is a fundamental concept in probability theory. "
         "A stochastic process has the Markov property if the conditional probability "
@@ -67,7 +65,6 @@ PROMPTS = {
         "or prior tokens is needed. The keys and values used in attention at layer N are "
         "deterministic functions of the residual at layer N. Therefore,"
     ),
-
     "long": (
         "Information theory, developed by Claude Shannon in 1948, provides the mathematical "
         "foundation for quantifying, storing, and transmitting information. Shannon's central "
@@ -100,40 +97,48 @@ PROMPTS = {
 # Terminal colours
 # ---------------------------------------------------------------------------
 
-BOLD  = "\033[1m"
+BOLD = "\033[1m"
 GREEN = "\033[92m"
-RED   = "\033[91m"
-CYAN  = "\033[96m"
+RED = "\033[91m"
+CYAN = "\033[96m"
 YELLOW = "\033[93m"
-DIM   = "\033[2m"
+DIM = "\033[2m"
 RESET = "\033[0m"
 
 
 def fmt_bytes(n: int) -> str:
-    if n < 1024:       return f"{n} B"
-    if n < 1024**2:    return f"{n/1024:.1f} KB"
-    if n < 1024**3:    return f"{n/1024**2:.1f} MB"
-    return f"{n/1024**3:.2f} GB"
+    if n < 1024:
+        return f"{n} B"
+    if n < 1024**2:
+        return f"{n / 1024:.1f} KB"
+    if n < 1024**3:
+        return f"{n / 1024**2:.1f} MB"
+    return f"{n / 1024**3:.2f} GB"
 
 
 # ---------------------------------------------------------------------------
 # Loading (same pattern as other examples — no inference/__init__ import)
 # ---------------------------------------------------------------------------
 
+
 def _download(model_id: str) -> Path:
     local = Path(model_id)
     if local.exists() and local.is_dir():
         return local
     from huggingface_hub import snapshot_download
+
     print(f"  Downloading {model_id}...")
-    return Path(snapshot_download(
-        model_id,
-        allow_patterns=["*.json", "*.safetensors", "*.model", "tokenizer*"],
-    ))
+    return Path(
+        snapshot_download(
+            model_id,
+            allow_patterns=["*.json", "*.safetensors", "*.model", "tokenizer*"],
+        )
+    )
 
 
 def _apply_weights(model, model_path: Path) -> None:
     from mlx.utils import tree_unflatten
+
     raw: dict = {}
     for sf in sorted(model_path.glob("*.safetensors")):
         raw.update(mx.load(str(sf)))
@@ -147,9 +152,10 @@ def _apply_weights(model, model_path: Path) -> None:
 
 
 def load_models(model_id: str):
+    from transformers import AutoTokenizer
+
     from chuk_lazarus.models_v2.families.gemma import GemmaConfig, GemmaForCausalLM
     from chuk_lazarus.models_v2.families.gemma_rs import GemmaResidualStreamForCausalLM
-    from transformers import AutoTokenizer
 
     model_path = _download(model_id)
     with open(model_path / "config.json") as f:
@@ -176,6 +182,7 @@ def load_models(model_id: str):
 # Memory accounting
 # ---------------------------------------------------------------------------
 
+
 def kv_cache_bytes(cache, config) -> int:
     """Sum the actual nbytes of all cached K and V tensors."""
     if cache is None:
@@ -196,6 +203,7 @@ def residual_bytes_for_seq(seq_len: int, hidden_size: int) -> int:
 # ---------------------------------------------------------------------------
 # Generators
 # ---------------------------------------------------------------------------
+
 
 def generate_standard(model, input_ids: mx.array, max_new_tokens: int, config):
     """
@@ -226,7 +234,7 @@ def generate_standard(model, input_ids: mx.array, max_new_tokens: int, config):
 
         yield next_token, kv_bytes, step_time
 
-        eos = getattr(model.config, 'eos_token_id', None)
+        eos = getattr(model.config, "eos_token_id", None)
         if eos is not None:
             eos_list = eos if isinstance(eos, list) else [eos]
             if next_token in eos_list:
@@ -262,7 +270,7 @@ def generate_rs(model, input_ids: mx.array, max_new_tokens: int, config):
 
         yield next_token, res_bytes, step_time
 
-        eos = getattr(model.config, 'eos_token_id', None)
+        eos = getattr(model.config, "eos_token_id", None)
         if eos and next_token == eos:
             break
 
@@ -270,6 +278,7 @@ def generate_rs(model, input_ids: mx.array, max_new_tokens: int, config):
 # ---------------------------------------------------------------------------
 # Main demo
 # ---------------------------------------------------------------------------
+
 
 def main():
     args = parse_args()
@@ -291,49 +300,52 @@ def main():
     print(f"  Head dim: {config.head_dim}")
 
     # Memory at prompt length
-    theory_kv  = (2 * config.num_hidden_layers * config.num_key_value_heads
-                  * prompt_len * config.head_dim * 2)
+    theory_kv = (
+        2 * config.num_hidden_layers * config.num_key_value_heads * prompt_len * config.head_dim * 2
+    )
     theory_res = prompt_len * config.hidden_size * 2
 
     print(f"\n{BOLD}Prompt{RESET}")
     print(f"  Tokens:    {prompt_len}")
     print(f"  KV cache at prompt: {fmt_bytes(theory_kv)}")
     print(f"  Residual at prompt: {fmt_bytes(theory_res)}")
-    print(f"  Ratio:     {theory_kv/theory_res:.1f}×")
+    print(f"  Ratio:     {theory_kv / theory_res:.1f}×")
 
     # Show truncated prompt
     display_prompt = prompt_text if len(prompt_text) < 200 else prompt_text[:200] + "..."
-    print(f"\n  {DIM}\"{display_prompt}\"{RESET}")
+    print(f'\n  {DIM}"{display_prompt}"{RESET}')
 
     print(f"\n{BOLD}Generating {args.tokens} tokens — side by side{RESET}")
     print()
 
     col = 14
-    print(f"  {'Step':>4}  {'Token':<20}  {'Standard KV':>{col}}  {'RS Residual':>{col}}  "
-          f"{'Match':>5}  {'Std ms':>7}  {'RS ms':>7}")
+    print(
+        f"  {'Step':>4}  {'Token':<20}  {'Standard KV':>{col}}  {'RS Residual':>{col}}  "
+        f"{'Match':>5}  {'Std ms':>7}  {'RS ms':>7}"
+    )
     print("  " + "─" * 84)
 
     # Warm up both models with a tiny input first
     _warmup = mx.array([[1, 2, 3]])
-    _ = standard(_warmup); _ = rs_model(_warmup); mx.eval()
+    _ = standard(_warmup)
+    _ = rs_model(_warmup)
+    mx.eval()
 
     # Run both generators together
-    std_gen  = generate_standard(standard, input_ids, args.tokens, config)
-    rs_gen   = generate_rs(rs_model, input_ids, args.tokens, config)
+    std_gen = generate_standard(standard, input_ids, args.tokens, config)
+    rs_gen = generate_rs(rs_model, input_ids, args.tokens, config)
 
     mismatches = 0
-    std_final_kv = 0
-    rs_final_res = 0
     std_total_ms = 0.0
-    rs_total_ms  = 0.0
+    rs_total_ms = 0.0
 
     generated_text_std = []
-    generated_text_rs  = []
+    generated_text_rs = []
 
     for step in range(args.tokens):
         try:
             std_tok, std_kv, std_t = next(std_gen)
-            rs_tok,  rs_res, rs_t  = next(rs_gen)
+            rs_tok, rs_res, rs_t = next(rs_gen)
         except StopIteration:
             break
 
@@ -344,13 +356,11 @@ def main():
         token_str = tokenizer.decode([std_tok])
         token_display = repr(token_str)[:18]
 
-        std_final_kv = std_kv
-        rs_final_res = rs_res
         std_total_ms += std_t * 1000
-        rs_total_ms  += rs_t  * 1000
+        rs_total_ms += rs_t * 1000
 
         match_str = f"{GREEN}✓{RESET}" if match else f"{RED}✗{RESET}"
-        kv_str  = fmt_bytes(std_kv)
+        kv_str = fmt_bytes(std_kv)
         res_str = fmt_bytes(rs_res)
 
         generated_text_std.append(token_str)
@@ -359,18 +369,26 @@ def main():
         # Colour KV column to highlight it growing
         kv_colour = CYAN if std_kv > theory_kv else ""
 
-        print(f"  {step+1:>4}  {token_display:<20}  "
-              f"{kv_colour}{kv_str:>{col}}{RESET}  "
-              f"{DIM}{res_str:>{col}}{RESET}  "
-              f"  {match_str}  "
-              f"{std_t*1000:>7.1f}  {rs_t*1000:>7.1f}")
+        print(
+            f"  {step + 1:>4}  {token_display:<20}  "
+            f"{kv_colour}{kv_str:>{col}}{RESET}  "
+            f"{DIM}{res_str:>{col}}{RESET}  "
+            f"  {match_str}  "
+            f"{std_t * 1000:>7.1f}  {rs_t * 1000:>7.1f}"
+        )
 
     print()
 
     # --- Final KV cache at end of generation ---
     final_seq_len = prompt_len + args.tokens
-    final_kv_theory  = (2 * config.num_hidden_layers * config.num_key_value_heads
-                        * final_seq_len * config.head_dim * 2)
+    final_kv_theory = (
+        2
+        * config.num_hidden_layers
+        * config.num_key_value_heads
+        * final_seq_len
+        * config.head_dim
+        * 2
+    )
     final_res_theory = final_seq_len * config.hidden_size * 2
 
     print(f"{BOLD}Generated text{RESET}")
@@ -378,39 +396,50 @@ def main():
     print(f"  {CYAN}{repr(full_text)}{RESET}")
     print()
 
-    print(f"{BOLD}Memory at end of generation  (prompt={prompt_len} + {args.tokens} new tokens = {final_seq_len} total){RESET}")
-    print(f"  Standard KV cache:  {fmt_bytes(final_kv_theory)}"
-          f"  (grows with every new token)")
-    print(f"  RS residual:        {fmt_bytes(final_res_theory)}"
-          f"  (recomputed fresh — no persistent KV state)")
-    print(f"  Ratio:              {final_kv_theory/final_res_theory:.1f}×")
+    print(
+        f"{BOLD}Memory at end of generation  (prompt={prompt_len} + {args.tokens} new tokens = {final_seq_len} total){RESET}"
+    )
+    print(f"  Standard KV cache:  {fmt_bytes(final_kv_theory)}  (grows with every new token)")
+    print(
+        f"  RS residual:        {fmt_bytes(final_res_theory)}"
+        f"  (recomputed fresh — no persistent KV state)"
+    )
+    print(f"  Ratio:              {final_kv_theory / final_res_theory:.1f}×")
     print()
-    print(f"  RS persistent state between steps = token IDs only")
+    print("  RS persistent state between steps = token IDs only")
     print(f"  Token IDs: {final_seq_len} × 4 bytes = {fmt_bytes(final_seq_len * 4)}")
     print()
 
     print(f"{BOLD}Speed (per-token, after prefill){RESET}")
     avg_std = std_total_ms / args.tokens
-    avg_rs  = rs_total_ms  / args.tokens
+    avg_rs = rs_total_ms / args.tokens
     print(f"  Standard (KV cache):       {avg_std:.1f} ms/token  (O(1) per step)")
-    print(f"  Residual stream:           {avg_rs:.1f} ms/token  (O(seq_len) per step — full recompute)")
-    print(f"  RS overhead:               {avg_rs/avg_std:.1f}× slower  (expected — trades time for memory)")
+    print(
+        f"  Residual stream:           {avg_rs:.1f} ms/token  (O(seq_len) per step — full recompute)"
+    )
+    print(
+        f"  RS overhead:               {avg_rs / avg_std:.1f}× slower  (expected — trades time for memory)"
+    )
     print()
 
     print(f"{BOLD}Correctness{RESET}")
     if mismatches == 0:
-        print(f"  {GREEN}✓ All {args.tokens} tokens identical.{RESET}"
-              f"  The residual stream produces the same output as the KV cache.")
+        print(
+            f"  {GREEN}✓ All {args.tokens} tokens identical.{RESET}"
+            f"  The residual stream produces the same output as the KV cache."
+        )
     else:
         print(f"  {RED}✗ {mismatches} mismatches out of {args.tokens} tokens.{RESET}")
 
     print()
     print(f"{BOLD}What this proves{RESET}")
-    print(f"  1. Correctness: residual stream inference == KV cache inference (token-for-token)")
-    print(f"  2. Memory:      RS model carries {fmt_bytes(final_seq_len * 4)} of token IDs between steps")
+    print("  1. Correctness: residual stream inference == KV cache inference (token-for-token)")
+    print(
+        f"  2. Memory:      RS model carries {fmt_bytes(final_seq_len * 4)} of token IDs between steps"
+    )
     print(f"                  Standard model carries {fmt_bytes(final_kv_theory)} of KV tensors")
-    print(f"  3. The KV cache is an optimisation, not a requirement.")
-    print(f"     The residual at each layer is the complete forward state.")
+    print("  3. The KV cache is an optimisation, not a requirement.")
+    print("     The residual at each layer is the complete forward state.")
     print()
 
 

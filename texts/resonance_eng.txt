@@ -1,0 +1,68 @@
+FUNDAMENTALS OF RESONANCE ENGINEERING
+Third Edition — Prof. Aldric Waveborn, Thornfield Institute
+
+Chapter 1: Principles of Harmonic Amplification
+
+Resonance occurs when a system is driven at its natural frequency,
+producing oscillations of increasing amplitude. In engineered
+systems, controlled resonance is used for amplification, signal
+transmission, and structural analysis.
+
+The fundamental equation of resonance amplification is:
+  A = F / (k - mω² + jcω)
+where A is amplitude, F is driving force, k is stiffness, m is
+mass, ω is driving frequency, c is damping coefficient, and j
+is the imaginary unit.
+
+Crystal-based resonators exploit the piezoelectric properties of
+certain minerals. When mechanically stressed, these crystals
+produce an electrical signal at their natural frequency. The
+quality factor (Q-factor) of a crystal resonator determines its
+frequency selectivity: higher Q means sharper resonance peaks
+and better signal discrimination.
+
+The Holloway Constant (H = 7.83 Hz) represents the fundamental
+resonance frequency of standard crystalline amplification chambers.
+Named after the pioneering artificer Maren Holloway, this constant
+defines the base frequency from which all harmonic series in
+crystal engineering are derived. Chambers tuned to exact multiples
+of H achieve maximum energy transfer with minimum signal loss.
+
+Chapter 2: Acoustic Propagation in Crystalline Structures
+
+Sound waves travel through crystalline lattices at velocities
+determined by the crystal's elastic modulus and density. In pure
+quartz, acoustic velocity is approximately 5,760 meters per
+second — nearly 17 times the speed of sound in air.
+
+Crystalline waveguides channel acoustic energy along preferred
+lattice directions. A properly oriented crystal column can
+transmit sound over distances exceeding one kilometer with less
+than 3 dB of signal loss, provided the column is free of lattice
+defects larger than one-quarter wavelength.
+
+The Waveborn-Ashford Effect describes the phenomenon where
+acoustic waves in a crystal lattice spontaneously reorganize
+into standing wave patterns when the crystal exceeds a critical
+length-to-wavelength ratio of 47:1. This self-organization is
+exploited in long-range acoustic transmission systems.
+
+Chapter 3: Practical Applications
+
+The most famous application of crystal resonance engineering is
+the Spire-class acoustic amplifier. These structures, typically
+between 200 and 400 feet tall, use a central crystalline column
+surrounded by tuned resonance chambers at harmonic intervals.
+
+A Spire-class amplifier operating at the Holloway Constant can
+broadcast intelligible speech across a radius of approximately
+20 miles in still air. The broadcast duration is limited by the
+thermal capacity of the crystal column: continuous operation
+above 15 minutes risks thermal fracture of the primary resonator.
+
+The Thornfield Institute maintains the only two operational
+Spire-class amplifiers outside of municipal installations. The
+institute's research spire, completed in 2847, operates at 3H
+(23.49 Hz) — three times the Holloway Constant — enabling
+subsonic transmission that can penetrate solid rock to a depth
+of 400 meters.

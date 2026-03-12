@@ -63,6 +63,35 @@ from .unified import (
     UnifiedPipelineState,
 )
 
+# Context management — stateful inference engines and checkpoint libraries
+from .context import (
+    # Generators
+    KVDirectGenerator,
+    CompiledRSGenerator,
+    # Mode 3: bounded engine
+    GenerationMode,
+    PathLabel,
+    MemoryReport,
+    TurnStats,
+    Checkpoint,
+    ConversationState,
+    BoundedKVEngine,
+    # Mode 4: unlimited context engine
+    KVStore,
+    KVGeneratorProtocol,
+    LibrarySource,
+    EngineStats,
+    CheckpointStore,
+    TokenArchive,
+    UnlimitedContextEngine,
+    # Checkpoint library format
+    LibraryFile,
+    LibraryFormatVersion,
+    WindowMeta,
+    LibraryManifest,
+    CheckpointLibrary,
+)
+
 # Virtual expert system for MoE and dense models
 from .virtual_expert import (
     MathExpertPlugin,
@@ -110,6 +139,31 @@ __all__ = [
     "UnifiedPipelineConfig",
     "UnifiedPipelineState",
     "IntrospectionResult",
+    # Context — generators
+    "KVDirectGenerator",
+    "CompiledRSGenerator",
+    # Context — bounded engine (Mode 3)
+    "GenerationMode",
+    "PathLabel",
+    "MemoryReport",
+    "TurnStats",
+    "Checkpoint",
+    "ConversationState",
+    "BoundedKVEngine",
+    # Context — unlimited engine (Mode 4)
+    "KVStore",
+    "KVGeneratorProtocol",
+    "LibrarySource",
+    "EngineStats",
+    "CheckpointStore",
+    "TokenArchive",
+    "UnlimitedContextEngine",
+    # Context — checkpoint library
+    "LibraryFile",
+    "LibraryFormatVersion",
+    "WindowMeta",
+    "LibraryManifest",
+    "CheckpointLibrary",
     # Virtual Expert System (MoE)
     "VirtualExpertPlugin",
     "VirtualExpertRegistry",
