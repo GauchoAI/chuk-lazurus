@@ -5,7 +5,7 @@ A library is a directory written by tools/prefill_library.py containing:
 
     manifest.json          — metadata (name, model, window_size, ...)
     checkpoints.npz        — per-window, per-layer K,V tensors (last position)
-    tokens.bin             — all token IDs, uint16 little-endian
+    tokens.bin             — all token IDs, uint32 little-endian
     windows.json           — per-window metadata (offsets, token counts, previews)
 
 Loading is instant (no prefill).  Once loaded, any window's K,V tensors
@@ -199,8 +199,8 @@ class CheckpointLibrary:
         if not tokens_path.exists():
             raise FileNotFoundError(f"{LibraryFile.TOKENS} not found in {self._path}")
         data = tokens_path.read_bytes()
-        n = len(data) // 2
-        return list(struct.unpack(f"<{n}H", data[: n * 2]))
+        n = len(data) // 4  # uint32 — 4 bytes per token
+        return list(struct.unpack(f"<{n}I", data[: n * 4]))
 
     def _load_checkpoints(self) -> dict[int, list[tuple[mx.array, mx.array]]]:
         ckpt_path = self._path / LibraryFile.CHECKPOINTS

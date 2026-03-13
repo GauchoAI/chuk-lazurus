@@ -12,15 +12,15 @@ from .._constants import ContextDefaults
 
 
 class PrefillConfig(CommandConfig):
-    """Configuration for the context prefill command."""
+    """Configuration for the context prefill command (windowed library format)."""
 
     model: str = Field(..., description="Model ID or local path")
     input_file: Path = Field(..., description="Text file to prefill")
-    checkpoint: Path = Field(..., description="Output checkpoint directory")
-    chunk_size: int = Field(
-        default=ContextDefaults.CHUNK_SIZE,
+    checkpoint: Path = Field(..., description="Output library directory")
+    window_size: int = Field(
+        default=ContextDefaults.WINDOW_SIZE,
         ge=1,
-        description="Tokens per prefill chunk",
+        description="Tokens per window",
     )
     max_tokens: int | None = Field(
         default=None,
@@ -29,7 +29,11 @@ class PrefillConfig(CommandConfig):
     )
     resume: bool = Field(
         default=True,
-        description="Resume from an existing partial checkpoint",
+        description="Resume from an existing partial library",
+    )
+    name: str | None = Field(
+        default=None,
+        description="Human-readable library name (defaults to input filename stem)",
     )
 
     @classmethod
@@ -38,17 +42,18 @@ class PrefillConfig(CommandConfig):
             model=args.model,
             input_file=Path(args.input),
             checkpoint=Path(args.checkpoint),
-            chunk_size=getattr(args, "chunk_size", ContextDefaults.CHUNK_SIZE),
+            window_size=getattr(args, "window_size", None) or ContextDefaults.WINDOW_SIZE,
             max_tokens=getattr(args, "max_tokens", None),
             resume=not getattr(args, "no_resume", False),
+            name=getattr(args, "name", None),
         )
 
 
 class GenerateConfig(CommandConfig):
-    """Configuration for the context generate command."""
+    """Configuration for the context generate command (library format)."""
 
     model: str = Field(..., description="Model ID or local path")
-    checkpoint: Path = Field(..., description="Checkpoint directory to load from")
+    checkpoint: Path = Field(..., description="Library directory to load from")
     prompt: str | None = Field(default=None, description="Prompt text")
     prompt_file: Path | None = Field(default=None, description="File containing the prompt")
     max_tokens: int = Field(
@@ -87,15 +92,17 @@ class GenerateConfig(CommandConfig):
 class PrefillResult(CommandResult, OutputMixin):
     """Result of a prefill operation."""
 
-    checkpoint: str = Field(..., description="Path to saved checkpoint")
+    checkpoint: str = Field(..., description="Path to saved library")
     tokens_prefilled: int = Field(..., description="Number of tokens prefilled")
+    num_windows: int = Field(0, description="Number of windows archived")
     status: str = Field(..., description="complete or partial")
     elapsed_seconds: float = Field(..., description="Wall-clock time")
 
     def to_display(self) -> str:
         lines = [self.format_header("Prefill Complete")]
-        lines.append(self.format_field("Checkpoint", self.checkpoint))
+        lines.append(self.format_field("Library", self.checkpoint))
         lines.append(self.format_field("Tokens prefilled", self.tokens_prefilled))
+        lines.append(self.format_field("Windows", self.num_windows))
         lines.append(self.format_field("Status", self.status))
         lines.append(self.format_field("Time", f"{self.elapsed_seconds:.1f}s"))
         return "\n".join(lines)

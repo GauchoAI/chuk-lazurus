@@ -6,7 +6,7 @@ Directory layout
 <checkpoint_dir>/
   meta.json       — CheckpointMeta (model_id, seq_len, status, ...)
   kv.npz          — K,V tensors; keys l{i}_k and l{i}_v for layer i
-  tokens.bin      — full source token IDs, uint16 little-endian
+  tokens.bin      — full source token IDs, uint32 little-endian
 
 Status values: "partial" (mid-prefill, resumable) | "complete" (full prefill done)
 """
@@ -105,8 +105,8 @@ class KVCheckpoint:
         mx.savez(str(ckpt / ContextCheckpointFile.KV.value), **arrays)
         mx.eval()  # flush before writing meta
 
-        # 2. Token IDs
-        token_bytes = struct.pack(f"<{len(token_ids)}H", *token_ids)
+        # 2. Token IDs (uint32 — supports vocab sizes up to 4 B, e.g. Gemma 256 K)
+        token_bytes = struct.pack(f"<{len(token_ids)}I", *token_ids)
         (ckpt / ContextCheckpointFile.TOKENS.value).write_bytes(token_bytes)
 
         # 3. Metadata last (commit point)
@@ -130,10 +130,10 @@ class KVCheckpoint:
         raw: dict[str, mx.array] = dict(mx.load(str(ckpt / ContextCheckpointFile.KV.value)))
         kv_store: KVStore = [(raw[f"l{i}_k"], raw[f"l{i}_v"]) for i in range(meta.num_layers)]
 
-        # Load token IDs
+        # Load token IDs (uint32 — 4 bytes each)
         data = (ckpt / ContextCheckpointFile.TOKENS.value).read_bytes()
-        n = len(data) // 2
-        token_ids = list(struct.unpack(f"<{n}H", data[: n * 2]))
+        n = len(data) // 4
+        token_ids = list(struct.unpack(f"<{n}I", data[: n * 4]))
 
         return kv_store, token_ids, meta
 

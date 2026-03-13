@@ -390,19 +390,19 @@ Examples:
 
     # context prefill
     ctx_prefill = ctx_subparsers.add_parser(
-        "prefill", help="Prefill a document and save a KV checkpoint"
+        "prefill", help="Prefill a document into a windowed checkpoint library"
     )
     ctx_prefill.add_argument("--model", "-m", required=True, help="Model ID or local path")
     ctx_prefill.add_argument("--input", "-i", required=True, help="Input text file to prefill")
     ctx_prefill.add_argument(
-        "--checkpoint", "-c", required=True, help="Output checkpoint directory"
+        "--checkpoint", "-c", required=True, help="Output library directory"
     )
     ctx_prefill.add_argument(
-        "--chunk-size",
+        "--window-size",
         type=int,
-        default=512,
-        dest="chunk_size",
-        help="Tokens per chunk (default: 512)",
+        default=None,
+        dest="window_size",
+        help="Tokens per window (default: 8192)",
     )
     ctx_prefill.add_argument(
         "--max-tokens",
@@ -411,20 +411,24 @@ Examples:
         help="Truncate input to at most N tokens",
     )
     ctx_prefill.add_argument(
+        "--name",
+        help="Human-readable library name (defaults to input filename stem)",
+    )
+    ctx_prefill.add_argument(
         "--no-resume",
         action="store_true",
         dest="no_resume",
-        help="Ignore existing partial checkpoint and start fresh",
+        help="Ignore existing partial library and start fresh",
     )
     ctx_prefill.set_defaults(func=lambda args: asyncio.run(context_prefill_cmd(args)))
 
     # context generate
     ctx_generate = ctx_subparsers.add_parser(
-        "generate", help="Generate text from a saved KV checkpoint"
+        "generate", help="Generate text from a checkpoint library"
     )
     ctx_generate.add_argument("--model", "-m", required=True, help="Model ID or local path")
     ctx_generate.add_argument(
-        "--checkpoint", "-c", required=True, help="Checkpoint directory to load"
+        "--checkpoint", "-c", required=True, help="Library directory to load"
     )
     ctx_generate.add_argument("--prompt", "-p", help="Prompt text")
     ctx_generate.add_argument(
@@ -434,6 +438,24 @@ Examples:
         "--max-tokens", type=int, default=200, dest="max_tokens", help="Max tokens to generate"
     )
     ctx_generate.add_argument("--temperature", type=float, default=0.7, help="Sampling temperature")
+    ctx_generate.add_argument(
+        "--replay", nargs="*", default=None,
+        help='Window IDs to replay: "auto" (default, compass routing), "all", "last", or specific IDs (e.g. --replay 0 1 45)',
+    )
+    ctx_generate.add_argument(
+        "--find", default=None,
+        help="Auto-find and replay the window containing this term",
+    )
+    ctx_generate.add_argument(
+        "--top-k", type=int, default=None, dest="top_k",
+        help="Override auto window count in compass mode (default: adaptive knee detection)",
+    )
+    ctx_generate.add_argument(
+        "--no-chat-template",
+        action="store_true",
+        dest="no_chat_template",
+        help="Send prompt as raw text without chat template wrapping",
+    )
     ctx_generate.set_defaults(func=lambda args: asyncio.run(context_generate_cmd(args)))
 
     # Tokenizer subcommand

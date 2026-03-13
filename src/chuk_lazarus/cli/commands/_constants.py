@@ -121,6 +121,7 @@ class ContextDefaults:
     """Default values for context prefill/generate operations."""
 
     CHUNK_SIZE: int = 512
+    WINDOW_SIZE: int = 8192
     GENERATE_MAX_TOKENS: int = 200
     TEMPERATURE: float = 0.7
 

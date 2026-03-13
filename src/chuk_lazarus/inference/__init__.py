@@ -105,23 +105,26 @@ from .unified import (
     UnifiedPipelineState,
 )
 
-# Virtual expert system for MoE and dense models
-from .virtual_expert import (
-    MathExpertPlugin,
-    SafeMathEvaluator,
-    VirtualDenseRouter,
-    VirtualDenseWrapper,
-    VirtualExpertAnalysis,
-    VirtualExpertApproach,
-    VirtualExpertPlugin,
-    VirtualExpertRegistry,
-    VirtualExpertResult,
-    VirtualMoEWrapper,
-    VirtualRouter,
-    create_virtual_dense_wrapper,
-    create_virtual_expert_wrapper,
-    get_default_registry,
-)
+# Virtual expert system for MoE and dense models (optional dependency)
+try:
+    from .virtual_expert import (
+        MathExpertPlugin,
+        SafeMathEvaluator,
+        VirtualDenseRouter,
+        VirtualDenseWrapper,
+        VirtualExpertAnalysis,
+        VirtualExpertApproach,
+        VirtualExpertPlugin,
+        VirtualExpertRegistry,
+        VirtualExpertResult,
+        VirtualMoEWrapper,
+        VirtualRouter,
+        create_virtual_dense_wrapper,
+        create_virtual_expert_wrapper,
+        get_default_registry,
+    )
+except ImportError:
+    pass
 
 __all__ = [
     # Loader
