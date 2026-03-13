@@ -34,9 +34,7 @@ No KV cache parameter. No cache return value. The residual is the only state.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from functools import partial
-from typing import Any
+from dataclasses import dataclass
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -48,7 +46,6 @@ from ..gemma.model import (
     GemmaRMSNorm,
     clip_residual,
 )
-
 
 # ---------------------------------------------------------------------------
 # Output types
@@ -230,7 +227,9 @@ class GemmaResidualStream(nn.Module):
         final_residual is after the final RMSNorm, ready for the LM head.
         """
         h = self._embed(input_ids)
-        h, layer_residuals = self._run_layers(h, 0, len(self.layers), collect=collect_layer_residuals)
+        h, layer_residuals = self._run_layers(
+            h, 0, len(self.layers), collect=collect_layer_residuals
+        )
         h = self.norm(h)
         return h, layer_residuals
 
@@ -433,9 +432,7 @@ class GemmaResidualStreamForCausalLM(nn.Module):
         else:
             vlm_prefixes = ("vision_tower.", "multi_modal_projector.", "image_")
             weights = {
-                k: v
-                for k, v in weights.items()
-                if not any(k.startswith(p) for p in vlm_prefixes)
+                k: v for k, v in weights.items() if not any(k.startswith(p) for p in vlm_prefixes)
             }
 
         if "lm_head.weight" not in weights:

@@ -197,6 +197,87 @@ chuk-lazarus generate --type math --output ./data/lazarus
 
 # Run inference
 chuk-lazarus infer --model "TinyLlama/TinyLlama-1.1B-Chat-v1.0" --prompt "What is 2+2?"
+
+# KV-direct stateful engine
+chuk-lazarus infer --model "TinyLlama/TinyLlama-1.1B-Chat-v1.0" --prompt "What is 2+2?" --engine kv_direct
+```
+
+### Context Checkpoints
+
+Pre-fill a document into a saved KV cache, then generate from it instantly — no re-reading the source on each query:
+
+```bash
+# Prefill a document and save a KV checkpoint
+chuk-lazarus context prefill --model google/gemma-3-1b-it --input document.txt --checkpoint ./ctx/
+
+# Interrupted? Resume automatically from where it left off
+chuk-lazarus context prefill --model google/gemma-3-1b-it --input document.txt --checkpoint ./ctx/
+
+# Start fresh (ignore existing partial checkpoint)
+chuk-lazarus context prefill --model google/gemma-3-1b-it --input document.txt --checkpoint ./ctx/ --no-resume
+
+# Control chunk size and cap token count
+chuk-lazarus context prefill --model google/gemma-3-1b-it --input document.txt --checkpoint ./ctx/ \
+  --chunk-size 256 --max-tokens 10000
+
+# Generate from a saved context — loads KV, extends with prompt, decodes
+chuk-lazarus context generate --model google/gemma-3-1b-it --checkpoint ./ctx/ \
+  --prompt "Summarize the key points" --max-tokens 200
+
+# Prompt from a file
+chuk-lazarus context generate --model google/gemma-3-1b-it --checkpoint ./ctx/ \
+  --prompt-file query.txt --temperature 0.0
+```
+
+Checkpoint layout:
+
+```
+ctx/
+├── meta.json      — model_id, seq_len, status (partial|complete), source hash, timestamps
+├── kv.npz         — K,V tensors for every layer (bfloat16, post-RoPE)
+└── tokens.bin     — full source token IDs (uint16, little-endian)
+```
+
+The `source_hash` (SHA-256 of the raw source bytes) guards against accidentally resuming a checkpoint built from a different file. Status `partial` → `complete` is set atomically at the end of a successful prefill, so a crashed run is always safe to resume.
+
+**Python API:**
+
+```python
+from chuk_lazarus.inference import UnifiedPipeline
+from chuk_lazarus.inference.context import make_kv_generator, KVCheckpoint, CheckpointMeta, ContextCheckpointStatus
+
+# Load model
+pipeline = UnifiedPipeline.from_pretrained("google/gemma-3-1b-it")
+kv_gen = make_kv_generator(pipeline.model)   # auto-detects Gemma / Llama family
+
+# Chunked prefill with progress
+token_ids = pipeline.tokenizer.encode(open("document.txt").read(), add_special_tokens=False)
+import mlx.core as mx
+for chunk_done, chunk_total, logits, kv_store in kv_gen.prefill_chunked(
+    mx.array([token_ids]), chunk_size=512
+):
+    print(f"{chunk_done}/{chunk_total} tokens", end="\r")
+
+# Save checkpoint
+meta = CheckpointMeta(
+    model_id="google/gemma-3-1b-it",
+    seq_len=len(token_ids),
+    total_tokens=len(token_ids),
+    num_layers=len(kv_store),
+    num_kv_heads=int(kv_store[0][0].shape[1]),
+    head_dim=int(kv_store[0][0].shape[3]),
+    chunk_size=512,
+    source_hash=KVCheckpoint.source_hash(open("document.txt", "rb").read()),
+    status=ContextCheckpointStatus.COMPLETE,
+    created_at=KVCheckpoint._now(),
+    updated_at=KVCheckpoint._now(),
+)
+KVCheckpoint.save("./ctx", kv_store, token_ids, meta)
+
+# Later: load and generate
+kv_store, token_ids, meta = KVCheckpoint.load("./ctx")
+prompt_ids = pipeline.tokenizer.encode("Summarize the key points", add_special_tokens=False)
+logits, kv_store = kv_gen.extend(mx.array([prompt_ids]), kv_store, abs_start=meta.seq_len)
 ```
 
 ### UnifiedPipeline
@@ -223,6 +304,7 @@ print(f"Model family: {pipeline.family_type}")  # ModelFamilyType.LLAMA
 - Chat history management (`ChatHistory`)
 - Streaming generation (`generate_stream`)
 - No magic strings - uses enums (`DType`, `Role`, `ModelFamilyType`)
+- Engine selection via `EngineMode` (`STANDARD`, `KV_DIRECT`) — stateful generation with explicit KV store control
 
 ```bash
 # Simplified inference examples
@@ -526,10 +608,18 @@ src/chuk_lazarus/
 │   └── losses/             # Loss functions (pure math)
 ├── training/               # BatchPlan-driven reference trainers (SFT, DPO, GRPO, PPO)
 ├── inference/              # Unified inference pipeline
-│   ├── unified.py          # UnifiedPipeline with auto-detection
+│   ├── unified.py          # UnifiedPipeline, EngineMode, make_engine()
 │   ├── loader.py           # HFLoader, DType, WeightConverter
 │   ├── chat.py             # ChatHistory, Role, format_chat_prompt
-│   └── generation.py       # GenerationConfig, generate, generate_stream
+│   ├── generation.py       # GenerationConfig, generate, generate_stream
+│   └── context/            # Stateful KV generation, checkpointing, long-context engines
+│       ├── protocols.py    # ModelBackboneProtocol, TransformerLayerProtocol
+│       ├── adapters/       # GemmaBackboneAdapter, LlamaBackboneAdapter
+│       ├── kv_generator.py # KVDirectGenerator + make_kv_generator() factory
+│       ├── kv_checkpoint.py # KVCheckpoint — save/resume prefill state to disk
+│       ├── checkpoint_library.py # CheckpointLibrary — pre-filled knowledge bases
+│       ├── bounded_engine.py # BoundedKVEngine (Mode 3, HOT/WARM/COLD tiers)
+│       └── unlimited_engine.py # UnlimitedContextEngine (Mode 4, window chaining)
 ├── introspection/          # Model introspection and analysis
 │   ├── analyzer.py         # ModelAnalyzer async API with Pydantic models
 │   ├── hooks.py            # ModelHooks for capturing intermediate states
@@ -547,7 +637,7 @@ src/chuk_lazarus/
 | Module | Description |
 |--------|-------------|
 | **Models** | Composable architecture: components, blocks, backbones, heads, families (Llama, Gemma, Granite) |
-| **Inference** | `UnifiedPipeline` with auto-detection, chat history, streaming generation |
+| **Inference** | `UnifiedPipeline` with auto-detection, chat history, streaming; `KVDirectGenerator` (model-agnostic via Gemma/Llama adapters) with `make_kv_generator()` factory; `KVCheckpoint` for resumable prefill and offline context loading |
 | **Introspection** | Model analysis: logit lens, attention visualization, MoE expert identification, ablation studies |
 | **Tokenizers** | Comprehensive toolkit for analysis, preprocessing, and runtime management |
 | **Batching** | Token-budget batching, sequence packing, distributed batch planning |

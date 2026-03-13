@@ -305,9 +305,9 @@ class UnlimitedContextEngine:
         model_id: str = "",
         config_hash: str = "",
     ):
-        from .kv_generator import KVDirectGenerator
+        from .kv_generator import make_kv_generator
 
-        self.kv_gen = KVDirectGenerator(rs_model, config)
+        self.kv_gen = make_kv_generator(rs_model)
         self.config = config
         self.window_size = window_size
         self.model_id = model_id

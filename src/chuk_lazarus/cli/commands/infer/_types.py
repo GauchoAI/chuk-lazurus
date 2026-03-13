@@ -63,6 +63,10 @@ class InferenceConfig(CommandConfig):
         default=None,
         description="System prompt (only used with chat mode)",
     )
+    engine: str = Field(
+        default="standard",
+        description="Inference engine: 'standard' or 'kv_direct'",
+    )
 
     @classmethod
     def from_args(cls, args: Namespace) -> InferenceConfig:
@@ -76,6 +80,7 @@ class InferenceConfig(CommandConfig):
             temperature=getattr(args, "temperature", InferenceDefaults.TEMPERATURE),
             chat=getattr(args, "chat", False),
             system=getattr(args, "system", None),
+            engine=getattr(args, "engine", "standard"),
         )
 
     @property

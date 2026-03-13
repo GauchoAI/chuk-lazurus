@@ -393,11 +393,11 @@ class GemmaModel(Backbone):
 
         new_cache: list = [None] * start_layer
         for i in range(start_layer, len(self.layers)):
-            layer      = self.layers[i]
+            layer = self.layers[i]
             layer_cache = cache[i]
-            mask       = global_mask if self.config.is_global_layer(i) else sliding_mask
-            output     = layer(h, mask=mask, cache=layer_cache)
-            h          = output.hidden_states
+            mask = global_mask if self.config.is_global_layer(i) else sliding_mask
+            output = layer(h, mask=mask, cache=layer_cache)
+            h = output.hidden_states
             new_cache.append(output.cache)
 
         h = self.norm(h)

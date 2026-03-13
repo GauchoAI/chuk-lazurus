@@ -192,7 +192,7 @@ def load_models(model_id: str):
     kv_gen_mod = _load(
         "chuk_lazarus.inference.context.kv_generator", inf / "context" / "kv_generator.py"
     )
-    kv_gen = kv_gen_mod.KVDirectGenerator(rs, config)
+    kv_gen = kv_gen_mod.KVDirectGenerator.from_gemma_rs(rs, config)
 
     tokenizer = AutoTokenizer.from_pretrained(str(model_path))
     if tokenizer.pad_token is None:

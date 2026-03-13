@@ -29,6 +29,63 @@ for chunk in pipeline.generate_stream("Once upon a time"):
     print(chunk, end="", flush=True)
 ```
 
+### Context Engines
+
+Stateful inference engines for multi-turn generation with explicit KV store management.
+
+#### KVDirectGenerator
+
+```python
+from chuk_lazarus.inference.context import KVDirectGenerator, make_kv_generator
+
+# Auto-detect factory
+gen = make_kv_generator(model)        # Gemma, Llama, Mistral, ...
+
+# Or use named constructors
+gen = KVDirectGenerator.from_gemma_rs(rs_model)
+gen = KVDirectGenerator.from_llama(llama_model)
+
+# Lifecycle
+logits, kv_store = gen.prefill(input_ids)                            # Full forward pass
+logits, kv_store = gen.step(token_ids, kv_store, seq_len)            # Single token (compiled)
+logits, kv_store = gen.extend(new_ids, kv_store, abs_start)          # Batch new tokens
+kv_store = gen.slide(kv_store, evict_count)                          # Evict oldest tokens
+bytes_used = gen.kv_bytes(seq_len)                                   # Memory accounting
+```
+
+**`kv_store`** format: `list[tuple[mx.array, mx.array]]` — one `(K, V)` pair per layer.
+`K.shape = V.shape = (batch, num_kv_heads, seq_len, head_dim)`
+
+#### EngineMode
+
+```python
+from chuk_lazarus.inference.unified import EngineMode
+from chuk_lazarus.inference import UnifiedPipeline, UnifiedPipelineConfig
+
+config = UnifiedPipelineConfig(engine=EngineMode.KV_DIRECT)
+pipeline = UnifiedPipeline.from_pretrained("model-id", config=config)
+
+# Get generator from loaded pipeline
+kv_gen = pipeline.make_engine()
+```
+
+Values: `EngineMode.STANDARD` (default), `EngineMode.KV_DIRECT`
+
+#### Protocols and Adapters
+
+```python
+from chuk_lazarus.inference.context import (
+    ModelBackboneProtocol,      # Interface for backbone adapters
+    TransformerLayerProtocol,   # Per-layer interface
+    GemmaBackboneAdapter,       # Wraps GemmaResidualStreamForCausalLM
+    GemmaLayerAdapter,
+    LlamaBackboneAdapter,       # Wraps LlamaForCausalLM / Mistral
+    LlamaLayerAdapter,
+)
+```
+
+To support a new architecture, implement `ModelBackboneProtocol` and pass it to `KVDirectGenerator(backbone)`.
+
 ### load_tokenizer
 
 ```python

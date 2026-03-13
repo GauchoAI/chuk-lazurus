@@ -96,6 +96,8 @@ import asyncio
 import logging
 import sys
 
+from .commands.context import context_generate_cmd, context_prefill_cmd
+
 # Import command handlers from modules
 from .commands.data import (
     data_batch_generate,
@@ -372,7 +374,67 @@ Examples:
         "--chat", action="store_true", help="Use chat template (for chat models)"
     )
     infer_parser.add_argument("--system", help="System prompt (only used with --chat)")
+    infer_parser.add_argument(
+        "--engine",
+        choices=["standard", "kv_direct"],
+        default="standard",
+        help="Inference engine (default: standard)",
+    )
     infer_parser.set_defaults(func=lambda args: asyncio.run(run_inference(args)))
+
+    # Context subcommand
+    context_parser = subparsers.add_parser(
+        "context", help="KV context checkpoint tools (prefill / generate)"
+    )
+    ctx_subparsers = context_parser.add_subparsers(dest="ctx_command", help="Context commands")
+
+    # context prefill
+    ctx_prefill = ctx_subparsers.add_parser(
+        "prefill", help="Prefill a document and save a KV checkpoint"
+    )
+    ctx_prefill.add_argument("--model", "-m", required=True, help="Model ID or local path")
+    ctx_prefill.add_argument("--input", "-i", required=True, help="Input text file to prefill")
+    ctx_prefill.add_argument(
+        "--checkpoint", "-c", required=True, help="Output checkpoint directory"
+    )
+    ctx_prefill.add_argument(
+        "--chunk-size",
+        type=int,
+        default=512,
+        dest="chunk_size",
+        help="Tokens per chunk (default: 512)",
+    )
+    ctx_prefill.add_argument(
+        "--max-tokens",
+        type=int,
+        dest="max_tokens",
+        help="Truncate input to at most N tokens",
+    )
+    ctx_prefill.add_argument(
+        "--no-resume",
+        action="store_true",
+        dest="no_resume",
+        help="Ignore existing partial checkpoint and start fresh",
+    )
+    ctx_prefill.set_defaults(func=lambda args: asyncio.run(context_prefill_cmd(args)))
+
+    # context generate
+    ctx_generate = ctx_subparsers.add_parser(
+        "generate", help="Generate text from a saved KV checkpoint"
+    )
+    ctx_generate.add_argument("--model", "-m", required=True, help="Model ID or local path")
+    ctx_generate.add_argument(
+        "--checkpoint", "-c", required=True, help="Checkpoint directory to load"
+    )
+    ctx_generate.add_argument("--prompt", "-p", help="Prompt text")
+    ctx_generate.add_argument(
+        "--prompt-file", dest="prompt_file", help="File containing the prompt"
+    )
+    ctx_generate.add_argument(
+        "--max-tokens", type=int, default=200, dest="max_tokens", help="Max tokens to generate"
+    )
+    ctx_generate.add_argument("--temperature", type=float, default=0.7, help="Sampling temperature")
+    ctx_generate.set_defaults(func=lambda args: asyncio.run(context_generate_cmd(args)))
 
     # Tokenizer subcommand
     tok_parser = subparsers.add_parser("tokenizer", help="Tokenizer utilities")
@@ -3412,6 +3474,7 @@ Example:
     # Serve subcommand — optional (requires chuk-lazarus[server])
     try:
         from chuk_lazarus.server.cli import add_serve_parser
+
         add_serve_parser(subparsers)
     except ImportError:
         pass  # server deps not installed; serve command silently unavailable
@@ -3438,6 +3501,8 @@ def main():
         parser.parse_args(["gym", "--help"])
     elif args.command == "introspect" and getattr(args, "introspect_command", None) is None:
         parser.parse_args(["introspect", "--help"])
+    elif args.command == "context" and getattr(args, "ctx_command", None) is None:
+        parser.parse_args(["context", "--help"])
     elif args.command == "experiment" and getattr(args, "exp_command", None) is None:
         parser.parse_args(["experiment", "--help"])
     elif args.command == "serve":

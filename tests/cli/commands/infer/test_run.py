@@ -47,9 +47,9 @@ class TestRunInferenceCmd:
             asyncio.run(run_inference_cmd(basic_args))
 
             # Verify pipeline was created and generate was called
-            mock_module.UnifiedPipeline.from_pretrained.assert_called_once_with(
-                "test-model", verbose=False
-            )
+            call_args = mock_module.UnifiedPipeline.from_pretrained.call_args
+            assert call_args.args[0] == "test-model"
+            assert call_args.kwargs.get("verbose") is False
             mock_pipeline.generate.assert_called_once()
 
         captured = capsys.readouterr()

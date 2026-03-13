@@ -42,11 +42,10 @@ Design rules
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator, Iterator
 from enum import Enum
-from typing import AsyncIterator, Iterator
 
-from pydantic import BaseModel, Field
-
+from pydantic import BaseModel
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -224,9 +223,7 @@ def _parse_response(raw: dict) -> ChatResponse:
         id=wire.id,
         model=wire.model,
         content=choice.message.content,
-        finish_reason=ClientFinishReason(
-            choice.finish_reason or ClientFinishReason.STOP.value
-        ),
+        finish_reason=ClientFinishReason(choice.finish_reason or ClientFinishReason.STOP.value),
         prompt_tokens=usage.prompt_tokens,
         completion_tokens=usage.completion_tokens,
         total_tokens=usage.total_tokens,
@@ -239,7 +236,7 @@ def _parse_stream_line(line: str) -> str | None:
         return None
     if not line.startswith(_SSE_PREFIX):
         return None
-    wire = _WireStreamChunk.model_validate_json(line[len(_SSE_PREFIX):])
+    wire = _WireStreamChunk.model_validate_json(line[len(_SSE_PREFIX) :])
     if not wire.choices:
         return None
     return wire.choices[0].delta.content  # may be None if role-only chunk
@@ -309,7 +306,8 @@ class LazarusClient:
     ) -> ChatResponse:
         """Send a chat completion request and return the full response."""
         body = _build_request(
-            model, messages,
+            model,
+            messages,
             max_tokens=max_tokens,
             temperature=temperature,
             top_p=top_p,
@@ -335,7 +333,8 @@ class LazarusClient:
     ) -> Iterator[str]:
         """Stream a chat completion, yielding text delta strings."""
         body = _build_request(
-            model, messages,
+            model,
+            messages,
             max_tokens=max_tokens,
             temperature=temperature,
             top_p=top_p,
@@ -343,7 +342,8 @@ class LazarusClient:
             stop=stop,
         )
         with self._client.stream(
-            "POST", _CHAT_COMPLETIONS_PATH,
+            "POST",
+            _CHAT_COMPLETIONS_PATH,
             json=body.model_dump(exclude_none=True),
         ) as resp:
             resp.raise_for_status()
@@ -428,7 +428,8 @@ class AsyncLazarusClient:
     ) -> ChatResponse:
         """Send a chat completion request and return the full response."""
         body = _build_request(
-            model, messages,
+            model,
+            messages,
             max_tokens=max_tokens,
             temperature=temperature,
             top_p=top_p,
@@ -454,7 +455,8 @@ class AsyncLazarusClient:
     ) -> AsyncIterator[str]:
         """Stream a chat completion, yielding text delta strings."""
         body = _build_request(
-            model, messages,
+            model,
+            messages,
             max_tokens=max_tokens,
             temperature=temperature,
             top_p=top_p,
@@ -462,7 +464,8 @@ class AsyncLazarusClient:
             stop=stop,
         )
         async with self._client.stream(
-            "POST", _CHAT_COMPLETIONS_PATH,
+            "POST",
+            _CHAT_COMPLETIONS_PATH,
             json=body.model_dump(exclude_none=True),
         ) as resp:
             resp.raise_for_status()

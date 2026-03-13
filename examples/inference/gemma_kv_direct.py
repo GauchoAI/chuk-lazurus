@@ -231,7 +231,7 @@ def main():
     )
 
     rs_gen = rs_gen_mod.CompiledRSGenerator(rs_model, config)
-    kv_gen = kv_gen_mod.KVDirectGenerator(rs_model, config)
+    kv_gen = kv_gen_mod.KVDirectGenerator.from_gemma_rs(rs_model, config)
 
     # Synthetic prompt
     prompt_ids = mx.array([[(i % 8000) + 1 for i in range(args.prompt_len)]])

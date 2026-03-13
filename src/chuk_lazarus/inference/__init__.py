@@ -34,6 +34,48 @@ from .chat import (
     format_history,
 )
 
+# Context management — stateful inference engines and checkpoint libraries
+from .context import (
+    BoundedKVEngine,
+    Checkpoint,
+    CheckpointLibrary,
+    CheckpointMeta,
+    CheckpointStore,
+    CompiledRSGenerator,
+    ContextCheckpointFile,
+    ContextCheckpointStatus,
+    ConversationState,
+    EngineStats,
+    GemmaBackboneAdapter,
+    GemmaLayerAdapter,
+    # Mode 3: bounded engine
+    GenerationMode,
+    # KV checkpoint
+    KVCheckpoint,
+    # Generators
+    KVDirectGenerator,
+    KVGeneratorProtocol,
+    # Mode 4: unlimited context engine
+    KVStore,
+    # Checkpoint library format
+    LibraryFile,
+    LibraryFormatVersion,
+    LibraryManifest,
+    LibrarySource,
+    LlamaBackboneAdapter,
+    LlamaLayerAdapter,
+    MemoryReport,
+    # Protocols and adapters
+    ModelBackboneProtocol,
+    PathLabel,
+    TokenArchive,
+    TransformerLayerProtocol,
+    TurnStats,
+    UnlimitedContextEngine,
+    WindowMeta,
+    make_kv_generator,
+)
+
 # Generation utilities
 from .generation import (
     GenerationConfig,
@@ -61,35 +103,6 @@ from .unified import (
     UnifiedPipeline,
     UnifiedPipelineConfig,
     UnifiedPipelineState,
-)
-
-# Context management — stateful inference engines and checkpoint libraries
-from .context import (
-    # Generators
-    KVDirectGenerator,
-    CompiledRSGenerator,
-    # Mode 3: bounded engine
-    GenerationMode,
-    PathLabel,
-    MemoryReport,
-    TurnStats,
-    Checkpoint,
-    ConversationState,
-    BoundedKVEngine,
-    # Mode 4: unlimited context engine
-    KVStore,
-    KVGeneratorProtocol,
-    LibrarySource,
-    EngineStats,
-    CheckpointStore,
-    TokenArchive,
-    UnlimitedContextEngine,
-    # Checkpoint library format
-    LibraryFile,
-    LibraryFormatVersion,
-    WindowMeta,
-    LibraryManifest,
-    CheckpointLibrary,
 )
 
 # Virtual expert system for MoE and dense models
@@ -139,8 +152,16 @@ __all__ = [
     "UnifiedPipelineConfig",
     "UnifiedPipelineState",
     "IntrospectionResult",
+    # Context — protocols and adapters
+    "ModelBackboneProtocol",
+    "TransformerLayerProtocol",
+    "GemmaBackboneAdapter",
+    "GemmaLayerAdapter",
+    "LlamaBackboneAdapter",
+    "LlamaLayerAdapter",
     # Context — generators
     "KVDirectGenerator",
+    "make_kv_generator",
     "CompiledRSGenerator",
     # Context — bounded engine (Mode 3)
     "GenerationMode",
@@ -164,6 +185,11 @@ __all__ = [
     "WindowMeta",
     "LibraryManifest",
     "CheckpointLibrary",
+    # Context — KV checkpoint
+    "CheckpointMeta",
+    "ContextCheckpointFile",
+    "ContextCheckpointStatus",
+    "KVCheckpoint",
     # Virtual Expert System (MoE)
     "VirtualExpertPlugin",
     "VirtualExpertRegistry",

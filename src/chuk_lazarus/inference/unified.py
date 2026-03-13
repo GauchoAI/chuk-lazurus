@@ -33,6 +33,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -48,6 +49,17 @@ from chuk_lazarus.models_v2.families import (
 from .chat import ChatHistory, format_chat_prompt, format_history
 from .generation import GenerationConfig, GenerationResult, generate
 from .loader import DType, HFLoader
+
+
+class EngineMode(str, Enum):
+    """Inference engine mode for UnifiedPipeline."""
+
+    STANDARD = "standard"
+    """Default KV-cached generation path."""
+
+    KV_DIRECT = "kv_direct"
+    """Stateful KVDirectGenerator — works with any supported model family."""
+
 
 if TYPE_CHECKING:
     from transformers import PreTrainedTokenizer
@@ -69,6 +81,9 @@ class UnifiedPipelineConfig(BaseModel):
     # Introspection
     enable_introspection: bool = Field(True, description="Enable layer hooks")
     introspection_layers: list[int] | None = Field(None, description="Layers to track (None = all)")
+
+    # Engine
+    engine: EngineMode = Field(EngineMode.STANDARD, description="Inference engine mode")
 
 
 class UnifiedPipelineState(BaseModel):
@@ -290,7 +305,7 @@ class UnifiedPipeline:
 
         Runs in a thread pool to avoid blocking.
         """
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None,
             lambda: cls.from_pretrained(model_id, pipeline_config, verbose),
@@ -386,6 +401,25 @@ class UnifiedPipeline:
             )
 
         return generate(self._model, self._tokenizer, prompt, config)
+
+    def make_engine(self):
+        """
+        Construct a KVDirectGenerator for this pipeline's model.
+
+        Returns a ready-to-use KVDirectGenerator backed by the appropriate
+        adapter for the loaded model family.
+
+        Raises ValueError if the model family is not yet supported.
+
+        Example::
+
+            pipeline = UnifiedPipeline.from_pretrained("mlx-community/gemma-3-1b-it-bf16")
+            engine = pipeline.make_engine()
+            logits, kv_store = engine.prefill(input_ids)
+        """
+        from .context import make_kv_generator
+
+        return make_kv_generator(self._model)
 
     def list_supported_families(self) -> list[str]:
         """List all supported model families."""

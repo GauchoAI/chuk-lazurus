@@ -3,24 +3,42 @@ Context management for stateful inference.
 
 Four generation strategies:
 
-  KVDirectGenerator        — raw KV-direct step generator (Mode 2)
-  CompiledRSGenerator      — compiled residual-stream generator (Mode 1b)
-  BoundedKVEngine (Mode 3) — three-tier bounded memory (HOT/WARM/COLD)
+  KVDirectGenerator        — model-agnostic KV-direct step generator (Mode 2)
+  CompiledRSGenerator      — compiled residual-stream generator (Mode 1b, Gemma-only)
+  BoundedKVEngine (Mode 3) — three-tier bounded memory (HOT/WARM/COLD, Gemma-only)
   UnlimitedContextEngine   — checkpoint-chained window replay (Mode 4)
 
-And the checkpoint library format for pre-filled knowledge bases:
+Protocols and adapters for any transformer architecture:
+  ModelBackboneProtocol    — interface that any backbone adapter must satisfy
+  TransformerLayerProtocol — per-layer interface
+  GemmaBackboneAdapter     — wraps GemmaResidualStreamForCausalLM
+  LlamaBackboneAdapter     — wraps LlamaForCausalLM / Mistral
+
+Factory:
+  make_kv_generator(model) — auto-detects family, returns KVDirectGenerator
+
+Checkpoint library format for pre-filled knowledge bases:
   CheckpointLibrary, LibraryManifest, WindowMeta, etc.
 
 Usage
 -----
     from chuk_lazarus.inference.context import (
         KVDirectGenerator,
+        make_kv_generator,
+        GemmaBackboneAdapter,
+        LlamaBackboneAdapter,
         UnlimitedContextEngine,
         CheckpointLibrary,
         LibrarySource,
     )
 """
 
+from .adapters import (
+    GemmaBackboneAdapter,
+    GemmaLayerAdapter,
+    LlamaBackboneAdapter,
+    LlamaLayerAdapter,
+)
 from .bounded_engine import (
     BoundedKVEngine,
     Checkpoint,
@@ -37,7 +55,14 @@ from .checkpoint_library import (
     LibraryManifest,
     WindowMeta,
 )
-from .kv_generator import KVDirectGenerator
+from .kv_checkpoint import (
+    CheckpointMeta,
+    ContextCheckpointFile,
+    ContextCheckpointStatus,
+    KVCheckpoint,
+)
+from .kv_generator import KVDirectGenerator, make_kv_generator
+from .protocols import ModelBackboneProtocol, TransformerLayerProtocol
 from .rs_generator import CompiledRSGenerator
 from .unlimited_engine import (
     CheckpointStore,
@@ -50,10 +75,19 @@ from .unlimited_engine import (
 )
 
 __all__ = [
+    # Protocols
+    "ModelBackboneProtocol",
+    "TransformerLayerProtocol",
+    # Adapters
+    "GemmaBackboneAdapter",
+    "GemmaLayerAdapter",
+    "LlamaBackboneAdapter",
+    "LlamaLayerAdapter",
     # Generators
     "KVDirectGenerator",
+    "make_kv_generator",
     "CompiledRSGenerator",
-    # Mode 3 — bounded engine
+    # Mode 3 — bounded engine (Gemma-only)
     "GenerationMode",
     "PathLabel",
     "MemoryReport",
@@ -75,4 +109,9 @@ __all__ = [
     "WindowMeta",
     "LibraryManifest",
     "CheckpointLibrary",
+    # KV checkpoint
+    "CheckpointMeta",
+    "ContextCheckpointFile",
+    "ContextCheckpointStatus",
+    "KVCheckpoint",
 ]
