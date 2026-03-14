@@ -66,7 +66,7 @@ async def context_generate_cmd(args: Namespace) -> None:
     kv_gen = engine.kv_gen
 
     # ------------------------------------------------------------------
-    # 4. Encode prompt (with chat template by default)
+    # 4. Encode prompt for routing (chat-wrapped for consistent geometry)
     # ------------------------------------------------------------------
     prompt_text = config.prompt_text
     if not prompt_text:
@@ -75,17 +75,17 @@ async def context_generate_cmd(args: Namespace) -> None:
 
     no_chat = getattr(args, "no_chat_template", False)
     system_prompt = getattr(args, "system_prompt", None)
+
+    # Chat-wrapped prompt for compass routing — matches calibration geometry
     if not no_chat and hasattr(tokenizer, "apply_chat_template"):
-        messages = []
+        routing_messages = []
         if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt_text})
-        chat_prompt = tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
+            routing_messages.append({"role": "system", "content": system_prompt})
+        routing_messages.append({"role": "user", "content": prompt_text})
+        routing_prompt = tokenizer.apply_chat_template(
+            routing_messages, tokenize=False, add_generation_prompt=True,
         )
-        prompt_ids = tokenizer.encode(chat_prompt, add_special_tokens=False)
+        prompt_ids = tokenizer.encode(routing_prompt, add_special_tokens=False)
     else:
         prompt_ids = tokenizer.encode(prompt_text, add_special_tokens=False)
 
@@ -132,19 +132,63 @@ async def context_generate_cmd(args: Namespace) -> None:
     print(f"  Replaying windows: {replay_ids}", file=sys.stderr)
 
     # ------------------------------------------------------------------
-    # 6. Replay windows contiguously (repack positions from 0)
+    # 6. Build framed context: preamble + transcript windows + prompt
+    #
+    # The model needs to understand the raw transcript is context to
+    # answer from. We wrap it in a chat-formatted structure:
+    #   [preamble tokens] [window tokens...] [postamble + question tokens]
     #
     # Original absolute positions are too far apart for the model's
     # attention to reach.  We re-encode each window's tokens at fresh
     # contiguous positions so all content is within effective range.
     # ------------------------------------------------------------------
-    context_kv = engine._make_empty_kv()
+    no_chat = getattr(args, "no_chat_template", False)
+    system_prompt = getattr(args, "system_prompt", None)
+
+    # Build preamble: chat template up to where the transcript goes
+    if not no_chat and hasattr(tokenizer, "apply_chat_template"):
+        # Preamble: system message + start of user turn with context framing
+        preamble_messages = []
+        sys_content = system_prompt or "You are answering questions based on the document transcript provided below. Answer using information from the transcript."
+        preamble_messages.append({"role": "system", "content": sys_content})
+        # User turn with context header — the transcript follows as raw tokens
+        preamble_messages.append({"role": "user", "content": "Here is the relevant transcript:\n\n"})
+        preamble_text = tokenizer.apply_chat_template(
+            preamble_messages, tokenize=False, add_generation_prompt=False,
+        )
+        # Strip the trailing end-of-turn so transcript tokens continue the user turn
+        eot = "<end_of_turn>"
+        if preamble_text.endswith(eot):
+            preamble_text = preamble_text[: -len(eot)]
+        preamble_ids = tokenizer.encode(preamble_text, add_special_tokens=False)
+
+        # Postamble: close the transcript, ask the question, start model turn
+        post_messages = [{"role": "user", "content": f"\n\n---\nBased on the transcript above, {prompt_text}"}]
+        post_text = tokenizer.apply_chat_template(
+            post_messages, tokenize=False, add_generation_prompt=True,
+        )
+        # Remove any leading BOS/special tokens that duplicate
+        postamble_ids = tokenizer.encode(post_text, add_special_tokens=False)
+    else:
+        preamble_ids = tokenizer.encode(
+            "Transcript:\n\n", add_special_tokens=False,
+        )
+        postamble_ids = tokenizer.encode(
+            f"\n\n---\nQuestion: {prompt_text}\nAnswer:", add_special_tokens=False,
+        )
+
+    # Prefill: preamble → transcript windows → postamble
     seq_len = 0
 
-    # Replay in relevance order (lowest-scoring first, best last).
-    # Sliding-window attention means non-global layers only attend to
-    # nearby positions — the best-matching window goes last, adjacent
-    # to the prompt, for maximum attention coverage.
+    # Preamble
+    if preamble_ids:
+        p_ids = mx.array(preamble_ids)[None]
+        _logits, context_kv = kv_gen.prefill(p_ids)
+        mx.eval(*[t for pair in context_kv for t in pair])
+        seq_len += len(preamble_ids)
+        print(f"  Preamble: {len(preamble_ids)} tokens", file=sys.stderr)
+
+    # Replay transcript windows
     for wid in replay_ids:
         w_tokens = lib.get_window_tokens(wid)
         w_ids = mx.array(w_tokens)[None]
@@ -162,12 +206,12 @@ async def context_generate_cmd(args: Namespace) -> None:
         seq_len += len(w_tokens)
 
     # ------------------------------------------------------------------
-    # 7. Extend context with prompt
+    # 7. Extend context with postamble (question + generation prompt)
     # ------------------------------------------------------------------
-    q_ids = mx.array(prompt_ids)[None]
-    print(f"Extending with {len(prompt_ids)} prompt tokens @ pos {seq_len}...", file=sys.stderr)
+    q_ids = mx.array(postamble_ids)[None]
+    print(f"Extending with {len(postamble_ids)} prompt tokens @ pos {seq_len}...", file=sys.stderr)
     logits, gen_kv = kv_gen.extend(q_ids, context_kv, abs_start=seq_len)
-    seq_len += len(prompt_ids)
+    seq_len += len(postamble_ids)
 
     context_tokens = seq_len
 
