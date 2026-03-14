@@ -16,9 +16,10 @@ from .._constants import ContextDefaults
 class ResidualMode(str, Enum):
     """Residual extraction mode for prefill."""
 
-    INTERVAL = "interval"  # 8 samples per window (~40 KB/window)
-    FULL = "full"          # every position (~5 MB/window for 512-token windows)
-    NONE = "none"          # skip residual extraction (fastest, no compass)
+    INTERVAL = "interval"    # 8 samples per window (~40 KB/window)
+    FULL = "full"            # every position (~5 MB/window for 512-token windows)
+    NONE = "none"            # skip residual extraction (fastest, no compass)
+    DARKSPACE = "darkspace"  # frame bank projection per position (single-pass, ~90 KB/window)
 
 
 class PrefillConfig(CommandConfig):
@@ -47,11 +48,16 @@ class PrefillConfig(CommandConfig):
     )
     residual_mode: ResidualMode = Field(
         default=ResidualMode.INTERVAL,
-        description="Residual extraction mode: interval (8 samples), full (every position), none (skip)",
+        description="Residual extraction mode: interval, full, darkspace, none",
+    )
+    frame_bank: Path | None = Field(
+        default=None,
+        description="Path to frame_bank.npz (required for darkspace mode)",
     )
 
     @classmethod
     def from_args(cls, args: Namespace) -> PrefillConfig:
+        fb = getattr(args, "frame_bank", None)
         return cls(
             model=args.model,
             input_file=Path(args.input),
@@ -61,6 +67,7 @@ class PrefillConfig(CommandConfig):
             resume=not getattr(args, "no_resume", False),
             name=getattr(args, "name", None),
             residual_mode=ResidualMode(getattr(args, "residual_mode", "interval")),
+            frame_bank=Path(fb) if fb else None,
         )
 
 

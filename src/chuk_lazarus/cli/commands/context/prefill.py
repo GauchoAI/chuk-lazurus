@@ -73,6 +73,23 @@ async def context_prefill_cmd(args: Namespace) -> None:
 
     config = PrefillConfig.from_args(args)
 
+    frame_bank_data = None
+    if config.residual_mode == ResidualMode.DARKSPACE and config.frame_bank is not None:
+        if not config.frame_bank.exists():
+            print(f"Error: frame bank not found: {config.frame_bank}", file=sys.stderr)
+            return
+        frame_bank_data = dict(mx.load(str(config.frame_bank)))
+        fb_shape = frame_bank_data["frame_bank"].shape
+        print(
+            f"Frame bank: {config.frame_bank.name}  |  {fb_shape[0]}D × {fb_shape[1]} hidden",
+            file=sys.stderr,
+        )
+    elif config.residual_mode == ResidualMode.DARKSPACE:
+        print(
+            "Darkspace mode: frame bank will be calibrated from corpus",
+            file=sys.stderr,
+        )
+
     # ------------------------------------------------------------------
     # 1. Read source
     # ------------------------------------------------------------------
@@ -185,6 +202,8 @@ async def context_prefill_cmd(args: Namespace) -> None:
             config.model, pipeline.config, config.window_size,
             tokenizer, created_at, is_complete=is_complete,
             quick=quick, residual_mode=config.residual_mode,
+            frame_bank_data=frame_bank_data,
+            frame_bank_path=config.frame_bank,
         )
 
     try:
@@ -384,10 +403,12 @@ def _calibrate_compass(
 
     # Save basis: mean vector + projection matrix + metadata
     basis = Vt[pc_start:pc_end]  # (pc_end - pc_start, hidden_dim)
+    structural_basis = Vt[:pc_start]  # (pc_start, hidden_dim) — PCs to remove
     mx.savez(
         str(output_path / "compass_basis.npz"),
         mean=mx.array(mean),
         basis=mx.array(basis),
+        structural_basis=mx.array(structural_basis),
         compass_layer=mx.array(compass_layer),
         pc_start=mx.array(pc_start),
         pc_end=mx.array(pc_end),
@@ -407,11 +428,13 @@ def _save_library(
     is_complete: bool = False,
     quick: bool = False,
     residual_mode: ResidualMode = ResidualMode.INTERVAL,
+    frame_bank_data: dict | None = None,
+    frame_bank_path: Path | None = None,
 ) -> None:
     """Write all library files from the engine's current archived state.
 
     quick=True writes only checkpoints/tokens/windows/manifest (for periodic saves).
-    quick=False also extracts interval/full residuals and calibrates compass routing,
+    quick=False also extracts residuals and calibrates compass routing,
     unless residual_mode is NONE.
     """
     import mlx.core as mx
@@ -436,9 +459,10 @@ def _save_library(
     residual_dict: dict[str, mx.array] = {}
     token_offset = 0
 
+    skip_checkpoints = residual_mode == ResidualMode.DARKSPACE
+
     for wid in range(num_archived):
         w_tokens, w_abs = engine.archive.retrieve(wid)
-        kv_last, _ = engine.checkpoints.load(wid)
         preview = tokenizer.decode(w_tokens[:30], skip_special_tokens=True)
         windows.append(
             WindowMeta(
@@ -449,39 +473,177 @@ def _save_library(
                 preview=preview.replace("\n", " ")[:80],
             )
         )
-        for li, (k, v) in enumerate(kv_last):
-            ckpt_dict[f"w{wid}_l{li}_k"] = k
-            ckpt_dict[f"w{wid}_l{li}_v"] = v
-        # Save residual (Markov state) if available
-        if wid in engine.residuals:
-            residual_dict[f"w{wid}_residual"] = engine.residuals.load(wid)
+        if not skip_checkpoints:
+            kv_last, _ = engine.checkpoints.load(wid)
+            for li, (k, v) in enumerate(kv_last):
+                ckpt_dict[f"w{wid}_l{li}_k"] = k
+                ckpt_dict[f"w{wid}_l{li}_v"] = v
+            # Save residual (Markov state) if available
+            if wid in engine.residuals:
+                residual_dict[f"w{wid}_residual"] = engine.residuals.load(wid)
         token_offset += len(w_tokens)
 
     total_tokens_to_report = len(all_token_ids) if is_complete else token_offset
 
-    # 1. checkpoints.npz — save per-window to stay under mx.savez 1024 kwarg limit
-    import tempfile
-    import zipfile
+    if not skip_checkpoints:
+        # 1. checkpoints.npz — save per-window KV tensors
+        import tempfile
+        import zipfile
 
-    if not quick:
-        print(f"  saving checkpoints ({num_archived} windows)...", file=sys.stderr, flush=True)
-    npz_path = output_path / LibraryFile.CHECKPOINTS
-    with zipfile.ZipFile(str(npz_path), "w", zipfile.ZIP_STORED) as zf:
+        if not quick:
+            print(f"  saving checkpoints ({num_archived} windows)...", file=sys.stderr, flush=True)
+        npz_path = output_path / LibraryFile.CHECKPOINTS
+        with zipfile.ZipFile(str(npz_path), "w", zipfile.ZIP_STORED) as zf:
+            for wid in range(num_archived):
+                w_keys = {k: v for k, v in ckpt_dict.items() if k.startswith(f"w{wid}_")}
+                with tempfile.NamedTemporaryFile(suffix=".npz") as tmp:
+                    mx.savez(tmp.name, **w_keys)
+                    with zipfile.ZipFile(tmp.name, "r") as src:
+                        for name in src.namelist():
+                            zf.writestr(name, src.read(name))
+
+        # 2. residuals.npz — per-window Markov state vectors
+        if residual_dict:
+            mx.savez(str(output_path / LibraryFile.RESIDUALS), **residual_dict)
+    else:
+        if not quick:
+            print(f"  darkspace mode: skipping checkpoints (fresh prefill at generate time)", file=sys.stderr, flush=True)
+
+    if not quick and residual_mode == ResidualMode.DARKSPACE:
+        # Dark space mode.
+        # Two paths:
+        #   A) frame_bank_data provided → project through pre-computed bank
+        #   B) no frame bank → calibrate from the corpus itself (whitening)
+        import numpy as np
+
+        num_layers = config.num_hidden_layers
+        compass_layer = round(num_layers * 0.77)
+        _N_DARKSPACE_DIMS = 64  # dimensions in the whitened frame bank
+
+        if frame_bank_data is not None:
+            # Path A: pre-computed frame bank
+            frame_bank = np.array(
+                frame_bank_data["frame_bank"].tolist(), dtype=np.float32,
+            )
+            compass_layer = int(frame_bank_data["compass_layer"].item())
+            print(
+                f"  using pre-computed frame bank: {frame_bank.shape[0]}D",
+                file=sys.stderr, flush=True,
+            )
+        else:
+            # Path B: calibrate from corpus — sample L26 residuals from
+            # a random subset of windows, PCA, remove structural PCs, whiten.
+            n_calibration_windows = min(50, num_archived)
+            n_positions_per_window = 8  # sparse sampling for calibration
+
+            cal_vecs: list[np.ndarray] = []
+            t_cal = time.monotonic()
+            # Sample evenly across the corpus
+            cal_wids = [
+                int(i * (num_archived - 1) / max(n_calibration_windows - 1, 1))
+                for i in range(n_calibration_windows)
+            ]
+            for wid in cal_wids:
+                w_tokens, _ = engine.archive.retrieve(wid)
+                w_ids = mx.array(w_tokens)[None]
+                S = len(w_tokens)
+                positions = [int(j * (S - 1) / max(n_positions_per_window - 1, 1))
+                             for j in range(n_positions_per_window)]
+                h = engine.kv_gen.prefill_to_layer(
+                    w_ids, target_layer=compass_layer, sample_positions=positions,
+                )
+                for si in range(n_positions_per_window):
+                    cal_vecs.append(np.array(h[0, si, :].tolist(), dtype=np.float32))
+                _phase_progress("calibrating", len(cal_vecs) // n_positions_per_window,
+                                n_calibration_windows, t_cal)
+            print(file=sys.stderr)
+
+            # PCA + whitening on calibration samples
+            X_cal = np.stack(cal_vecs, axis=0)  # (N_cal, hidden_dim)
+            cal_mean = X_cal.mean(axis=0)
+            X_centered = X_cal - cal_mean
+            _U, S_vals, Vt = np.linalg.svd(X_centered, full_matrices=False)
+            eigenvalues = (S_vals ** 2) / max(X_cal.shape[0] - 1, 1)
+            explained = eigenvalues / (eigenvalues.sum() + 1e-10)
+
+            # Auto-detect structural boundary
+            structural_end = 0
+            for si in range(min(len(explained) - 3, 50)):
+                ratios = [
+                    explained[si + j] / max(explained[si + j + 1], 1e-10)
+                    for j in range(3)
+                ]
+                if all(r < 1.5 for r in ratios):
+                    structural_end = si
+                    break
+            else:
+                structural_end = 4
+
+            pc_start = structural_end
+            pc_end = min(pc_start + _N_DARKSPACE_DIMS, len(S_vals))
+
+            # Whitening transform
+            whitening_scales = 1.0 / np.sqrt(eigenvalues[pc_start:pc_end] + 1e-10)
+            frame_bank = Vt[pc_start:pc_end] * whitening_scales[:, None]
+
+            structural_var = explained[:pc_start].sum() * 100
+            content_var = explained[pc_start:pc_end].sum() * 100
+            cal_elapsed = time.monotonic() - t_cal
+            print(
+                f"  corpus-calibrated: {len(cal_vecs)} samples from {n_calibration_windows} windows "
+                f"({cal_elapsed:.1f}s)",
+                file=sys.stderr, flush=True,
+            )
+            print(
+                f"  structural PCs 0-{pc_start-1} ({structural_var:.1f}%) removed, "
+                f"content PCs {pc_start}-{pc_end-1} ({content_var:.1f}%) whitened",
+                file=sys.stderr, flush=True,
+            )
+
+        n_frame_dims = frame_bank.shape[0]
+
+        # Extract L26 residuals at every position, project through frame bank
+        compass_dict: dict[str, mx.array] = {}
+        t_ds = time.monotonic()
         for wid in range(num_archived):
-            # Collect this window's arrays (num_layers × 2 — well under 1024)
-            w_keys = {k: v for k, v in ckpt_dict.items() if k.startswith(f"w{wid}_")}
-            # Save to a temp npz, then copy entries into the combined archive
-            with tempfile.NamedTemporaryFile(suffix=".npz") as tmp:
-                mx.savez(tmp.name, **w_keys)
-                with zipfile.ZipFile(tmp.name, "r") as src:
-                    for name in src.namelist():
-                        zf.writestr(name, src.read(name))
+            w_tokens, _ = engine.archive.retrieve(wid)
+            w_ids = mx.array(w_tokens)[None]
+            S = len(w_tokens)
 
-    # 2. residuals.npz — per-window Markov state vectors
-    if residual_dict:
-        mx.savez(str(output_path / LibraryFile.RESIDUALS), **residual_dict)
+            h = engine.kv_gen.prefill_to_layer(
+                w_ids, target_layer=compass_layer,
+            )
+            h_np = np.array(h[0].tolist(), dtype=np.float32)  # (S, hidden_dim)
+            projected = h_np @ frame_bank.T  # (S, n_frame_dims)
 
-    if not quick and residual_mode != ResidualMode.NONE:
+            for si in range(S):
+                compass_dict[f"w{wid}_s{si}"] = mx.array(projected[si:si+1])
+            _phase_progress(f"darkspace L{compass_layer}", wid + 1, num_archived, t_ds)
+        print(file=sys.stderr)
+        _savez_chunked(str(output_path / "compass_residuals.npz"), compass_dict)
+
+        # Save frame bank as compass basis
+        mx.savez(
+            str(output_path / "compass_basis.npz"),
+            mean=mx.zeros(frame_bank.shape[1]),
+            basis=mx.array(frame_bank),
+            compass_layer=mx.array(compass_layer),
+            pc_start=mx.array(0),
+            pc_end=mx.array(n_frame_dims),
+            mode=mx.array([ord(c) for c in "darkspace"]),
+        )
+
+        # Copy external frame bank if provided
+        if frame_bank_data is not None and frame_bank_path is not None:
+            import shutil
+            shutil.copy2(str(frame_bank_path), str(output_path / "frame_bank.npz"))
+
+        print(
+            f"  darkspace: {n_frame_dims}D projections at {num_archived} windows × all positions",
+            file=sys.stderr, flush=True,
+        )
+
+    elif not quick and residual_mode in (ResidualMode.INTERVAL, ResidualMode.FULL):
         # 2b. interval_residuals.npz — interior residuals for compass routing
         #     Re-prefill each window to extract residuals at sampled positions.
         #     interval mode: 8 evenly-spaced samples per window (~40 KB/window)

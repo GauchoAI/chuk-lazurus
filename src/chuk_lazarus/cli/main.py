@@ -97,6 +97,7 @@ import logging
 import sys
 
 from .commands.context import context_generate_cmd, context_prefill_cmd
+from .commands.context.calibrate_frames import context_calibrate_frames_cmd
 
 # Import command handlers from modules
 from .commands.data import (
@@ -422,10 +423,15 @@ Examples:
     )
     ctx_prefill.add_argument(
         "--residual-mode",
-        choices=["interval", "full", "none"],
+        choices=["interval", "full", "none", "darkspace"],
         default="interval",
         dest="residual_mode",
-        help="Residual extraction: interval (8 samples, default), full (every position), none (skip)",
+        help="Residual extraction: interval (8 samples), full (every position), darkspace (frame bank), none (skip)",
+    )
+    ctx_prefill.add_argument(
+        "--frame-bank",
+        dest="frame_bank",
+        help="Path to frame_bank.npz (required for --residual-mode darkspace)",
     )
     ctx_prefill.set_defaults(func=lambda args: asyncio.run(context_prefill_cmd(args)))
 
@@ -459,7 +465,7 @@ Examples:
     )
     ctx_generate.add_argument(
         "--strategy", default=None,
-        choices=["bm25", "compass", "twopass", "attention", "deflection", "preview", "hybrid", "residual"],
+        choices=["bm25", "compass", "geometric", "contrastive", "darkspace", "guided", "directed", "twopass", "attention", "deflection", "preview", "hybrid", "residual"],
         help="Routing strategy: bm25 (default), compass (PCA subspace at commitment layer), twopass, attention, preview, hybrid, deflection, residual (legacy)",
     )
     ctx_generate.add_argument(
@@ -477,6 +483,28 @@ Examples:
         help="Send prompt as raw text without chat template wrapping",
     )
     ctx_generate.set_defaults(func=lambda args: asyncio.run(context_generate_cmd(args)))
+
+    # context calibrate-frames
+    ctx_calibrate = ctx_subparsers.add_parser(
+        "calibrate-frames", help="Discover dark space coordinate frames for a model"
+    )
+    ctx_calibrate.add_argument("--model", "-m", required=True, help="Model ID or local path")
+    ctx_calibrate.add_argument(
+        "--output", "-o", required=True, help="Output path for frame_bank.npz"
+    )
+    ctx_calibrate.add_argument(
+        "--method", choices=["whitening", "category"], default="whitening",
+        help="Discovery method: whitening (model-driven, default) or category (human-defined)",
+    )
+    ctx_calibrate.add_argument(
+        "--dims", type=int, default=64, dest="dims_per_frame",
+        help="Dimensions in frame bank (default: 64)",
+    )
+    ctx_calibrate.add_argument(
+        "--layer-frac", type=float, default=0.77, dest="layer_frac",
+        help="Commitment layer as fraction of model depth (default: 0.77)",
+    )
+    ctx_calibrate.set_defaults(func=lambda args: asyncio.run(context_calibrate_frames_cmd(args)))
 
     # Tokenizer subcommand
     tok_parser = subparsers.add_parser("tokenizer", help="Tokenizer utilities")

@@ -210,7 +210,7 @@ class CheckpointLibrary:
     def _load_checkpoints(self) -> dict[int, list[tuple[mx.array, mx.array]]]:
         ckpt_path = self._path / LibraryFile.CHECKPOINTS
         if not ckpt_path.exists():
-            raise FileNotFoundError(f"{LibraryFile.CHECKPOINTS} not found in {self._path}")
+            return {}  # darkspace libraries have no checkpoints
         raw: dict[str, mx.array] = dict(mx.load(str(ckpt_path)))
         return {
             wid: [
@@ -353,6 +353,15 @@ class CheckpointLibrary:
             return None
         return int(self._compass_basis["pc_end"].item())
 
+    @property
+    def is_darkspace(self) -> bool:
+        """True if this library uses dark space frame bank projections."""
+        return (
+            self._compass_basis is not None
+            and "mode" in self._compass_basis
+            and "".join(chr(int(c)) for c in self._compass_basis["mode"].tolist()) == "darkspace"
+        )
+
     def get_compass_residuals(self, window_id: int) -> list[mx.array]:
         """Return compass-layer interval residuals for a window."""
         return self._l26_interval_residuals[window_id]
@@ -369,6 +378,18 @@ class CheckpointLibrary:
             int(cb["pc_start"].item()),
             int(cb["pc_end"].item()),
         )
+
+    @property
+    def has_structural_basis(self) -> bool:
+        """True if the compass basis includes structural PCs for removal."""
+        return self._compass_basis is not None and "structural_basis" in self._compass_basis
+
+    def get_structural_basis(self) -> mx.array:
+        """Return structural PCA basis (PCs 0..pc_start-1) for projection removal.
+
+        Shape: (pc_start, hidden_size).
+        """
+        return self._compass_basis["structural_basis"]
 
     def window_abs_range(self, window_id: int) -> tuple[int, int]:
         """Return (abs_start, abs_end) for a window."""
