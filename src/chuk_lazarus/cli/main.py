@@ -433,6 +433,12 @@ Examples:
         dest="frame_bank",
         help="Path to frame_bank.npz (required for --residual-mode darkspace)",
     )
+    ctx_prefill.add_argument(
+        "--store-pages",
+        action="store_true",
+        dest="store_pages",
+        help="Store pre-RoPE K,V pages for instant page injection at generate time",
+    )
     ctx_prefill.set_defaults(func=lambda args: asyncio.run(context_prefill_cmd(args)))
 
     # context generate
@@ -465,7 +471,7 @@ Examples:
     )
     ctx_generate.add_argument(
         "--strategy", default=None,
-        choices=["bm25", "compass", "geometric", "contrastive", "darkspace", "guided", "directed", "twopass", "attention", "deflection", "preview", "hybrid", "residual"],
+        choices=["bm25", "compass", "qk", "geometric", "contrastive", "darkspace", "guided", "directed", "twopass", "attention", "deflection", "preview", "hybrid", "residual"],
         help="Routing strategy: bm25 (default), compass (PCA subspace at commitment layer), twopass, attention, preview, hybrid, deflection, residual (legacy)",
     )
     ctx_generate.add_argument(

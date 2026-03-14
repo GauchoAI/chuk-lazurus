@@ -205,6 +205,174 @@ class KVDirectGenerator:
         mx.eval(h)
         return h
 
+    def prefill_pages(
+        self,
+        input_ids: mx.array,  # (1, S)
+        n_pages: int = 8,
+    ) -> tuple[mx.array, KVStore, list[tuple[mx.array, mx.array]]]:
+        """Prefill and return pre-RoPE K,V at evenly-spaced page positions.
+
+        Returns (logits, kv_store, pages) where:
+          - kv_store: standard post-RoPE KV (for generation if needed)
+          - pages: list of n_pages tuples, each containing:
+              per_layer list of (K_pre_rope, V) at that page position.
+
+        The pre-RoPE K can be re-positioned via apply_rope() at injection time.
+        V is position-independent — no RoPE applied to values.
+        """
+        backbone = self.backbone
+        B, S = input_ids.shape
+        h = backbone.embed(input_ids)
+        kv_store: KVStore = []
+
+        # Determine page positions
+        positions = [int(i * (S - 1) / max(n_pages - 1, 1)) for i in range(n_pages)]
+
+        # Per-layer storage for pages: pages_per_layer[layer][page_idx] = (k_pre, v)
+        pages_per_layer: list[list[tuple[mx.array, mx.array]]] = []
+
+        for i, layer in enumerate(backbone.adapted_layers):
+            mask = backbone.prefill_mask(i, h)
+
+            # Get pre-RoPE K for page storage
+            x = layer.pre_attn_norm(h)
+            _q_pre, k_pre, v_all = layer.project_qkv_pre_rope(x, B, S)
+
+            # Apply RoPE for the actual forward pass
+            q, k, v = layer.project_qkv(x, B, S, offset=0)
+
+            k_rpt = mx.repeat(k, layer.n_rep, axis=1) if layer.n_rep > 1 else k
+            v_rpt = mx.repeat(v, layer.n_rep, axis=1) if layer.n_rep > 1 else v
+
+            attn_out = mx.fast.scaled_dot_product_attention(
+                q, k_rpt, v_rpt, scale=layer.attn_scale, mask=mask
+            )
+            attn_out = attn_out.transpose(0, 2, 1, 3).reshape(B, S, -1)
+            attn_out = layer.output_project(attn_out)
+
+            h = layer.residual_add_attn(h, attn_out)
+            h = layer.residual_add_ffn(h, layer.ffn(layer.pre_ffn_norm(h)))
+
+            kv_store.append((k, v))
+
+            # Extract pre-RoPE K and V at page positions
+            layer_pages = []
+            for pi in positions:
+                k_page = k_pre[:, :, pi:pi+1, :]   # (1, nkv, 1, dh) pre-RoPE
+                v_page = v_all[:, :, pi:pi+1, :]    # (1, nkv, 1, dh)
+                layer_pages.append((k_page, v_page))
+            pages_per_layer.append(layer_pages)
+
+        h = backbone.final_norm(h)
+        logits = backbone.unembed(h)
+
+        # Restructure: pages[page_idx] = list of (k_pre, v) per layer
+        pages = []
+        for pi in range(n_pages):
+            page_kv = [(pages_per_layer[li][pi]) for li in range(len(backbone.adapted_layers))]
+            pages.append(page_kv)
+
+        eval_targets = [logits]
+        eval_targets.extend(t for pair in kv_store for t in pair)
+        for page in pages:
+            eval_targets.extend(t for k, v in page for t in (k, v))
+        mx.eval(*eval_targets)
+
+        return logits, kv_store, pages
+
+    def inject_pages(
+        self,
+        pages: list[list[tuple[mx.array, mx.array]]],
+        target_offsets: list[int],
+    ) -> KVStore:
+        """Build a KV store by applying RoPE to pre-RoPE pages at target positions.
+
+        Args:
+            pages: list of N pages, each = list of (K_pre_rope, V) per layer
+            target_offsets: list of N position offsets for RoPE
+
+        Returns:
+            KVStore with N positions, RoPE applied at target_offsets.
+        """
+        backbone = self.backbone
+        num_layers = len(backbone.adapted_layers)
+        kv_store: KVStore = []
+
+        for li, layer in enumerate(backbone.adapted_layers):
+            k_parts = []
+            v_parts = []
+            for pi, page in enumerate(pages):
+                k_pre, v = page[li]
+                # Apply RoPE at the target position
+                k_roped = layer.apply_rope(k_pre, offset=target_offsets[pi])
+                k_parts.append(k_roped)
+                v_parts.append(v)
+            k_all = mx.concatenate(k_parts, axis=2)  # (1, nkv, N, dh)
+            v_all = mx.concatenate(v_parts, axis=2)
+            kv_store.append((k_all, v_all))
+
+        mx.eval(*[t for pair in kv_store for t in pair])
+        return kv_store
+
+    def prefill_from_layer(
+        self,
+        residuals: mx.array,  # (1, N, hidden_size) — pre-computed L26 states
+        start_layer: int = 26,
+    ) -> tuple[mx.array, KVStore]:
+        """Build KV cache by processing pre-computed residuals through upper layers.
+
+        Takes stored L26 residuals and runs them through layers start_layer..end.
+        Layers 0..start_layer-1 get empty KV (no entries).
+        Layers start_layer..end get real KV computed from the residuals.
+
+        The model sees the injected content only in its upper layers —
+        where content routing, tone, and entity signals live (L24-L28+).
+        Lower layers handle token-level processing which was already done
+        during prefill.
+
+        Returns (logits, kv_store) where kv_store has real entries at
+        upper layers and empty entries at lower layers.
+        """
+        backbone = self.backbone
+        B, N, _D = residuals.shape
+        h = residuals
+        kv_store: KVStore = []
+
+        for i, layer in enumerate(backbone.adapted_layers):
+            if i < start_layer:
+                # Zero KV for lower layers — same shape as upper layers
+                # so extend() masks work, but content is zeros (no signal).
+                nkv = layer.num_kv_heads
+                dh = layer.head_dim
+                zero_k = mx.zeros((B, nkv, N, dh))
+                zero_v = mx.zeros((B, nkv, N, dh))
+                kv_store.append((zero_k, zero_v))
+                continue
+
+            # Process through this layer normally
+            mask = backbone.prefill_mask(i, h)
+            x = layer.pre_attn_norm(h)
+            q, k, v = layer.project_qkv(x, B, N, offset=0)
+
+            k_rpt = mx.repeat(k, layer.n_rep, axis=1) if layer.n_rep > 1 else k
+            v_rpt = mx.repeat(v, layer.n_rep, axis=1) if layer.n_rep > 1 else v
+
+            attn_out = mx.fast.scaled_dot_product_attention(
+                q, k_rpt, v_rpt, scale=layer.attn_scale, mask=mask
+            )
+            attn_out = attn_out.transpose(0, 2, 1, 3).reshape(B, N, -1)
+            attn_out = layer.output_project(attn_out)
+
+            h = layer.residual_add_attn(h, attn_out)
+            h = layer.residual_add_ffn(h, layer.ffn(layer.pre_ffn_norm(h)))
+
+            kv_store.append((k, v))
+
+        h = backbone.final_norm(h)
+        logits = backbone.unembed(h)
+        mx.eval(logits, *[t for pair in kv_store for t in pair])
+        return logits, kv_store
+
     def prefill_interval_residuals(
         self,
         input_ids: mx.array,  # (1, S)

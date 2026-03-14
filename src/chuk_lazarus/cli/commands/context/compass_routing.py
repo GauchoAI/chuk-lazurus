@@ -61,6 +61,7 @@ class RoutingStrategy(str, Enum):
     DARKSPACE = "darkspace" # dual-score: compass + directed in 16D PCA
     CONTRASTIVE = "contrastive"  # query-specific subspace discovery at runtime
     GEOMETRIC = "geometric"      # compass + contrastive fused — both model geometry
+    QK = "qk"                    # model's own Q/K attention projections — the dark space
     RESIDUAL = "residual"  # legacy: mean-centered cosine similarity
 
 
@@ -839,6 +840,117 @@ def _directed_score_windows(
 
 
 # ---------------------------------------------------------------------------
+# Q/K routing — the model's own attention mechanism, externalized
+# ---------------------------------------------------------------------------
+
+
+def _qk_score_windows(
+    lib,
+    kv_gen,
+    prompt_ids: list[int],
+) -> list[tuple[int, float]]:
+    """Score windows using the model's own Q/K attention projections.
+
+    The model's W_Q and W_K at a global layer near L26 are the trained
+    routing mechanism. Q·K^T IS the dark space matching function — the
+    same computation the model would do if all tokens were in context.
+
+    No PCA. No frames. No projection. The model's own attention weights
+    operating on stored L26 residuals. The full dark space, read through
+    the model's own glasses.
+    """
+    import mlx.core as mx
+
+    compass_layer = lib.compass_layer
+    backbone = kv_gen.backbone
+
+    # Find the global layer at or nearest to compass_layer
+    routing_layer_idx = compass_layer
+    # Prefer a global layer for full-context attention patterns
+    for offset in range(0, 10):
+        if backbone.is_global_layer(compass_layer - offset):
+            routing_layer_idx = compass_layer - offset
+            break
+        if backbone.is_global_layer(compass_layer + offset):
+            routing_layer_idx = compass_layer + offset
+            break
+
+    layer = backbone.adapted_layers[routing_layer_idx]
+
+    # Load all stored compass residuals, batch them
+    all_vecs = []
+    wid_map = []
+    for wid in range(lib.num_windows):
+        for si, res in enumerate(lib.get_compass_residuals(wid)):
+            # res shape: (1, hidden_size) — squeeze and collect
+            all_vecs.append(res.reshape(-1))
+            wid_map.append((wid, si))
+
+    # Stack: (N, hidden_size)
+    all_h = mx.stack(all_vecs, axis=0)  # (N, 2560)
+    N = all_h.shape[0]
+
+    # Reshape to (1, N, hidden_size) for layer projection
+    all_h_batch = all_h[None, :, :]  # (1, N, 2560)
+
+    # Compute K for all stored residuals (pre-RoPE, with norms)
+    x_stored = layer.pre_attn_norm(all_h_batch)  # (1, N, 2560)
+    _q_stored, k_stored, _v_stored = layer.project_qkv_pre_rope(x_stored, 1, N)
+    # k_stored: (1, nkv, N, head_dim) — pre-RoPE, normed
+    mx.eval(k_stored)
+
+    # Compute Q for query (pre-RoPE, with norms)
+    q_ids = mx.array(prompt_ids)[None]
+    q_h = kv_gen.prefill_to_layer(q_ids, target_layer=routing_layer_idx)
+    # Take last position
+    q_last = q_h[:, -1:, :]  # (1, 1, 2560)
+
+    x_query = layer.pre_attn_norm(q_last)
+    q_query, _k_query, _v_query = layer.project_qkv_pre_rope(x_query, 1, 1)
+    # q_query: (1, nq, 1, head_dim)
+    mx.eval(q_query)
+
+    # Attention score: Q · K^T / sqrt(head_dim)
+    # q_query: (1, nq, 1, dh), k_stored: (1, nkv, N, dh)
+    # GQA: repeat K to match Q heads
+    n_rep = layer.n_rep
+    if n_rep > 1:
+        k_expanded = mx.repeat(k_stored, n_rep, axis=1)  # (1, nq, N, dh)
+    else:
+        k_expanded = k_stored
+
+    # (1, nq, 1, dh) @ (1, nq, dh, N) → (1, nq, 1, N)
+    scores = (q_query @ k_expanded.transpose(0, 1, 3, 2)) * layer.attn_scale
+    # Average across heads → (N,)
+    scores_avg = mx.mean(scores[0, :, 0, :], axis=0)  # (N,)
+    mx.eval(scores_avg)
+
+    scores_np = scores_avg.tolist()
+
+    # Aggregate per window
+    from collections import defaultdict
+    per_window_scores: dict[int, list[float]] = defaultdict(list)
+    for idx, (wid, _si) in enumerate(wid_map):
+        per_window_scores[wid].append(float(scores_np[idx]))
+
+    samples_per_window = len(per_window_scores[next(iter(per_window_scores))])
+    _TOP_K_AGG = 10
+
+    per_window: dict[int, float] = {}
+    if samples_per_window <= 16:
+        for wid, sl in per_window_scores.items():
+            per_window[wid] = max(sl)
+    else:
+        for wid, sl in per_window_scores.items():
+            sl.sort(reverse=True)
+            per_window[wid] = sum(sl[:_TOP_K_AGG]) / len(sl[:_TOP_K_AGG])
+
+    result = [(wid, s) for wid, s in per_window.items()]
+    result.sort(key=lambda x: -x[1])
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Contrastive routing — query-specific subspace discovery at runtime
 # ---------------------------------------------------------------------------
 
@@ -1276,6 +1388,16 @@ def compass_route(
                 method_name = f"compass (L{layer}, structural PC 0-{pc_s-1} removed, full dark space)"
             else:
                 method_name = f"compass (L{layer}, PC {pc_s}-{pc_e-1}, {pc_e-pc_s}D)"
+
+    elif strategy == RoutingStrategy.QK:
+        if not lib.has_compass:
+            print("  Warning: no compass data, falling back to BM25", file=sys.stderr)
+            scores = _bm25_score_windows(lib, tokenizer, prompt_text)
+            method_name = "BM25 (fallback, no compass)"
+        else:
+            scores = _qk_score_windows(lib, kv_gen, prompt_ids)
+            layer = lib.compass_layer
+            method_name = f"Q/K attention (L{layer}, model's own routing)"
 
     elif strategy == RoutingStrategy.GEOMETRIC:
         if not lib.has_compass:

@@ -54,6 +54,10 @@ class PrefillConfig(CommandConfig):
         default=None,
         description="Path to frame_bank.npz (required for darkspace mode)",
     )
+    store_pages: bool = Field(
+        default=False,
+        description="Store pre-RoPE K,V pages for instant injection at generate time",
+    )
 
     @classmethod
     def from_args(cls, args: Namespace) -> PrefillConfig:
@@ -68,6 +72,7 @@ class PrefillConfig(CommandConfig):
             name=getattr(args, "name", None),
             residual_mode=ResidualMode(getattr(args, "residual_mode", "interval")),
             frame_bank=Path(fb) if fb else None,
+            store_pages=getattr(args, "store_pages", False),
         )
 
 

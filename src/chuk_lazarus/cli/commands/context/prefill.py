@@ -159,6 +159,19 @@ async def context_prefill_cmd(args: Namespace) -> None:
                 file=sys.stderr,
             )
             if resume_tokens >= total_tokens:
+                if config.store_pages and not (output_path / "pages.npz").exists():
+                    # Library is complete but pages haven't been extracted yet.
+                    print("Already prefilled. Extracting pages...", file=sys.stderr)
+                    _save_library(
+                        engine, output_path, token_ids, lib_name,
+                        config.model, pipeline.config, config.window_size,
+                        tokenizer, created_at, is_complete=True,
+                        quick=True, residual_mode=config.residual_mode,
+                        frame_bank_data=frame_bank_data,
+                        frame_bank_path=config.frame_bank,
+                        store_pages=True,
+                    )
+                    return
                 print("Already fully prefilled. Nothing to do.", file=sys.stderr)
                 return
 
@@ -204,6 +217,7 @@ async def context_prefill_cmd(args: Namespace) -> None:
             quick=quick, residual_mode=config.residual_mode,
             frame_bank_data=frame_bank_data,
             frame_bank_path=config.frame_bank,
+            store_pages=config.store_pages,
         )
 
     try:
@@ -430,6 +444,7 @@ def _save_library(
     residual_mode: ResidualMode = ResidualMode.INTERVAL,
     frame_bank_data: dict | None = None,
     frame_bank_path: Path | None = None,
+    store_pages: bool = False,
 ) -> None:
     """Write all library files from the engine's current archived state.
 
@@ -678,6 +693,47 @@ def _save_library(
         _calibrate_compass(
             engine, output_path, num_archived, config,
             n_samples=compass_n_samples,
+        )
+
+    # 2d. Pre-RoPE pages — pre-computed K,V for instant injection at generate time.
+    #     Full forward pass per window, store pre-RoPE K,V at 8 sampled positions.
+    #     ~1 GB on disk for 725 windows × 8 pages × 34 layers.
+    if store_pages:
+        import tempfile
+        import zipfile as _zf
+
+        _N_PAGES = 8
+        pages_path = output_path / "pages.npz"
+        t_pages = time.monotonic()
+        print(f"  extracting pre-RoPE pages ({_N_PAGES} per window)...", file=sys.stderr, flush=True)
+
+        with _zf.ZipFile(str(pages_path), "w", _zf.ZIP_STORED) as zf:
+            for wid in range(num_archived):
+                w_tokens, _ = engine.archive.retrieve(wid)
+                w_ids = mx.array(w_tokens)[None]
+                _logits, _kv, pages = engine.kv_gen.prefill_pages(w_ids, n_pages=_N_PAGES)
+
+                # Save per-window: w{wid}_p{page}_l{layer}_k and _v
+                w_arrays: dict[str, mx.array] = {}
+                for pi, page in enumerate(pages):
+                    for li, (k_pre, v) in enumerate(page):
+                        w_arrays[f"w{wid}_p{pi}_l{li}_k"] = k_pre
+                        w_arrays[f"w{wid}_p{pi}_l{li}_v"] = v
+
+                with tempfile.NamedTemporaryFile(suffix=".npz") as tmp:
+                    mx.savez(tmp.name, **w_arrays)
+                    with _zf.ZipFile(tmp.name, "r") as src:
+                        for name in src.namelist():
+                            zf.writestr(name, src.read(name))
+
+                _phase_progress("pages", wid + 1, num_archived, t_pages)
+        print(file=sys.stderr)
+
+        pages_size = pages_path.stat().st_size / (1024 * 1024)
+        print(
+            f"  pages: {num_archived} windows × {_N_PAGES} pages = "
+            f"{num_archived * _N_PAGES} entries ({pages_size:.0f} MB)",
+            file=sys.stderr, flush=True,
         )
 
     # 3. tokens.bin (uint32)

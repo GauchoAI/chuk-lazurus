@@ -59,6 +59,32 @@ class GemmaLayerAdapter:
         k = attn.rope(k, offset=offset)
         return q, k, v
 
+    def project_qkv_pre_rope(
+        self, x: mx.array, B: int, S: int,
+    ) -> tuple[mx.array, mx.array, mx.array]:
+        """Project Q, K, V with norms but WITHOUT RoPE.
+
+        Returns pre-RoPE K,V for storage. RoPE is applied at injection time
+        with the desired target positions via apply_rope().
+        """
+        attn = self._block.self_attn
+        nq = attn.num_heads
+        nkv = attn.num_kv_heads
+        dh = attn.head_dim
+
+        q = attn.q_proj(x).reshape(B, S, nq, dh).transpose(0, 2, 1, 3)
+        k = attn.k_proj(x).reshape(B, S, nkv, dh).transpose(0, 2, 1, 3)
+        v = attn.v_proj(x).reshape(B, S, nkv, dh).transpose(0, 2, 1, 3)
+
+        q = attn.q_norm(q)
+        k = attn.k_norm(k)
+        # No RoPE — caller applies it later with desired positions
+        return q, k, v
+
+    def apply_rope(self, x: mx.array, offset: int) -> mx.array:
+        """Apply RoPE to pre-RoPE Q or K at the desired position offset."""
+        return self._block.self_attn.rope(x, offset=offset)
+
     def output_project(self, attn_result: mx.array) -> mx.array:
         return self._block.self_attn.o_proj(attn_result)
 
