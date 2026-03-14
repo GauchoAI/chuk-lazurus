@@ -420,6 +420,13 @@ Examples:
         dest="no_resume",
         help="Ignore existing partial library and start fresh",
     )
+    ctx_prefill.add_argument(
+        "--residual-mode",
+        choices=["interval", "full", "none"],
+        default="interval",
+        dest="residual_mode",
+        help="Residual extraction: interval (8 samples, default), full (every position), none (skip)",
+    )
     ctx_prefill.set_defaults(func=lambda args: asyncio.run(context_prefill_cmd(args)))
 
     # context generate
@@ -448,7 +455,20 @@ Examples:
     )
     ctx_generate.add_argument(
         "--top-k", type=int, default=None, dest="top_k",
-        help="Override auto window count in compass mode (default: adaptive knee detection)",
+        help="Number of windows to select (default: 3)",
+    )
+    ctx_generate.add_argument(
+        "--strategy", default=None,
+        choices=["bm25", "compass", "twopass", "attention", "deflection", "preview", "hybrid", "residual"],
+        help="Routing strategy: bm25 (default), compass (PCA subspace at commitment layer), twopass, attention, preview, hybrid, deflection, residual (legacy)",
+    )
+    ctx_generate.add_argument(
+        "--speculative-tokens", type=int, default=50, dest="speculative_tokens",
+        help="Tokens to generate in Pass 1 of twopass strategy (default: 50)",
+    )
+    ctx_generate.add_argument(
+        "--system-prompt", default=None, dest="system_prompt",
+        help="System prompt prepended to the chat template",
     )
     ctx_generate.add_argument(
         "--no-chat-template",

@@ -5,7 +5,7 @@ Commands:
     context_generate_cmd — generate from a saved KV checkpoint
 """
 
-from ._types import GenerateConfig, GenerateResult, PrefillConfig, PrefillResult
+from ._types import GenerateConfig, GenerateResult, PrefillConfig, PrefillResult, ResidualMode
 from .generate import context_generate_cmd
 from .prefill import context_prefill_cmd
 
@@ -14,6 +14,7 @@ __all__ = [
     "GenerateResult",
     "PrefillConfig",
     "PrefillResult",
+    "ResidualMode",
     "context_generate_cmd",
     "context_prefill_cmd",
 ]

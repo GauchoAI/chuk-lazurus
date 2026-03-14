@@ -235,7 +235,7 @@ Checkpoint layout:
 ctx/
 ├── meta.json      — model_id, seq_len, status (partial|complete), source hash, timestamps
 ├── kv.npz         — K,V tensors for every layer (bfloat16, post-RoPE)
-└── tokens.bin     — full source token IDs (uint16, little-endian)
+└── tokens.bin     — full source token IDs (uint32, little-endian)
 ```
 
 The `source_hash` (SHA-256 of the raw source bytes) guards against accidentally resuming a checkpoint built from a different file. Status `partial` → `complete` is set atomically at the end of a successful prefill, so a crashed run is always safe to resume.
@@ -555,6 +555,79 @@ print(f"L22+L23 ablated: {ablated}")  # Broken output
 ```
 
 See [docs/introspection.md](docs/introspection.md) for detailed introspection documentation.
+
+### Residual Stream Navigation Map
+
+Visualise how the model "navigates" from a blank residual to a committed answer — rendered as a 3D sphere in your browser.
+
+**How it works:**
+
+The top-3 singular vectors of the fact unembedding directions (rows of `lm_head.weight`) form a 3D basis that spans "fact space". Every fact token is projected onto this basis and normalised to sit on the unit sphere surface. The residual stream at each layer is projected into the same space — its *direction* shows which fact the model is pointing toward, while its *sharpness* (concentration of logit-lens probabilities over fact tokens) is encoded as dot size and glow.
+
+Three phases are automatically detected from the mean sharpness curve:
+
+| Phase | Layers | What's happening |
+|-------|--------|-----------------|
+| Dark accumulation | 0 → b₁ | Residual is nearly orthogonal to all facts — dim speck wandering the sphere |
+| Routing | b₁ → b₂ | Sharpness rising — dot brightens and moves toward the target landmark |
+| Fact explosion | b₂ → end | Sharpness saturates — large bright orb locks onto the fact landmark |
+
+**Step 1 — Extract activation data:**
+
+```bash
+# Capital of France (default facts, 40 generation steps)
+uv run python examples/inference/nav_map_extract.py \
+    --prompt "The largest planet in the solar system is" \
+    --target Jupiter \
+    --facts Jupiter Mars Venus Earth Sun Moon \
+    --steps 40 --output nav_map_jupiter.json
+
+# Custom prompt, smaller model for faster iteration
+uv run python examples/inference/nav_map_extract.py \
+    --model mlx-community/gemma-3-1b-it-bf16 \
+    --prompt "The capital of France is" --target Paris \
+    --steps 20 --output nav_map_paris.json
+```
+
+**Step 2 — Open the visualizer:**
+
+```bash
+open examples/inference/nav_map.html
+# Then drag nav_map_*.json onto the page
+```
+
+**Two view modes:**
+
+- **Layer depth** — fix a generation step, animate layer 0 → 33. Watch the residual crystallize: a tiny dim speck in early layers grows into a bright orb that arrives at the target fact landmark.
+- **Token drift** — fix a layer (try 33 for the committed output), animate step 0 → N. The dot walks across the sphere token-by-token: bright near the target fact when predicting it, dimmer and wandering when generating filler tokens.
+
+**Controls:**
+
+| Key | Action |
+|-----|--------|
+| `←` / `→` | Scrub the active axis (layer in Layer depth, step in Token drift) |
+| `↑` / `↓` | Scrub the pinned axis |
+| `Space` | Play / pause |
+| `d` | Switch to Layer depth mode |
+| `t` | Switch to Token drift mode |
+| Mouse drag | Orbit the sphere |
+
+**Output format** (`nav_map_*.json`, version 2.0):
+
+```json
+{
+  "version": "2.0",
+  "model": "mlx-community/gemma-3-4b-it-bf16",
+  "phase_boundaries": [11, 22],
+  "facts": [{"token": "Jupiter", "xyz": [...], "color": "#E24B4A", "is_target": true}],
+  "frames": [{
+    "step": 0, "token": " is", "predicted_token": " Jupiter",
+    "layers": [{"layer": 0, "xyz": [...], "sharpness": 0.001, "top_token": "the", ...}]
+  }]
+}
+```
+
+> **Note:** `--target` and `--facts` must be single tokens in the model vocabulary. Multi-token entries are skipped with a warning. Check which facts survived in the terminal output before interpreting the map.
 
 ## Python API
 

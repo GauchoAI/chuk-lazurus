@@ -18,22 +18,31 @@ from argparse import Namespace
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ._types import PrefillConfig, PrefillResult
+from ._types import PrefillConfig, PrefillResult, ResidualMode
 
 
-def _progress(tokens_done: int, total: int, windows_done: int, total_windows: int, elapsed: float, width: int = 40) -> str:
-    """Return an in-place progress line."""
+def _progress(tokens_done: int, total: int, windows_done: int, total_windows: int, elapsed: float) -> str:
+    """Return an in-place progress line (fits 80 columns)."""
     pct = tokens_done / total if total else 0.0
-    filled = int(width * pct)
-    bar = "=" * filled + (">" if filled < width else "") + " " * (width - filled)
     rate = tokens_done / elapsed if elapsed > 0 else 0.0
     eta = (total - tokens_done) / rate if rate > 0 else 0.0
-    line = (
-        f"  [{bar}] {tokens_done:>6}/{total} tokens  "
-        f"{windows_done}/{total_windows} windows  "
-        f"{rate:>6.0f} tok/s  ETA {eta:>4.0f}s"
+    # Compact: "  42/182 windows  56%  1435 tok/s  ETA 230s"
+    return (
+        f"\r  {windows_done}/{total_windows} windows  "
+        f"{pct:>4.0%}  {rate:.0f} tok/s  ETA {eta:.0f}s\033[K"
     )
-    return f"\r{line}\033[K"
+
+
+def _phase_progress(phase: str, done: int, total: int, t0: float) -> None:
+    """Print in-place progress for a post-prefill phase."""
+    elapsed = time.monotonic() - t0
+    rate = done / elapsed if elapsed > 0 else 0
+    eta = (total - done) / rate if rate > 0 else 0
+    print(
+        f"\r  {phase}: {done}/{total} windows  "
+        f"{rate:.1f} w/s  ETA {eta:.0f}s\033[K",
+        end="", file=sys.stderr, flush=True,
+    )
 
 
 def _compute_config_hash(config) -> str:
@@ -93,7 +102,8 @@ async def context_prefill_cmd(args: Namespace) -> None:
 
     print(
         f"Source: {config.input_file.name}  |  {total_tokens:,} tokens  |  "
-        f"window_size={config.window_size}  |  ~{total_windows} windows",
+        f"window_size={config.window_size}  |  ~{total_windows} windows  |  "
+        f"residuals={config.residual_mode.value}",
         file=sys.stderr,
     )
 
@@ -164,12 +174,17 @@ async def context_prefill_cmd(args: Namespace) -> None:
     _SAVE_EVERY_WINDOWS = 10  # save every N windows to avoid excessive I/O
     last_saved_windows = engine.stats().archived_windows
 
-    def _do_save(is_complete: bool = False) -> None:
-        """Write library files from engine's current state."""
+    def _do_save(is_complete: bool = False, quick: bool = False) -> None:
+        """Write library files from engine's current state.
+
+        quick=True skips expensive interval residual and compass extraction
+        (used for periodic checkpoint saves during prefill).
+        """
         _save_library(
             engine, output_path, token_ids, lib_name,
             config.model, pipeline.config, config.window_size,
             tokenizer, created_at, is_complete=is_complete,
+            quick=quick, residual_mode=config.residual_mode,
         )
 
     try:
@@ -187,9 +202,9 @@ async def context_prefill_cmd(args: Namespace) -> None:
                 flush=True,
             )
 
-            # Periodic save every N new windows
+            # Periodic save every N new windows (quick — checkpoints only, no extraction)
             if archived > 0 and (archived - last_saved_windows) >= _SAVE_EVERY_WINDOWS:
-                _do_save()
+                _do_save(quick=True)
                 last_saved_windows = archived
 
             if _sigint_received:
@@ -212,11 +227,6 @@ async def context_prefill_cmd(args: Namespace) -> None:
             )
             engine.flush()
 
-        print(
-            f"  saving {'partial ' if interrupted else ''}library...",
-            file=sys.stderr,
-            flush=True,
-        )
         _do_save(is_complete=not interrupted)
 
     print(file=sys.stderr)
@@ -253,6 +263,137 @@ async def context_prefill_cmd(args: Namespace) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _savez_chunked(path: str, arrays: dict[str, "mx.array"], chunk_size: int = 512) -> None:
+    """Save arrays to npz, chunking to stay under mx.savez's 1024 kwarg limit."""
+    import tempfile
+    import zipfile
+
+    import mlx.core as mx
+
+    keys = list(arrays.keys())
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_STORED) as zf:
+        for i in range(0, len(keys), chunk_size):
+            chunk_keys = keys[i : i + chunk_size]
+            chunk = {k: arrays[k] for k in chunk_keys}
+            with tempfile.NamedTemporaryFile(suffix=".npz") as tmp:
+                mx.savez(tmp.name, **chunk)
+                with zipfile.ZipFile(tmp.name, "r") as src:
+                    for name in src.namelist():
+                        zf.writestr(name, src.read(name))
+
+
+def _calibrate_compass(
+    engine,
+    output_path: Path,
+    num_archived: int,
+    config,
+    n_samples: int | None = 8,
+) -> None:
+    """Extract commitment-layer residuals and compute PCA basis for compass routing.
+
+    Auto-calibrates:
+      - Commitment layer at ~75% model depth
+      - Structural/content boundary from the explained variance knee
+      - Content subspace width (16 PCs after structural boundary)
+
+    Parameters
+    ----------
+    n_samples : Positions to sample per window. None = all positions (full mode).
+
+    Saves:
+      - compass_residuals.npz — per-window residuals at the commitment layer
+      - compass_basis.npz — PCA mean, basis vectors, layer and PC range metadata
+    """
+    import mlx.core as mx
+    import numpy as np
+
+    num_layers = config.num_hidden_layers
+    compass_layer = round(num_layers * 0.77)
+
+    full_mode = n_samples is None
+    phase_label = f"compass L{compass_layer}" + (" (full)" if full_mode else "")
+
+    # Extract commitment-layer residuals for all windows
+    compass_dict: dict[str, mx.array] = {}
+    all_vecs: list[np.ndarray] = []
+
+    t_compass = time.monotonic()
+    for wid in range(num_archived):
+        w_tokens, _ = engine.archive.retrieve(wid)
+        w_ids = mx.array(w_tokens)[None]
+        S = len(w_tokens)
+
+        # Full mode: every position. Interval mode: n_samples evenly spaced.
+        w_n_samples = S if full_mode else n_samples
+        if w_n_samples >= S:
+            # All positions — no subsampling needed
+            positions = list(range(S))
+            w_n_samples = S
+        else:
+            positions = [int(i * (S - 1) / max(w_n_samples - 1, 1)) for i in range(w_n_samples)]
+
+        h = engine.kv_gen.prefill_to_layer(
+            w_ids, target_layer=compass_layer, sample_positions=positions,
+        )
+        # h shape: (1, w_n_samples, hidden_size)
+        for si in range(w_n_samples):
+            vec = h[0, si:si+1, :]  # (1, hidden_size)
+            compass_dict[f"w{wid}_s{si}"] = vec
+            all_vecs.append(np.array(vec.reshape(-1).tolist(), dtype=np.float32))
+        _phase_progress(phase_label, wid + 1, num_archived, t_compass)
+    print(file=sys.stderr)
+
+    _savez_chunked(str(output_path / "compass_residuals.npz"), compass_dict)
+
+    # PCA on all compass residuals
+    X = np.stack(all_vecs, axis=0)  # (num_windows * n_samples, hidden_dim)
+    mean = X.mean(axis=0)
+    X_centered = X - mean
+
+    _U, S_vals, Vt = np.linalg.svd(X_centered, full_matrices=False)
+    explained = (S_vals ** 2) / np.sum(S_vals ** 2)
+
+    # Auto-detect structural/content boundary:
+    # Find where the spectrum flattens — 3 consecutive PCs with ratio < 1.5.
+    # Structural PCs have rapidly decaying variance; content PCs are near-uniform.
+    structural_end = 0
+    for i in range(min(len(explained) - 3, 50)):
+        ratios = [
+            explained[i + j] / max(explained[i + j + 1], 1e-10)
+            for j in range(3)
+        ]
+        if all(r < 1.5 for r in ratios):
+            structural_end = i
+            break
+    else:
+        structural_end = 8  # safe default
+
+    # Content subspace: skip structural, take next 16 PCs
+    pc_start = structural_end
+    pc_end = min(structural_end + 16, len(explained))
+
+    # Report calibration
+    structural_var = sum(explained[:pc_start]) * 100
+    content_var = sum(explained[pc_start:pc_end]) * 100
+    print(
+        f"  compass calibrated: layer={compass_layer}, "
+        f"structural=PC 0-{pc_start-1} ({structural_var:.1f}%), "
+        f"content=PC {pc_start}-{pc_end-1} ({content_var:.1f}%)",
+        file=sys.stderr, flush=True,
+    )
+
+    # Save basis: mean vector + projection matrix + metadata
+    basis = Vt[pc_start:pc_end]  # (pc_end - pc_start, hidden_dim)
+    mx.savez(
+        str(output_path / "compass_basis.npz"),
+        mean=mx.array(mean),
+        basis=mx.array(basis),
+        compass_layer=mx.array(compass_layer),
+        pc_start=mx.array(pc_start),
+        pc_end=mx.array(pc_end),
+    )
+
+
 def _save_library(
     engine,
     output_path: Path,
@@ -264,8 +405,15 @@ def _save_library(
     tokenizer,
     created_at: str,
     is_complete: bool = False,
+    quick: bool = False,
+    residual_mode: ResidualMode = ResidualMode.INTERVAL,
 ) -> None:
-    """Write all four library files from the engine's current archived state."""
+    """Write all library files from the engine's current archived state.
+
+    quick=True writes only checkpoints/tokens/windows/manifest (for periodic saves).
+    quick=False also extracts interval/full residuals and calibrates compass routing,
+    unless residual_mode is NONE.
+    """
     import mlx.core as mx
 
     from ....inference.context import (
@@ -285,6 +433,7 @@ def _save_library(
     # Collect per-window data
     windows: list[WindowMeta] = []
     ckpt_dict: dict[str, mx.array] = {}
+    residual_dict: dict[str, mx.array] = {}
     token_offset = 0
 
     for wid in range(num_archived):
@@ -303,6 +452,9 @@ def _save_library(
         for li, (k, v) in enumerate(kv_last):
             ckpt_dict[f"w{wid}_l{li}_k"] = k
             ckpt_dict[f"w{wid}_l{li}_v"] = v
+        # Save residual (Markov state) if available
+        if wid in engine.residuals:
+            residual_dict[f"w{wid}_residual"] = engine.residuals.load(wid)
         token_offset += len(w_tokens)
 
     total_tokens_to_report = len(all_token_ids) if is_complete else token_offset
@@ -311,6 +463,8 @@ def _save_library(
     import tempfile
     import zipfile
 
+    if not quick:
+        print(f"  saving checkpoints ({num_archived} windows)...", file=sys.stderr, flush=True)
     npz_path = output_path / LibraryFile.CHECKPOINTS
     with zipfile.ZipFile(str(npz_path), "w", zipfile.ZIP_STORED) as zf:
         for wid in range(num_archived):
@@ -323,20 +477,61 @@ def _save_library(
                     for name in src.namelist():
                         zf.writestr(name, src.read(name))
 
-    # 2. tokens.bin (uint32)
+    # 2. residuals.npz — per-window Markov state vectors
+    if residual_dict:
+        mx.savez(str(output_path / LibraryFile.RESIDUALS), **residual_dict)
+
+    if not quick and residual_mode != ResidualMode.NONE:
+        # 2b. interval_residuals.npz — interior residuals for compass routing
+        #     Re-prefill each window to extract residuals at sampled positions.
+        #     interval mode: 8 evenly-spaced samples per window (~40 KB/window)
+        #     full mode: every position (~5 MB/window for 512-token windows)
+        if residual_mode == ResidualMode.FULL:
+            # Full: extract at every position within each window
+            n_samples_per_window = None  # determined per-window from token count
+            phase_label = "full residuals"
+        else:
+            n_samples_per_window = 8
+            phase_label = "interval residuals"
+
+        interval_dict: dict[str, mx.array] = {}
+        t_ir = time.monotonic()
+        for wid in range(num_archived):
+            w_tokens, _ = engine.archive.retrieve(wid)
+            w_ids = mx.array(w_tokens)[None]
+            n_samples = len(w_tokens) if residual_mode == ResidualMode.FULL else n_samples_per_window
+            _logits, _kv, interval_res = engine.kv_gen.prefill_interval_residuals(
+                w_ids, n_samples=n_samples,
+            )
+            for si in range(n_samples):
+                interval_dict[f"w{wid}_s{si}"] = interval_res[0, si:si+1, :]
+            _phase_progress(phase_label, wid + 1, num_archived, t_ir)
+        print(file=sys.stderr)
+        _savez_chunked(str(output_path / "interval_residuals.npz"), interval_dict)
+
+        # 2c. Compass routing data — commitment-layer residuals + PCA basis
+        #     Full mode: every position per window (371K vectors for 725 × 512).
+        #     Interval mode: 8 samples per window (5,800 vectors).
+        compass_n_samples = None if residual_mode == ResidualMode.FULL else 8
+        _calibrate_compass(
+            engine, output_path, num_archived, config,
+            n_samples=compass_n_samples,
+        )
+
+    # 3. tokens.bin (uint32)
     with open(output_path / LibraryFile.TOKENS, "wb") as f:
         for wid in range(num_archived):
             w_tokens, _ = engine.archive.retrieve(wid)
             for tid in w_tokens:
                 f.write(struct.pack("<I", tid))
 
-    # 3. windows.json
+    # 4. windows.json
     import json as _json
     (output_path / LibraryFile.WINDOWS).write_text(
         _json.dumps([w.model_dump() for w in windows], indent=2, ensure_ascii=False)
     )
 
-    # 4. manifest.json (written last — the "committed" marker)
+    # 5. manifest.json (written last — the "committed" marker)
     manifest = LibraryManifest(
         name=name,
         model_id=model_id,
@@ -394,6 +589,15 @@ def _restore_engine(engine, output_path: Path, config) -> int:
     n = len(token_bytes) // 4
     all_saved_tokens = list(_struct.unpack(f"<{n}I", token_bytes[: n * 4]))
 
+    # Load residuals if available
+    residuals_path = output_path / LibraryFile.RESIDUALS
+    raw_residuals: dict[str, mx.array] = {}
+    if residuals_path.exists():
+        try:
+            raw_residuals = dict(mx.load(str(residuals_path)))
+        except Exception:
+            pass  # older library without residuals — fine
+
     token_offset = 0
     for w in raw_windows:
         wid = w["window_id"]
@@ -408,6 +612,12 @@ def _restore_engine(engine, output_path: Path, config) -> int:
         ]
         abs_last = w_abs + w["token_count"] - 1
         engine.checkpoints.save(wid, kv_last, abs_last)
+
+        # Restore residual if available
+        res_key = f"w{wid}_residual"
+        if res_key in raw_residuals:
+            engine.residuals.save(wid, raw_residuals[res_key])
+
         token_offset += w["token_count"]
 
     engine.current_window_id = len(raw_windows)

@@ -49,6 +49,7 @@ class LibraryFile(str, Enum):
 
     MANIFEST = "manifest.json"
     CHECKPOINTS = "checkpoints.npz"
+    RESIDUALS = "residuals.npz"
     TOKENS = "tokens.bin"
     WINDOWS = "windows.json"
 
@@ -141,6 +142,10 @@ class CheckpointLibrary:
         self.windows: list[WindowMeta] = self._load_windows()
         self._tokens: list[int] = self._load_tokens()
         self._checkpoints: dict[int, list[tuple[mx.array, mx.array]]] = self._load_checkpoints()
+        self._residuals: dict[int, mx.array] = self._load_residuals()
+        self._interval_residuals: dict[int, list[mx.array]] = self._load_interval_residuals()
+        self._l26_interval_residuals: dict[int, list[mx.array]] = self._load_l26_interval_residuals()
+        self._compass_basis: dict[str, mx.array] | None = self._load_compass_basis()
 
     # ------------------------------------------------------------------
     # Properties — delegate to manifest for a clean public interface
@@ -215,6 +220,59 @@ class CheckpointLibrary:
             for wid in range(self.manifest.num_windows)
         }
 
+    def _load_residuals(self) -> dict[int, mx.array]:
+        """Load per-window residual vectors (optional — older libraries may lack them)."""
+        res_path = self._path / LibraryFile.RESIDUALS
+        if not res_path.exists():
+            return {}
+        raw: dict[str, mx.array] = dict(mx.load(str(res_path)))
+        return {
+            wid: raw[f"w{wid}_residual"]
+            for wid in range(self.manifest.num_windows)
+            if f"w{wid}_residual" in raw
+        }
+
+    def _load_interval_residuals(self) -> dict[int, list[mx.array]]:
+        """Load per-window interval residuals (optional — newer libraries only)."""
+        res_path = self._path / "interval_residuals.npz"
+        if not res_path.exists():
+            return {}
+        raw: dict[str, mx.array] = dict(mx.load(str(res_path)))
+        result: dict[int, list[mx.array]] = {}
+        for wid in range(self.manifest.num_windows):
+            samples = []
+            si = 0
+            while f"w{wid}_s{si}" in raw:
+                samples.append(raw[f"w{wid}_s{si}"])
+                si += 1
+            if samples:
+                result[wid] = samples
+        return result
+
+    def _load_l26_interval_residuals(self) -> dict[int, list[mx.array]]:
+        """Load per-window commitment-layer interval residuals (compass routing data)."""
+        res_path = self._path / "compass_residuals.npz"
+        if not res_path.exists():
+            return {}
+        raw: dict[str, mx.array] = dict(mx.load(str(res_path)))
+        result: dict[int, list[mx.array]] = {}
+        for wid in range(self.manifest.num_windows):
+            samples = []
+            si = 0
+            while f"w{wid}_s{si}" in raw:
+                samples.append(raw[f"w{wid}_s{si}"])
+                si += 1
+            if samples:
+                result[wid] = samples
+        return result
+
+    def _load_compass_basis(self) -> dict[str, mx.array] | None:
+        """Load pre-computed PCA basis for compass routing."""
+        basis_path = self._path / "compass_basis.npz"
+        if not basis_path.exists():
+            return None
+        return dict(mx.load(str(basis_path)))
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -235,6 +293,82 @@ class CheckpointLibrary:
         Each tuple is (K, V) where shape is (1, num_kv_heads, 1, head_dim).
         """
         return self._checkpoints[window_id]
+
+    @property
+    def has_residuals(self) -> bool:
+        """True if this library contains per-window residual vectors."""
+        return len(self._residuals) > 0
+
+    def get_residual(self, window_id: int) -> mx.array:
+        """
+        Return the residual stream vector at this window's boundary.
+
+        Shape: (1, 1, hidden_size) — the pre-final-norm Markov state.
+        """
+        return self._residuals[window_id]
+
+    @property
+    def has_interval_residuals(self) -> bool:
+        """True if this library contains per-window interval residuals."""
+        return len(self._interval_residuals) > 0
+
+    @property
+    def interval_samples_per_window(self) -> int:
+        """Number of interval residual samples per window."""
+        if not self._interval_residuals:
+            return 0
+        first_wid = next(iter(self._interval_residuals))
+        return len(self._interval_residuals[first_wid])
+
+    def get_interval_residuals(self, window_id: int) -> list[mx.array]:
+        """Return list of interval residual vectors for a window.
+
+        Each element has shape (1, hidden_size).
+        """
+        return self._interval_residuals[window_id]
+
+    @property
+    def has_compass(self) -> bool:
+        """True if this library has compass routing data (L-layer residuals + PCA basis)."""
+        return len(self._l26_interval_residuals) > 0 and self._compass_basis is not None
+
+    @property
+    def compass_layer(self) -> int | None:
+        """The transformer layer used for compass residuals."""
+        if self._compass_basis is None:
+            return None
+        return int(self._compass_basis["compass_layer"].item())
+
+    @property
+    def compass_pc_start(self) -> int | None:
+        """First PC of the content subspace."""
+        if self._compass_basis is None:
+            return None
+        return int(self._compass_basis["pc_start"].item())
+
+    @property
+    def compass_pc_end(self) -> int | None:
+        """Last PC (exclusive) of the content subspace."""
+        if self._compass_basis is None:
+            return None
+        return int(self._compass_basis["pc_end"].item())
+
+    def get_compass_residuals(self, window_id: int) -> list[mx.array]:
+        """Return compass-layer interval residuals for a window."""
+        return self._l26_interval_residuals[window_id]
+
+    def get_compass_basis(self) -> tuple[mx.array, mx.array, int, int]:
+        """Return (mean_vector, basis_matrix, pc_start, pc_end) for compass projection.
+
+        basis_matrix shape: (pc_end - pc_start, hidden_size) — the PCA rows to project into.
+        """
+        cb = self._compass_basis
+        return (
+            cb["mean"],
+            cb["basis"],
+            int(cb["pc_start"].item()),
+            int(cb["pc_end"].item()),
+        )
 
     def window_abs_range(self, window_id: int) -> tuple[int, int]:
         """Return (abs_start, abs_end) for a window."""

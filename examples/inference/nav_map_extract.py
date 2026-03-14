@@ -377,19 +377,48 @@ def compute_sphere_projection(
 
 def detect_phase_boundaries(frames: list[dict]) -> list[int]:
     """
-    Detect inflection points in the sharpness curve of the first frame.
-    Falls back to even thirds.
+    Detect phase boundaries from the mean sharpness curve across all frames.
+
+    Uses the frame with the highest final-layer sharpness as the primary signal,
+    then averages with the mean curve for robustness.
+
+    Boundaries:
+      Phase 0 (dark accumulation): sharpness flat/near-zero
+      Phase 1 (routing):           sharpness rising
+      Phase 2 (fact explosion):    sharpness saturating
+
+    Detected as:
+      b1 = first layer where mean sharpness exceeds 10% of its maximum
+      b2 = first layer where mean sharpness exceeds 70% of its maximum
     """
-    trajectory = frames[0]["layers"]
-    n = len(trajectory)
-    sharpness = np.array([l["sharpness"] for l in trajectory], dtype=np.float32)
-    d2 = np.diff(np.diff(sharpness))
-    if len(d2) >= 4:
-        candidates = np.argsort(np.abs(d2))[-2:]
-        boundaries = sorted([int(x + 1) for x in candidates])
-        if boundaries[0] > 2 and boundaries[1] < n - 2:
-            return boundaries
-    return [n // 3, 2 * n // 3]
+    n = len(frames[0]["layers"])
+
+    # Mean sharpness at each layer across all frames
+    mean_sharp = np.zeros(n, dtype=np.float32)
+    for frame in frames:
+        for li, ld in enumerate(frame["layers"]):
+            mean_sharp[li] += ld["sharpness"]
+    mean_sharp /= len(frames)
+
+    s_max = float(mean_sharp.max())
+    if s_max < 1e-4:
+        return [n // 3, 2 * n // 3]
+
+    # b1: end of dark accumulation — sharpness crosses 10% of max
+    b1 = n // 3
+    for i, s in enumerate(mean_sharp):
+        if s >= 0.10 * s_max:
+            b1 = max(1, i)
+            break
+
+    # b2: start of fact explosion — sharpness crosses 70% of max
+    b2 = 2 * n // 3
+    for i, s in enumerate(mean_sharp):
+        if s >= 0.70 * s_max:
+            b2 = max(b1 + 1, i)
+            break
+
+    return [b1, b2]
 
 
 # ── Full pipeline ─────────────────────────────────────────────────────────────
@@ -428,6 +457,12 @@ def extract_nav_map(
 
     # 5. Phase boundaries
     phase_boundaries = detect_phase_boundaries(frames)
+    print(
+        f"  Phase boundaries: L0–{phase_boundaries[0]-1} dark accumulation  "
+        f"| L{phase_boundaries[0]}–{phase_boundaries[1]-1} routing  "
+        f"| L{phase_boundaries[1]}–{frames[0]['layers'][-1]['layer']} fact explosion",
+        file=sys.stderr,
+    )
 
     # 6. Pairwise angles between facts
     fact_list = list(unembed.keys())

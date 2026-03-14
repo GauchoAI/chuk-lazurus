@@ -203,6 +203,46 @@ class CheckpointStore:
 
 
 # ---------------------------------------------------------------------------
+# Residual store — window boundary Markov states
+# ---------------------------------------------------------------------------
+
+
+class ResidualStore:
+    """
+    Per-window-boundary residual stream vectors.
+
+    Each residual is the pre-final-norm hidden state at the last token of
+    the closed window: shape (1, 1, hidden_size).  This is the cumulative
+    Markov state — it encodes the full context up to and including this
+    window boundary.
+
+    Bytes per residual (bfloat16):
+      270M : 2304 × 2 =  4.5 KB
+        4B : 3072 × 2 =  6.0 KB
+    """
+
+    def __init__(self):
+        self._residuals: dict[int, mx.array] = {}
+
+    def save(self, window_id: int, residual: mx.array) -> None:
+        """Save the residual vector for a window boundary."""
+        self._residuals[window_id] = residual
+
+    def load(self, window_id: int) -> mx.array:
+        """Return the residual vector for a window boundary."""
+        return self._residuals[window_id]
+
+    def __contains__(self, window_id: int) -> bool:
+        return window_id in self._residuals
+
+    def __len__(self) -> int:
+        return len(self._residuals)
+
+    def total_bytes(self) -> int:
+        return sum(r.nbytes for r in self._residuals.values())
+
+
+# ---------------------------------------------------------------------------
 # Cold tier — token archive
 # ---------------------------------------------------------------------------
 
@@ -314,6 +354,7 @@ class UnlimitedContextEngine:
         self.config_hash = config_hash
 
         self.checkpoints = CheckpointStore()
+        self.residuals = ResidualStore()
         self.archive = TokenArchive()
 
         # --- Pre-filled knowledge libraries (load_library) ---
@@ -325,6 +366,7 @@ class UnlimitedContextEngine:
         self.kv_store: list | None = None  # per-layer (K, V) for active window
         self.hot_len: int = 0  # tokens in kv_store
         self.abs_offset: int = 0  # abs position of first token in kv_store
+        self._last_residual: mx.array | None = None  # residual at last token
 
     # ------------------------------------------------------------------
     # Public API
@@ -714,12 +756,16 @@ class UnlimitedContextEngine:
         Extend the active window's KV store with new tokens.
 
         First chunk of a window:
-          - Window 0 (abs_offset == 0): use prefill (offset=0, same result).
-          - Window N>0 (abs_offset > 0): use extend-from-empty with
-            abs_start=abs_offset so K positions are globally correct.
+          - Window 0: prefill from scratch.
+          - Window N>0: seed from prior window's checkpoint so the Markov
+            state chains across windows (cumulative, not isolated).
 
         Subsequent chunks within the same window:
           - Extend from existing kv_store at abs_start = abs_offset + hot_len.
+
+        Always captures the residual at the last token position for the
+        Markov state compass.  The most recent residual is saved when the
+        window closes (_close_window).
         """
         if not token_ids:
             return
@@ -727,14 +773,21 @@ class UnlimitedContextEngine:
         ids = mx.array(token_ids)[None]
 
         if self.kv_store is None:
-            if self.abs_offset == 0:
-                logits, self.kv_store = self.kv_gen.prefill(ids)
+            if self.current_window_id == 0:
+                logits, self.kv_store, self._last_residual = self.kv_gen.prefill_with_residual(ids)
             else:
-                empty = self._make_empty_kv()
-                logits, self.kv_store = self.kv_gen.extend(ids, empty, abs_start=self.abs_offset)
+                # Chain from prior window's checkpoint — cumulative Markov state
+                prior_kv, _prior_abs = self.checkpoints.load(
+                    self.current_window_id - 1
+                )
+                logits, self.kv_store, self._last_residual = self.kv_gen.extend_with_residual(
+                    ids, prior_kv, abs_start=self.abs_offset
+                )
         else:
             abs_start = self.abs_offset + self.hot_len
-            logits, self.kv_store = self.kv_gen.extend(ids, self.kv_store, abs_start=abs_start)
+            logits, self.kv_store, self._last_residual = self.kv_gen.extend_with_residual(
+                ids, self.kv_store, abs_start=abs_start
+            )
 
         mx.eval(logits)
         self.hot_len += len(token_ids)
@@ -746,6 +799,7 @@ class UnlimitedContextEngine:
 
         Checkpoint = last-position K,V slice per layer
           (shape per layer: K (1, nkv, 1, head_dim), V (1, nkv, 1, head_dim))
+        Residual   = pre-final-norm hidden state at last token (Markov state)
         Archive    = token-ID list with absolute offset
         """
         if not self.current_window_tokens or self.kv_store is None:
@@ -756,6 +810,10 @@ class UnlimitedContextEngine:
         abs_last = self.abs_offset + self.hot_len - 1
         mx.eval(*[t for pair in last_kv for t in pair])
         self.checkpoints.save(self.current_window_id, last_kv, abs_last)
+
+        # Save residual (Markov state) at window boundary
+        if hasattr(self, '_last_residual') and self._last_residual is not None:
+            self.residuals.save(self.current_window_id, self._last_residual)
 
         # Archive token IDs
         self.archive.archive(
@@ -770,6 +828,7 @@ class UnlimitedContextEngine:
         self.current_window_tokens = []
         self.kv_store = None
         self.hot_len = 0
+        self._last_residual = None
 
     def _merge_kv_parts(self, parts: list[KVStore]) -> KVStore:
         """

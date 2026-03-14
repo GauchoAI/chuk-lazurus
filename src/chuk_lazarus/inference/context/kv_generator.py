@@ -103,6 +103,27 @@ class KVDirectGenerator:
             K shape (1, nkv, S, head_dim)  — post-norm, post-RoPE
             V shape (1, nkv, S, head_dim)
         """
+        logits, kv_store, _ = self._prefill_core(input_ids)
+        return logits, kv_store
+
+    def prefill_with_residual(
+        self,
+        input_ids: mx.array,  # (1, S)
+    ) -> tuple[mx.array, KVStore, mx.array]:
+        """
+        Full forward pass returning residual at last position.
+
+        Returns (logits, kv_store, residual_last) where residual_last is
+        the pre-final-norm hidden state at the last token: shape (1, 1, hidden_size).
+        This is the Markov state — the cumulative context signal.
+        """
+        return self._prefill_core(input_ids)
+
+    def _prefill_core(
+        self,
+        input_ids: mx.array,
+    ) -> tuple[mx.array, KVStore, mx.array]:
+        """Core prefill returning (logits, kv_store, residual_last)."""
         backbone = self.backbone
         B, S = input_ids.shape
         h = backbone.embed(input_ids)
@@ -127,10 +148,108 @@ class KVDirectGenerator:
 
             kv_store.append((k, v))
 
+        # Capture residual at last position BEFORE final norm
+        residual_last = h[:, -1:, :]  # (1, 1, hidden_size)
+
         h = backbone.final_norm(h)
         logits = backbone.unembed(h)
-        mx.eval(logits, *[t for pair in kv_store for t in pair])
-        return logits, kv_store
+        mx.eval(logits, residual_last, *[t for pair in kv_store for t in pair])
+        return logits, kv_store, residual_last
+
+    def prefill_to_layer(
+        self,
+        input_ids: mx.array,  # (1, S)
+        target_layer: int = 26,
+        sample_positions: list[int] | None = None,
+    ) -> mx.array:
+        """Forward pass through target_layer, return residuals at sampled positions.
+
+        Runs layers 0..target_layer only (saves compute vs full forward).
+
+        Parameters
+        ----------
+        target_layer : Layer index to stop at (inclusive).
+        sample_positions : Token positions to extract. If None, returns all positions.
+
+        Returns
+        -------
+        Residuals at sampled positions: shape (1, len(positions), hidden_size).
+        """
+        backbone = self.backbone
+        B, S = input_ids.shape
+        h = backbone.embed(input_ids)
+
+        for i, layer in enumerate(backbone.adapted_layers):
+            mask = backbone.prefill_mask(i, h)
+            x = layer.pre_attn_norm(h)
+            q, k, v = layer.project_qkv(x, B, S, offset=0)
+
+            k_rpt = mx.repeat(k, layer.n_rep, axis=1) if layer.n_rep > 1 else k
+            v_rpt = mx.repeat(v, layer.n_rep, axis=1) if layer.n_rep > 1 else v
+
+            attn_out = mx.fast.scaled_dot_product_attention(
+                q, k_rpt, v_rpt, scale=layer.attn_scale, mask=mask
+            )
+            attn_out = attn_out.transpose(0, 2, 1, 3).reshape(B, S, -1)
+            attn_out = layer.output_project(attn_out)
+
+            h = layer.residual_add_attn(h, attn_out)
+            h = layer.residual_add_ffn(h, layer.ffn(layer.pre_ffn_norm(h)))
+
+            if i == target_layer:
+                break
+
+        if sample_positions is not None:
+            h = h[:, sample_positions, :]
+
+        mx.eval(h)
+        return h
+
+    def prefill_interval_residuals(
+        self,
+        input_ids: mx.array,  # (1, S)
+        n_samples: int = 8,
+    ) -> tuple[mx.array, KVStore, mx.array]:
+        """Prefill and return residuals at evenly-spaced interior positions.
+
+        Returns (logits, kv_store, interval_residuals) where
+        interval_residuals has shape (1, n_samples, hidden_size) —
+        the pre-final-norm hidden states at n_samples evenly-spaced
+        positions through the sequence.
+        """
+        backbone = self.backbone
+        B, S = input_ids.shape
+        h = backbone.embed(input_ids)
+        kv_store: KVStore = []
+
+        for i, layer in enumerate(backbone.adapted_layers):
+            mask = backbone.prefill_mask(i, h)
+            x = layer.pre_attn_norm(h)
+            q, k, v = layer.project_qkv(x, B, S, offset=0)
+
+            k_rpt = mx.repeat(k, layer.n_rep, axis=1) if layer.n_rep > 1 else k
+            v_rpt = mx.repeat(v, layer.n_rep, axis=1) if layer.n_rep > 1 else v
+
+            attn_out = mx.fast.scaled_dot_product_attention(
+                q, k_rpt, v_rpt, scale=layer.attn_scale, mask=mask
+            )
+            attn_out = attn_out.transpose(0, 2, 1, 3).reshape(B, S, -1)
+            attn_out = layer.output_project(attn_out)
+
+            h = layer.residual_add_attn(h, attn_out)
+            h = layer.residual_add_ffn(h, layer.ffn(layer.pre_ffn_norm(h)))
+
+            kv_store.append((k, v))
+
+        # Extract residuals at evenly-spaced positions BEFORE final norm
+        # h shape: (B, S, hidden_size)
+        positions = [int(i * (S - 1) / max(n_samples - 1, 1)) for i in range(n_samples)]
+        interval_residuals = h[:, positions, :]  # (1, n_samples, hidden_size)
+
+        h = backbone.final_norm(h)
+        logits = backbone.unembed(h)
+        mx.eval(logits, interval_residuals, *[t for pair in kv_store for t in pair])
+        return logits, kv_store, interval_residuals
 
     # ------------------------------------------------------------------
     # Extend — N new tokens batched against existing K,V store
@@ -151,6 +270,30 @@ class KVDirectGenerator:
         Returns (logits_for_N_tokens, extended_kv_store).
         extended_kv_store[i] has K,V of shape (1, nkv, S+N, head_dim).
         """
+        logits, kv_store, _ = self._extend_core(new_token_ids, kv_store, abs_start)
+        return logits, kv_store
+
+    def extend_with_residual(
+        self,
+        new_token_ids: mx.array,
+        kv_store: KVStore,
+        abs_start: int,
+    ) -> tuple[mx.array, KVStore, mx.array]:
+        """
+        Extend returning residual at last new-token position.
+
+        Returns (logits, extended_kv_store, residual_last) where residual_last
+        is the pre-final-norm hidden state at the last new token: (1, 1, hidden_size).
+        """
+        return self._extend_core(new_token_ids, kv_store, abs_start)
+
+    def _extend_core(
+        self,
+        new_token_ids: mx.array,
+        kv_store: KVStore,
+        abs_start: int,
+    ) -> tuple[mx.array, KVStore, mx.array]:
+        """Core extend returning (logits, extended_kv_store, residual_last)."""
         backbone = self.backbone
         B, N = new_token_ids.shape
         S = kv_store[0][0].shape[2]
@@ -206,10 +349,123 @@ class KVDirectGenerator:
 
             new_kv_store.append((k_all, v_all))
 
+        # Capture residual at last position BEFORE final norm
+        residual_last = h[:, -1:, :]  # (1, 1, hidden_size)
+
         h = backbone.final_norm(h)
         logits = backbone.unembed(h)
-        mx.eval(logits, *[t for pair in new_kv_store for t in pair])
-        return logits, new_kv_store
+        mx.eval(logits, residual_last, *[t for pair in new_kv_store for t in pair])
+        return logits, new_kv_store, residual_last
+
+    # ------------------------------------------------------------------
+    # Extend with attention weight capture
+    # ------------------------------------------------------------------
+
+    def extend_with_attention_weights(
+        self,
+        new_token_ids: mx.array,  # (1, N)
+        kv_store: KVStore,        # list[L] of (K, V) each (1, nkv, S, dh)
+        abs_start: int,
+        capture_layers: set[int] | None = None,
+    ) -> tuple[mx.array, KVStore, dict[int, mx.array]]:
+        """
+        Extend with manual attention at specified layers to capture weights.
+
+        Parameters
+        ----------
+        capture_layers : set of layer indices to capture attention weights from.
+                         If None, captures from all global layers.
+
+        Returns
+        -------
+        (logits, extended_kv_store, attention_weights)
+        attention_weights[layer_idx] has shape (1, num_heads, N, S+N) in float32.
+        """
+        backbone = self.backbone
+        B, N = new_token_ids.shape
+        S = kv_store[0][0].shape[2]
+
+        h = backbone.embed(new_token_ids)
+
+        # Causal mask among new tokens
+        causal_new = mx.triu(mx.full((N, N), -1e9, dtype=_MASK_DTYPE), k=1)
+
+        sw = backbone.sliding_window
+
+        # Global mask: all S stored positions visible
+        global_mask = mx.concatenate(
+            [mx.zeros((N, S), dtype=_MASK_DTYPE), causal_new], axis=-1
+        )[None, None]
+
+        # Sliding-window mask
+        if sw is not None and S > sw:
+            sw_stored = mx.concatenate(
+                [
+                    mx.full((N, S - sw), -1e9, dtype=_MASK_DTYPE),
+                    mx.zeros((N, sw), dtype=_MASK_DTYPE),
+                ],
+                axis=-1,
+            )
+        else:
+            sw_stored = mx.zeros((N, S), dtype=_MASK_DTYPE)
+        sw_mask = mx.concatenate([sw_stored, causal_new], axis=-1)[None, None]
+
+        # Default: capture all global layers
+        if capture_layers is None:
+            capture_layers = {
+                i for i in range(len(backbone.adapted_layers))
+                if backbone.is_global_layer(i)
+            }
+
+        new_kv_store: KVStore = []
+        captured_weights: dict[int, mx.array] = {}
+
+        for i, layer in enumerate(backbone.adapted_layers):
+            k_old, v_old = kv_store[i]
+            x = layer.pre_attn_norm(h)
+            q, k_new, v_new = layer.project_qkv(x, B, N, offset=abs_start)
+
+            k_all = mx.concatenate([k_old, k_new], axis=2)
+            v_all = mx.concatenate([v_old, v_new], axis=2)
+
+            k_rpt = mx.repeat(k_all, layer.n_rep, axis=1) if layer.n_rep > 1 else k_all
+            v_rpt = mx.repeat(v_all, layer.n_rep, axis=1) if layer.n_rep > 1 else v_all
+
+            mask_i = global_mask if backbone.is_global_layer(i) else sw_mask
+
+            if i in capture_layers:
+                # Manual attention to capture weights
+                # q: (B, num_heads, N, head_dim)
+                # k_rpt: (B, num_heads, S+N, head_dim)
+                scores = (q @ k_rpt.transpose(0, 1, 3, 2)) * layer.attn_scale
+                scores = scores.astype(mx.float32)
+                scores = scores + mask_i.astype(mx.float32)
+                weights = mx.softmax(scores, axis=-1)  # (B, num_heads, N, S+N)
+                captured_weights[i] = weights
+
+                attn_out = (weights.astype(v_rpt.dtype) @ v_rpt)
+                attn_out = attn_out.transpose(0, 2, 1, 3).reshape(B, N, -1)
+            else:
+                # Fused path — no weight capture
+                attn_out = mx.fast.scaled_dot_product_attention(
+                    q, k_rpt, v_rpt, scale=layer.attn_scale, mask=mask_i
+                )
+                attn_out = attn_out.transpose(0, 2, 1, 3).reshape(B, N, -1)
+
+            attn_out = layer.output_project(attn_out)
+            h = layer.residual_add_attn(h, attn_out)
+            h = layer.residual_add_ffn(h, layer.ffn(layer.pre_ffn_norm(h)))
+            new_kv_store.append((k_all, v_all))
+
+        h = backbone.final_norm(h)
+        logits = backbone.unembed(h)
+
+        eval_targets = [logits]
+        eval_targets.extend(t for pair in new_kv_store for t in pair)
+        eval_targets.extend(captured_weights.values())
+        mx.eval(*eval_targets)
+
+        return logits, new_kv_store, captured_weights
 
     # ------------------------------------------------------------------
     # Slide — evict oldest tokens from K,V store

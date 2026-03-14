@@ -5,10 +5,20 @@ from __future__ import annotations
 from argparse import Namespace
 from pathlib import Path
 
+from enum import Enum
+
 from pydantic import Field
 
 from .._base import CommandConfig, CommandResult, OutputMixin
 from .._constants import ContextDefaults
+
+
+class ResidualMode(str, Enum):
+    """Residual extraction mode for prefill."""
+
+    INTERVAL = "interval"  # 8 samples per window (~40 KB/window)
+    FULL = "full"          # every position (~5 MB/window for 512-token windows)
+    NONE = "none"          # skip residual extraction (fastest, no compass)
 
 
 class PrefillConfig(CommandConfig):
@@ -35,6 +45,10 @@ class PrefillConfig(CommandConfig):
         default=None,
         description="Human-readable library name (defaults to input filename stem)",
     )
+    residual_mode: ResidualMode = Field(
+        default=ResidualMode.INTERVAL,
+        description="Residual extraction mode: interval (8 samples), full (every position), none (skip)",
+    )
 
     @classmethod
     def from_args(cls, args: Namespace) -> PrefillConfig:
@@ -46,6 +60,7 @@ class PrefillConfig(CommandConfig):
             max_tokens=getattr(args, "max_tokens", None),
             resume=not getattr(args, "no_resume", False),
             name=getattr(args, "name", None),
+            residual_mode=ResidualMode(getattr(args, "residual_mode", "interval")),
         )
 
 
@@ -134,4 +149,5 @@ __all__ = [
     "GenerateResult",
     "PrefillConfig",
     "PrefillResult",
+    "ResidualMode",
 ]

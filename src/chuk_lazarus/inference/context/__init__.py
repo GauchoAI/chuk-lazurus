@@ -70,6 +70,7 @@ from .unlimited_engine import (
     KVGeneratorProtocol,
     KVStore,
     LibrarySource,
+    ResidualStore,
     TokenArchive,
     UnlimitedContextEngine,
 )
@@ -101,6 +102,7 @@ __all__ = [
     "LibrarySource",
     "EngineStats",
     "CheckpointStore",
+    "ResidualStore",
     "TokenArchive",
     "UnlimitedContextEngine",
     # Checkpoint library format

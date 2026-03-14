@@ -1,8 +1,10 @@
 """Generate command — load a checkpoint library and generate with window replay.
 
-Supports automatic compass routing: the residual stream at the prompt's last
-token is compared against each window's checkpoint to find the most relevant
-windows, which are then replayed into the KV context before generation.
+Supports automatic compass routing via multiple strategies:
+  - BM25: token-level keyword matching (fast, content-aware)
+  - Deflection: residual shift from checkpoint context (geometric)
+  - Hybrid: BM25 pre-filter → deflection re-rank (default)
+  - Residual: legacy mean-centered cosine similarity
 """
 
 from __future__ import annotations
@@ -12,9 +14,7 @@ import time
 from argparse import Namespace
 
 from ._types import GenerateConfig, GenerateResult
-
-# Layer depth ratio for compass bearing extraction (~75% depth)
-_COMPASS_LAYER_RATIO = 0.75
+from .compass_routing import RoutingStrategy, compass_route, two_pass_generate
 
 
 async def context_generate_cmd(args: Namespace) -> None:
@@ -74,9 +74,14 @@ async def context_generate_cmd(args: Namespace) -> None:
         return
 
     no_chat = getattr(args, "no_chat_template", False)
+    system_prompt = getattr(args, "system_prompt", None)
     if not no_chat and hasattr(tokenizer, "apply_chat_template"):
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt_text})
         chat_prompt = tokenizer.apply_chat_template(
-            [{"role": "user", "content": prompt_text}],
+            messages,
             tokenize=False,
             add_generation_prompt=True,
         )
@@ -90,14 +95,38 @@ async def context_generate_cmd(args: Namespace) -> None:
     replay_arg = getattr(args, "replay", None)
     find_term = getattr(args, "find", None)
     top_k_override = getattr(args, "top_k", None)
+    strategy_arg = getattr(args, "strategy", None)
 
     replay_ids = _resolve_replay(lib, tokenizer, replay_arg, find_term)
 
     if replay_ids is None:
-        # Auto mode: use compass routing with adaptive window selection
-        replay_ids = _compass_route(
-            lib, engine, kv_gen, prompt_ids, pipeline.config,
-            top_k_override=top_k_override,
+        # Auto mode: use compass routing
+        strategy = RoutingStrategy(strategy_arg) if strategy_arg else RoutingStrategy.BM25
+        top_k = top_k_override if top_k_override is not None else 3
+
+        # Two-pass strategy handles its own replay and generation
+        if strategy == RoutingStrategy.TWOPASS:
+            speculative_tokens = getattr(args, "speculative_tokens", 50) or 50
+            result = two_pass_generate(
+                lib, kv_gen, prompt_ids, prompt_text, tokenizer, engine,
+                max_new_tokens=config.max_tokens,
+                speculative_tokens=speculative_tokens,
+                top_k=top_k,
+                temperature=config.temperature,
+            )
+            gen_result = GenerateResult(
+                response=tokenizer.decode(result["tokens"], skip_special_tokens=True),
+                tokens_generated=len(result["tokens"]),
+                context_tokens=result["context_tokens"],
+            )
+            print(gen_result.to_display())
+            return
+
+        replay_ids = compass_route(
+            lib, kv_gen, prompt_ids, prompt_text, tokenizer,
+            model_config=pipeline.config,
+            strategy=strategy,
+            top_k=top_k,
         )
 
     print(f"  Replaying windows: {replay_ids}", file=sys.stderr)
@@ -112,7 +141,11 @@ async def context_generate_cmd(args: Namespace) -> None:
     context_kv = engine._make_empty_kv()
     seq_len = 0
 
-    for wid in sorted(replay_ids):
+    # Replay in relevance order (lowest-scoring first, best last).
+    # Sliding-window attention means non-global layers only attend to
+    # nearby positions — the best-matching window goes last, adjacent
+    # to the prompt, for maximum attention coverage.
+    for wid in replay_ids:
         w_tokens = lib.get_window_tokens(wid)
         w_ids = mx.array(w_tokens)[None]
         t0 = time.time()
@@ -166,7 +199,7 @@ async def context_generate_cmd(args: Namespace) -> None:
         sys.stdout.write(token_text)
         sys.stdout.flush()
 
-        logits, gen_kv = kv_gen.step(mx.array([[next_token]]), gen_kv, seq_len=seq_len)
+        logits, gen_kv = kv_gen.step_uncompiled(mx.array([[next_token]]), gen_kv, seq_len=seq_len)
         seq_len += 1
 
     print()  # newline after streamed output
@@ -177,84 +210,6 @@ async def context_generate_cmd(args: Namespace) -> None:
         context_tokens=context_tokens,
     )
     print(result.to_display())
-
-
-# ---------------------------------------------------------------------------
-# Compass routing — automatic window selection via residual similarity
-# ---------------------------------------------------------------------------
-
-
-def _compass_route(
-    lib,
-    engine,
-    kv_gen,
-    prompt_ids: list[int],
-    model_config,
-    top_k_override: int | None = None,
-) -> list[int]:
-    """Score all windows against the prompt's residual bearing, return top-3 + last.
-
-    1. Scout pass: extend prompt against last window → query bearing
-    2. Cosine-similarity against each window's checkpoint V
-    3. Return top-3 most relevant windows (+ last window for continuity)
-    """
-    import mlx.core as mx
-
-    num_layers = model_config.num_hidden_layers
-    compass_layer = int(num_layers * _COMPASS_LAYER_RATIO)
-
-    # -- Scout pass: extend prompt against last window to get query bearing --
-    last_wid = lib.num_windows - 1
-    t0 = time.time()
-    scout_kv, scout_abs_end = engine.replay_library_window(lib.name, last_wid)
-    abs_start = scout_abs_end + 1
-    q_ids = mx.array(prompt_ids)[None]
-    _logits, scout_gen_kv = kv_gen.extend(q_ids, scout_kv, abs_start=abs_start)
-    mx.eval(_logits)
-
-    # Query bearing: V at last token position, compass layer
-    query_v = scout_gen_kv[compass_layer][1][:, :, -1, :]  # (1, nkv, hdim)
-    query_vec = query_v.reshape(-1)  # flatten to 1-D
-    query_norm = mx.sqrt(mx.sum(query_vec * query_vec))
-
-    scout_ms = (time.time() - t0) * 1000
-    print(f"  Compass scout pass ({scout_ms:.0f}ms, layer {compass_layer})", file=sys.stderr)
-
-    # -- Score each window's checkpoint against the query --
-    scores: list[tuple[int, float]] = []
-    for wid in range(lib.num_windows):
-        ckpt_kv = lib.get_checkpoint(wid)
-        ckpt_v = ckpt_kv[compass_layer][1].reshape(-1)  # (nkv * hdim,)
-        ckpt_norm = mx.sqrt(mx.sum(ckpt_v * ckpt_v))
-
-        dot = mx.sum(query_vec * ckpt_v)
-        cos_sim = (dot / (query_norm * ckpt_norm + 1e-8)).item()
-        scores.append((wid, cos_sim))
-
-    # -- Select top windows --
-    # Cap at 3 by default: focused retrieval beats diluted attention.
-    # The last window is always added separately for continuity.
-    _MAX_COMPASS_WINDOWS = 3
-
-    scores.sort(key=lambda x: -x[1])
-    cut = top_k_override if top_k_override is not None else _MAX_COMPASS_WINDOWS
-    selected = [wid for wid, _ in scores[:cut]]
-
-    # Always include the last window for continuity
-    if last_wid not in selected:
-        selected.append(last_wid)
-
-    # Print routing table
-    print(f"  Compass routing (top {cut} + last):", file=sys.stderr)
-    show_n = max(cut + 2, 5)
-    for i, (wid, sim) in enumerate(scores[:show_n]):
-        marker = " *" if wid in selected else ""
-        w = lib.windows[wid]
-        print(f"    window {wid:>2} (sim={sim:+.4f}){marker}  {w.preview[:55]}", file=sys.stderr)
-        if i == cut - 1 and cut < len(scores):
-            print(f"    {'─' * 55}", file=sys.stderr)
-
-    return sorted(selected)
 
 
 def _resolve_replay(
