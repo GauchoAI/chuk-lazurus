@@ -58,10 +58,36 @@ class PrefillConfig(CommandConfig):
         default=False,
         description="Store pre-RoPE K,V pages for instant injection at generate time",
     )
+    phases: set[str] = Field(
+        default_factory=lambda: {"all"},
+        description="Phases to run: windows, interval, compass, darkspace, pages, all",
+    )
+
+    @property
+    def run_windows(self) -> bool:
+        return "all" in self.phases or "windows" in self.phases
+
+    @property
+    def run_interval(self) -> bool:
+        return "all" in self.phases or "interval" in self.phases
+
+    @property
+    def run_compass(self) -> bool:
+        return "all" in self.phases or "compass" in self.phases
+
+    @property
+    def run_darkspace(self) -> bool:
+        return "all" in self.phases or "darkspace" in self.phases
+
+    @property
+    def run_pages(self) -> bool:
+        return "all" in self.phases or "pages" in self.phases
 
     @classmethod
     def from_args(cls, args: Namespace) -> PrefillConfig:
         fb = getattr(args, "frame_bank", None)
+        raw_phases = getattr(args, "phases", "all")
+        phases = {p.strip() for p in raw_phases.split(",")}
         return cls(
             model=args.model,
             input_file=Path(args.input),
@@ -73,6 +99,7 @@ class PrefillConfig(CommandConfig):
             residual_mode=ResidualMode(getattr(args, "residual_mode", "interval")),
             frame_bank=Path(fb) if fb else None,
             store_pages=getattr(args, "store_pages", False),
+            phases=phases,
         )
 
 

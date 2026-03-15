@@ -56,8 +56,8 @@ def _iterative_generate(
     discovered: list[int] = []  # windows found during exploration
 
     sys_content = system_prompt or (
-        "You are answering questions based on a document transcript. "
-        "Answer using only information from the transcript. "
+        "You are answering questions based on a document. "
+        "Answer using only information from the document. "
         "Quote exact text when possible."
     )
 
@@ -67,22 +67,47 @@ def _iterative_generate(
         file=sys.stderr,
     )
 
-    # Build frame templates
+    # Build frame templates.
+    # Exploration rounds use a NOTE-TAKING prompt, not a full-answer prompt.
+    # This puts the model in judgment/assessment mode — the same cognitive mode
+    # that produces the 84.6% PC1 tonal signal. The generation residual then
+    # encodes WHAT the model found noteworthy, steering the compass toward
+    # content regions the model's assessment deemed relevant.
+    # Full-answer mode produces residuals about answer structure, not content.
     if not no_chat and hasattr(tokenizer, "apply_chat_template"):
         preamble_text = (
             f"<start_of_turn>user\n{sys_content}\n\n"
-            f"Here is the relevant transcript:\n\n"
+            f"Here is the relevant text:\n\n"
         )
         preamble_ids = tokenizer.encode(preamble_text, add_special_tokens=True)
-        postamble_text = (
-            f"\n\n---\nBased on the transcript above, "
+        # Note-taking prompt for exploration rounds
+        explore_postamble_text = (
+            f"\n\n---\nTask: {prompt_text}\n"
+            f"DO NOT answer yet. Write 1-2 sentences of reading notes: "
+            f"what specific content is in this excerpt and how relevant "
+            f"is it to the task? What else would you need?<end_of_turn>\n"
+            f"<start_of_turn>model\n"
+        )
+        explore_postamble_ids = tokenizer.encode(
+            explore_postamble_text, add_special_tokens=False,
+        )
+        # Full-answer prompt for final replay
+        final_postamble_text = (
+            f"\n\n---\nBased on the text above, "
             f"{prompt_text}<end_of_turn>\n"
             f"<start_of_turn>model\n"
         )
-        postamble_ids = tokenizer.encode(postamble_text, add_special_tokens=False)
+        final_postamble_ids = tokenizer.encode(
+            final_postamble_text, add_special_tokens=False,
+        )
     else:
-        preamble_ids = tokenizer.encode("Transcript:\n\n", add_special_tokens=False)
-        postamble_ids = tokenizer.encode(
+        preamble_ids = tokenizer.encode("Document:\n\n", add_special_tokens=False)
+        explore_postamble_ids = tokenizer.encode(
+            f"\n\n---\nTask: {prompt_text}\n"
+            f"Write 1-2 sentences of reading notes about this excerpt:",
+            add_special_tokens=False,
+        )
+        final_postamble_ids = tokenizer.encode(
             f"\n\n---\nQuestion: {prompt_text}\nAnswer:",
             add_special_tokens=False,
         )
@@ -128,9 +153,9 @@ def _iterative_generate(
         seq_len += len(w_tokens)
 
         logits, round_kv = kv_gen.extend(
-            mx.array(postamble_ids)[None], round_kv, abs_start=seq_len,
+            mx.array(explore_postamble_ids)[None], round_kv, abs_start=seq_len,
         )
-        seq_len += len(postamble_ids)
+        seq_len += len(explore_postamble_ids)
 
         # Generate exploration tokens
         round_tokens: list[int] = []
@@ -153,7 +178,7 @@ def _iterative_generate(
         preview = round_text[:80].replace('\n', ' ')
 
         # Extract generation residual for compass shift
-        full_seq = list(preamble_ids) + list(w_tokens) + list(postamble_ids) + round_tokens
+        full_seq = list(preamble_ids) + list(w_tokens) + list(explore_postamble_ids) + round_tokens
         gen_h = kv_gen.prefill_to_layer(
             mx.array(full_seq)[None], target_layer=compass_layer,
         )
@@ -199,11 +224,11 @@ def _iterative_generate(
             file=sys.stderr,
         )
 
-    # Postamble
+    # Final postamble: full-answer mode (not note-taking)
     logits, gen_kv = kv_gen.extend(
-        mx.array(postamble_ids)[None], gen_kv, abs_start=seq_len,
+        mx.array(final_postamble_ids)[None], gen_kv, abs_start=seq_len,
     )
-    seq_len += len(postamble_ids)
+    seq_len += len(final_postamble_ids)
 
     # ── Final generation from combined context ───────────────────────
     generated_tokens: list[int] = []

@@ -192,6 +192,12 @@ class CheckpointStore:
         """Return (kv_last, abs_pos)."""
         return self._kv[window_id], self._abs_pos[window_id]
 
+    def evict(self, window_ids: list[int]) -> None:
+        """Remove checkpoints from memory (after they've been saved to disk)."""
+        for wid in window_ids:
+            self._kv.pop(wid, None)
+            self._abs_pos.pop(wid, None)
+
     def __contains__(self, window_id: int) -> bool:
         return window_id in self._kv
 
@@ -231,6 +237,11 @@ class ResidualStore:
     def load(self, window_id: int) -> mx.array:
         """Return the residual vector for a window boundary."""
         return self._residuals[window_id]
+
+    def evict(self, window_ids: list[int]) -> None:
+        """Remove residuals from memory (after they've been saved to disk)."""
+        for wid in window_ids:
+            self._residuals.pop(wid, None)
 
     def __contains__(self, window_id: int) -> bool:
         return window_id in self._residuals

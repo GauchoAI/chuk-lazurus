@@ -63,6 +63,15 @@ def register_context_parsers(subparsers):
         dest="store_pages",
         help="Store pre-RoPE K,V pages for instant page injection at generate time",
     )
+    ctx_prefill.add_argument(
+        "--phases",
+        default="all",
+        help=(
+            "Comma-separated phases to run: windows, interval, compass, darkspace, pages, all. "
+            "E.g. --phases windows to prefill only, --phases compass to recalibrate routing "
+            "on an existing library. Default: all"
+        ),
+    )
     ctx_prefill.set_defaults(func=lambda args: asyncio.run(context_prefill_cmd(args)))
 
     # context generate

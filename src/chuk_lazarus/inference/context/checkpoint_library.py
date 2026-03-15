@@ -214,21 +214,24 @@ class CheckpointLibrary:
         ckpt_path = self._path / LibraryFile.CHECKPOINTS
         if not ckpt_path.exists():
             return {}  # darkspace libraries have no checkpoints
-        raw: dict[str, mx.array] = dict(mx.load(str(ckpt_path)))
-        return {
-            wid: [
+        # mx.load returns a lazy dict — arrays materialised only on access.
+        raw = mx.load(str(ckpt_path))
+        result: dict[int, list[tuple[mx.array, mx.array]]] = {}
+        for wid in range(self.manifest.num_windows):
+            kv_pairs = [
                 (raw[f"w{wid}_l{li}_k"], raw[f"w{wid}_l{li}_v"])
                 for li in range(self.manifest.num_layers)
             ]
-            for wid in range(self.manifest.num_windows)
-        }
+            mx.eval(*[t for pair in kv_pairs for t in pair])
+            result[wid] = kv_pairs
+        return result
 
     def _load_residuals(self) -> dict[int, mx.array]:
         """Load per-window residual vectors (optional — older libraries may lack them)."""
         res_path = self._path / LibraryFile.RESIDUALS
         if not res_path.exists():
             return {}
-        raw: dict[str, mx.array] = dict(mx.load(str(res_path)))
+        raw = mx.load(str(res_path))
         return {
             wid: raw[f"w{wid}_residual"]
             for wid in range(self.manifest.num_windows)
@@ -240,7 +243,7 @@ class CheckpointLibrary:
         res_path = self._path / "interval_residuals.npz"
         if not res_path.exists():
             return {}
-        raw: dict[str, mx.array] = dict(mx.load(str(res_path)))
+        raw = mx.load(str(res_path))
         result: dict[int, list[mx.array]] = {}
         for wid in range(self.manifest.num_windows):
             samples = []
@@ -257,7 +260,7 @@ class CheckpointLibrary:
         res_path = self._path / "compass_residuals.npz"
         if not res_path.exists():
             return {}
-        raw: dict[str, mx.array] = dict(mx.load(str(res_path)))
+        raw = mx.load(str(res_path))
         result: dict[int, list[mx.array]] = {}
         for wid in range(self.manifest.num_windows):
             samples = []
@@ -274,7 +277,7 @@ class CheckpointLibrary:
         basis_path = self._path / "compass_basis.npz"
         if not basis_path.exists():
             return None
-        return dict(mx.load(str(basis_path)))
+        return mx.load(str(basis_path))
 
     # ------------------------------------------------------------------
     # Public API

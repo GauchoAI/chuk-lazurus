@@ -202,83 +202,89 @@ chuk-lazarus infer --model "TinyLlama/TinyLlama-1.1B-Chat-v1.0" --prompt "What i
 chuk-lazarus infer --model "TinyLlama/TinyLlama-1.1B-Chat-v1.0" --prompt "What is 2+2?" --engine kv_direct
 ```
 
-### Context Checkpoints
+### Context Libraries (Prefill + Generate)
 
-Pre-fill a document into a saved KV cache, then generate from it instantly — no re-reading the source on each query:
+Pre-fill a document into a windowed KV checkpoint library, then query any part of it at generation time — no re-reading the source:
 
 ```bash
-# Prefill a document and save a KV checkpoint
-chuk-lazarus context prefill --model google/gemma-3-1b-it --input document.txt --checkpoint ./ctx/
+# Prefill: tokenize and build a windowed checkpoint library
+lazarus context prefill \
+    --model google/gemma-3-4b-it \
+    --input shakespeare.txt \
+    --checkpoint ./shakespeare_ctx/ \
+    --window-size 512
 
 # Interrupted? Resume automatically from where it left off
-chuk-lazarus context prefill --model google/gemma-3-1b-it --input document.txt --checkpoint ./ctx/
+lazarus context prefill \
+    --model google/gemma-3-4b-it \
+    --input shakespeare.txt \
+    --checkpoint ./shakespeare_ctx/
 
-# Start fresh (ignore existing partial checkpoint)
-chuk-lazarus context prefill --model google/gemma-3-1b-it --input document.txt --checkpoint ./ctx/ --no-resume
+# Generate: query the library with compass routing
+lazarus context generate \
+    --model google/gemma-3-4b-it \
+    --checkpoint ./shakespeare_ctx/ \
+    --prompt "What does Hamlet say about death?" \
+    --max-tokens 200
 
-# Control chunk size and cap token count
-chuk-lazarus context prefill --model google/gemma-3-1b-it --input document.txt --checkpoint ./ctx/ \
-  --chunk-size 256 --max-tokens 10000
-
-# Generate from a saved context — loads KV, extends with prompt, decodes
-chuk-lazarus context generate --model google/gemma-3-1b-it --checkpoint ./ctx/ \
-  --prompt "Summarize the key points" --max-tokens 200
-
-# Prompt from a file
-chuk-lazarus context generate --model google/gemma-3-1b-it --checkpoint ./ctx/ \
-  --prompt-file query.txt --temperature 0.0
+# Residual modes control routing precision vs disk usage
+lazarus context prefill \
+    --model google/gemma-3-4b-it \
+    --input document.txt \
+    --checkpoint ./ctx/ \
+    --residual-mode darkspace --frame-bank ./frame_bank.npz
 ```
 
-Checkpoint layout:
+**Selective phases** — run only the parts you need with `--phases`:
+
+```bash
+# Just prefill windows (skip interval + compass extraction)
+lazarus context prefill --model google/gemma-3-4b-it --input shakespeare.txt \
+    --checkpoint ./ctx/ --phases windows
+
+# Recalibrate compass on an existing library (~22 min vs ~32+30+22 for full)
+lazarus context prefill --model google/gemma-3-4b-it --input shakespeare.txt \
+    --checkpoint ./ctx/ --phases compass
+
+# Run interval extraction and compass together
+lazarus context prefill --model google/gemma-3-4b-it --input shakespeare.txt \
+    --checkpoint ./ctx/ --phases interval,compass
+
+# Add pages to an existing library
+lazarus context prefill --model google/gemma-3-4b-it --input shakespeare.txt \
+    --checkpoint ./ctx/ --store-pages --phases pages
+```
+
+Available phases: `windows`, `interval`, `compass`, `darkspace`, `pages`, `all` (default). When `--phases` doesn't include `windows`, the prefill loop is skipped — the engine loads the existing library and runs only the requested extraction passes.
+
+**How it works:** The prefill command splits the source into fixed-size windows, runs a forward pass on each, and saves boundary KV checkpoints plus residual vectors for routing. At generation time, the compass router uses residual similarity to find the right windows for a query, injects their KV checkpoints, and generates — all without re-reading or re-processing the source text.
+
+**Library layout:**
 
 ```
-ctx/
-├── meta.json      — model_id, seq_len, status (partial|complete), source hash, timestamps
-├── kv.npz         — K,V tensors for every layer (bfloat16, post-RoPE)
-└── tokens.bin     — full source token IDs (uint32, little-endian)
+shakespeare_ctx/
+├── manifest.json              — model ID, window size, total tokens, num windows
+├── tokens.bin                 — raw token IDs (uint32, little-endian)
+├── windows.json               — per-window metadata: offsets, counts, text preview
+├── checkpoints.npz            — boundary KV per window (inject without re-prefill)
+├── residuals.npz              — Markov state vectors at window boundaries (also an injection path)
+├── interval_residuals.npz     — 8 interior residuals per window (sub-window retrieval)
+├── compass_residuals.npz      — commitment-layer residuals for routing
+└── compass_basis.npz          — PCA basis for compass routing (auto-calibrated)
 ```
 
-The `source_hash` (SHA-256 of the raw source bytes) guards against accidentally resuming a checkpoint built from a different file. Status `partial` → `complete` is set atomically at the end of a successful prefill, so a crashed run is always safe to resume.
+| Residual mode | What's saved | Use case |
+|---------------|-------------|----------|
+| `interval` (default) | 8 samples/window + compass PCA | General-purpose, good balance of precision and disk |
+| `full` | Every position + compass PCA | Maximum retrieval precision |
+| `darkspace` | Whitened frame bank projections | Cross-corpus routing with pre-computed frame banks |
+| `none` | Checkpoints + metadata only | Minimal disk, no routing |
 
-**Python API:**
-
-```python
-from chuk_lazarus.inference import UnifiedPipeline
-from chuk_lazarus.inference.context import make_kv_generator, KVCheckpoint, CheckpointMeta, ContextCheckpointStatus
-
-# Load model
-pipeline = UnifiedPipeline.from_pretrained("google/gemma-3-1b-it")
-kv_gen = make_kv_generator(pipeline.model)   # auto-detects Gemma / Llama family
-
-# Chunked prefill with progress
-token_ids = pipeline.tokenizer.encode(open("document.txt").read(), add_special_tokens=False)
-import mlx.core as mx
-for chunk_done, chunk_total, logits, kv_store in kv_gen.prefill_chunked(
-    mx.array([token_ids]), chunk_size=512
-):
-    print(f"{chunk_done}/{chunk_total} tokens", end="\r")
-
-# Save checkpoint
-meta = CheckpointMeta(
-    model_id="google/gemma-3-1b-it",
-    seq_len=len(token_ids),
-    total_tokens=len(token_ids),
-    num_layers=len(kv_store),
-    num_kv_heads=int(kv_store[0][0].shape[1]),
-    head_dim=int(kv_store[0][0].shape[3]),
-    chunk_size=512,
-    source_hash=KVCheckpoint.source_hash(open("document.txt", "rb").read()),
-    status=ContextCheckpointStatus.COMPLETE,
-    created_at=KVCheckpoint._now(),
-    updated_at=KVCheckpoint._now(),
-)
-KVCheckpoint.save("./ctx", kv_store, token_ids, meta)
-
-# Later: load and generate
-kv_store, token_ids, meta = KVCheckpoint.load("./ctx")
-prompt_ids = pipeline.tokenizer.encode("Summarize the key points", add_special_tokens=False)
-logits, kv_store = kv_gen.extend(mx.array([prompt_ids]), kv_store, abs_start=meta.seq_len)
-```
+**Reliability features:**
+- **Incremental saves** every 5 minutes — only new windows are appended, not rewritten
+- **Memory eviction** — saved checkpoints are freed from GPU memory, keeping usage constant
+- **Two-stage Ctrl-C** — first interrupt saves gracefully, second hard-exits
+- **Automatic resume** — partial libraries are detected and continued from the last window
 
 ### UnifiedPipeline
 
