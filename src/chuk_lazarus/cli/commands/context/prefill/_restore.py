@@ -22,26 +22,25 @@ def restore_engine(engine, output_path: Path, config) -> int:
     ckpt_path = output_path / LibraryFile.CHECKPOINTS
     tokens_path = output_path / LibraryFile.TOKENS
 
-    if not (windows_path.exists() and ckpt_path.exists() and tokens_path.exists()):
+    if not (windows_path.exists() and tokens_path.exists()):
         return 0
 
     raw_windows: list[dict] = _json.loads(windows_path.read_text())
     if not raw_windows:
         return 0
 
-    try:
-        raw_ckpts = mx.load(str(ckpt_path))  # lazy dict — arrays loaded on access
-    except Exception:
-        print("  Warning: corrupt checkpoints.npz — starting fresh", file=sys.stderr)
-        return 0
+    # Checkpoints are optional (darkspace mode skips them)
+    raw_ckpts = {}
+    has_checkpoints = False
+    if ckpt_path.exists():
+        try:
+            raw_ckpts = mx.load(str(ckpt_path))
+            first_wid = raw_windows[0]["window_id"]
+            has_checkpoints = f"w{first_wid}_l0_k" in raw_ckpts
+        except Exception:
+            pass
 
     num_layers = config.num_hidden_layers
-
-    # Validate that the first window's keys exist before proceeding
-    first_wid = raw_windows[0]["window_id"]
-    if f"w{first_wid}_l0_k" not in raw_ckpts:
-        print("  Warning: incompatible checkpoint format — starting fresh", file=sys.stderr)
-        return 0
 
     token_bytes = tokens_path.read_bytes()
     n = len(token_bytes) // 4
@@ -64,12 +63,13 @@ def restore_engine(engine, output_path: Path, config) -> int:
 
         engine.archive.archive(wid, w_tokens, w_abs)
 
-        kv_last = [
-            (raw_ckpts[f"w{wid}_l{li}_k"], raw_ckpts[f"w{wid}_l{li}_v"])
-            for li in range(num_layers)
-        ]
-        abs_last = w_abs + w["token_count"] - 1
-        engine.checkpoints.save(wid, kv_last, abs_last)
+        if has_checkpoints:
+            kv_last = [
+                (raw_ckpts[f"w{wid}_l{li}_k"], raw_ckpts[f"w{wid}_l{li}_v"])
+                for li in range(num_layers)
+            ]
+            abs_last = w_abs + w["token_count"] - 1
+            engine.checkpoints.save(wid, kv_last, abs_last)
 
         # Restore residual if available
         res_key = f"w{wid}_residual"
