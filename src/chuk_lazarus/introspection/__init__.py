@@ -354,28 +354,32 @@ from .utils import (
 )
 
 # Virtual expert system (re-exported from inference, with demo functions)
-from .virtual_expert import (
-    ExpertHijacker,
-    HybridEmbeddingInjector,
-    MathExpertPlugin,
-    SafeMathEvaluator,
-    VirtualExpertAnalysis,
-    VirtualExpertApproach,
-    VirtualExpertConfig,
-    VirtualExpertPlugin,
-    VirtualExpertRegistry,
-    VirtualExpertResult,
-    VirtualExpertService,
-    VirtualExpertServiceResult,
-    VirtualExpertSlot,
-    VirtualMoEWrapper,
-    VirtualRouter,
-    create_virtual_expert,
-    create_virtual_expert_wrapper,
-    demo_all_approaches,
-    demo_virtual_expert,
-    get_default_registry,
-)
+# Optional dependency: requires chuk-virtual-expert package
+try:
+    from .virtual_expert import (
+        ExpertHijacker,
+        HybridEmbeddingInjector,
+        MathExpertPlugin,
+        SafeMathEvaluator,
+        VirtualExpertAnalysis,
+        VirtualExpertApproach,
+        VirtualExpertConfig,
+        VirtualExpertPlugin,
+        VirtualExpertRegistry,
+        VirtualExpertResult,
+        VirtualExpertService,
+        VirtualExpertServiceResult,
+        VirtualExpertSlot,
+        VirtualMoEWrapper,
+        VirtualRouter,
+        create_virtual_expert,
+        create_virtual_expert_wrapper,
+        demo_all_approaches,
+        demo_virtual_expert,
+        get_default_registry,
+    )
+except ImportError:
+    pass  # chuk-virtual-expert not installed; virtual expert features unavailable
 
 __all__ = [
     # Async analyzer (recommended)

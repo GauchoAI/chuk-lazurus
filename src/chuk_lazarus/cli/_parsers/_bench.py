@@ -1,6 +1,6 @@
 """Bench command parser."""
 
-from ...commands.gym import bench_pipeline
+from ..commands.gym import bench_pipeline
 
 
 def register_bench_parser(subparsers):

@@ -2,7 +2,7 @@
 
 import asyncio
 
-from ...commands.train import generate_data_cmd, train_dpo_cmd, train_grpo_cmd, train_sft_cmd
+from ..commands.train import generate_data_cmd, train_dpo_cmd, train_grpo_cmd, train_sft_cmd
 
 
 def register_train_parsers(subparsers):

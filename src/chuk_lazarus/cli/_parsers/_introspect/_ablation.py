@@ -1,6 +1,6 @@
 """Ablation, weight-diff, activation-diff introspect parsers."""
 
-from ....commands.introspect import (
+from ...commands.introspect import (
     introspect_ablate,
     introspect_activation_diff,
     introspect_weight_diff,

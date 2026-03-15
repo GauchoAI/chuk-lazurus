@@ -66,9 +66,9 @@ async def context_generate_cmd(args: Namespace) -> None:
     """CLI entry point: load a checkpoint library, replay windows, generate."""
     import mlx.core as mx
 
-    from ....inference import UnifiedPipeline
-    from ....inference.context import CheckpointLibrary
-    from ....inference.context.unlimited_engine import UnlimitedContextEngine
+    from .....inference import UnifiedPipeline
+    from .....inference.context import CheckpointLibrary
+    from .....inference.context.unlimited_engine import UnlimitedContextEngine
 
     config = GenerateConfig.from_args(args)
 

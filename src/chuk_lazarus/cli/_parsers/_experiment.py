@@ -1,6 +1,6 @@
 """Experiment command parsers."""
 
-from ...commands.experiment import (
+from ..commands.experiment import (
     experiment_info,
     experiment_list,
     experiment_run,

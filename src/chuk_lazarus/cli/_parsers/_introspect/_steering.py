@@ -1,6 +1,6 @@
 """Steer introspect parser."""
 
-from ....commands.introspect import introspect_steer
+from ...commands.introspect import introspect_steer
 
 
 def register_steering_parsers(introspect_subparsers):

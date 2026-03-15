@@ -2,7 +2,7 @@
 
 import asyncio
 
-from ...commands.infer import run_inference
+from ..commands.infer import run_inference
 
 
 def register_infer_parser(subparsers):

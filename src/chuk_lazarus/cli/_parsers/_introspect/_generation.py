@@ -2,7 +2,7 @@
 
 import asyncio
 
-from ....commands.introspect import (
+from ...commands.introspect import (
     introspect_generate,
     introspect_metacognitive,
 )

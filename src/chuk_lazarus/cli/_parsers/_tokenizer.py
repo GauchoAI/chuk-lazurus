@@ -1,6 +1,6 @@
 """Tokenizer command parsers."""
 
-from ...commands.tokenizer import (
+from ..commands.tokenizer import (
     analyze_coverage,
     analyze_diff,
     analyze_efficiency,

@@ -1,6 +1,6 @@
 """Data command parsers."""
 
-from ...commands.data import (
+from ..commands.data import (
     data_batch_generate,
     data_batching_analyze,
     data_batching_histogram,

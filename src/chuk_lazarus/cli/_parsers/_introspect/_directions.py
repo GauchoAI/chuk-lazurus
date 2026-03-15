@@ -1,6 +1,6 @@
 """Directions and operand-directions introspect parsers."""
 
-from ....commands.introspect import (
+from ...commands.introspect import (
     introspect_directions,
     introspect_operand_directions,
 )

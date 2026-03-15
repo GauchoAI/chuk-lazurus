@@ -2,8 +2,8 @@
 
 import asyncio
 
-from ...commands.context import context_generate_cmd, context_prefill_cmd
-from ...commands.context.calibrate_frames import context_calibrate_frames_cmd
+from ..commands.context import context_generate_cmd, context_prefill_cmd
+from ..commands.context.calibrate_frames import context_calibrate_frames_cmd
 
 
 def register_context_parsers(subparsers):

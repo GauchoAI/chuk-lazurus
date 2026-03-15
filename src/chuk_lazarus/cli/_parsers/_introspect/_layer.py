@@ -1,6 +1,6 @@
 """Layer and format-sensitivity introspect parsers."""
 
-from ....commands.introspect import (
+from ...commands.introspect import (
     introspect_format_sensitivity,
     introspect_layer,
 )

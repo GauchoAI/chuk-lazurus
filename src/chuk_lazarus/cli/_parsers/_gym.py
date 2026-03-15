@@ -1,6 +1,6 @@
 """Gym command parsers."""
 
-from ...commands.gym import gym_info, gym_run
+from ..commands.gym import gym_info, gym_run
 
 
 def register_gym_parsers(subparsers):
