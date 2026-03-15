@@ -116,7 +116,7 @@ def _unified_generate(
     routed = compass_route(
         lib, kv_gen, prompt_ids, prompt_text, tokenizer,
         model_config=model_config,
-        strategy=RoutingStrategy.COMPASS,
+        strategy=RoutingStrategy.GEOMETRIC,
         top_k=_COMPASS_TOP_K,
     )
     route_ms = (time.time() - t0) * 1000
