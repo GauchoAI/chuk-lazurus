@@ -104,6 +104,20 @@ async def context_generate_cmd(args: Namespace) -> None:
         strategy = RoutingStrategy(strategy_arg) if strategy_arg else RoutingStrategy.BM25
         top_k = top_k_override if top_k_override is not None else 3
 
+        # Iterative strategy handles its own multi-round navigation
+        if strategy == RoutingStrategy.ITERATIVE:
+            max_rounds = getattr(args, "max_rounds", 3) or 3
+            result = _iterative_generate(
+                lib, kv_gen, engine, tokenizer, pipeline.config,
+                prompt_ids, prompt_text, config,
+                top_k=top_k,
+                max_rounds=max_rounds,
+                no_chat=no_chat,
+                system_prompt=system_prompt,
+            )
+            print(result.to_display())
+            return
+
         # Two-pass strategy handles its own replay and generation
         if strategy == RoutingStrategy.TWOPASS:
             speculative_tokens = getattr(args, "speculative_tokens", 50) or 50
@@ -678,6 +692,296 @@ async def context_generate_cmd(args: Namespace) -> None:
         context_tokens=context_tokens,
     )
     print(result.to_display())
+
+
+def _iterative_generate(
+    lib,
+    kv_gen,
+    engine,
+    tokenizer,
+    model_config,
+    prompt_ids: list[int],
+    prompt_text: str,
+    config,
+    top_k: int = 1,
+    max_rounds: int = 3,
+    no_chat: bool = False,
+    system_prompt: str | None = None,
+) -> "GenerateResult":
+    """Iterative compass navigation — the model's judgment drives routing.
+
+    Each round:
+      1. Compass routes to best unvisited window (using generation residual
+         from prior round, or bare query for round 1)
+      2. Replay window at full resolution
+      3. Model generates short notes (reading + assessment)
+      4. Extract L26 residual at the LAST GENERATED TOKEN
+      5. That residual carries the model's judgment — not just "I read something"
+         but "I read THIS and here's what I think"
+      6. Next round routes with the generation residual
+
+    Key insight: reading content shifts the compass by 7° through content-type
+    space (PC2), but the tonal channel is invariant (0.25°). The model's
+    GENERATION residual discriminates 33× better than the post-read residual
+    because judgment lives in the output state, not the reading state.
+
+    Final round: replay ALL discovered windows, generate full answer.
+    """
+    import mlx.core as mx
+
+    visited: set[int] = set()
+    notes: list[dict] = []  # {window, content_preview, response}
+    gen_residual = None  # L26 at last generated token — the model's judgment
+
+    compass_layer = lib.compass_layer
+
+    sys_content = system_prompt or (
+        "You are answering questions based on a document transcript. "
+        "Answer using only information from the transcript. Quote exact text when possible."
+    )
+
+    print(f"  Iterative navigation: up to {max_rounds} rounds (generation-guided)", file=sys.stderr)
+
+    for round_idx in range(max_rounds):
+        # ── Compass route: use generation residual from prior round ──
+        t0 = time.time()
+        routed = compass_route(
+            lib, kv_gen, prompt_ids, prompt_text, tokenizer,
+            model_config=model_config,
+            strategy=RoutingStrategy.GEOMETRIC,
+            top_k=top_k,
+            exclude=visited,
+            query_residual=gen_residual,  # None for round 1 → bare query
+        )
+        route_ms = (time.time() - t0) * 1000
+
+        if not routed:
+            print(f"  Round {round_idx + 1}: no unvisited windows left", file=sys.stderr)
+            break
+
+        # Take the best window (last in routed list = highest score)
+        best_wid = routed[-1]
+        visited.add(best_wid)
+
+        # ── Replay best window + generate short response ──
+        w_tokens = lib.get_window_tokens(best_wid)
+        window_text = tokenizer.decode(w_tokens, skip_special_tokens=True)
+
+        # Build framed context for this round's generation.
+        # The prompt forces NOTE-TAKING mode, not answer mode.
+        # This matters: the generation residual must reflect content
+        # judgment ("is this relevant/amusing/interesting?"), not
+        # answer formatting ("Here are three points...").
+        if not no_chat and hasattr(tokenizer, "apply_chat_template"):
+            preamble_text = (
+                f"<start_of_turn>user\n{sys_content}\n\n"
+                f"Here is the relevant transcript:\n\n"
+            )
+            preamble_ids = tokenizer.encode(preamble_text, add_special_tokens=True)
+
+            postamble_text = (
+                f"\n\n---\nTask: {prompt_text}\n"
+                f"DO NOT answer yet. Write 1-2 sentences of reading notes: "
+                f"what specific content is in this excerpt and how relevant "
+                f"is it to the task? What else would you need?<end_of_turn>\n"
+                f"<start_of_turn>model\n"
+            )
+            postamble_ids = tokenizer.encode(postamble_text, add_special_tokens=False)
+        else:
+            preamble_ids = tokenizer.encode("Transcript:\n\n", add_special_tokens=False)
+            postamble_text = (
+                f"\n\n---\nTask: {prompt_text}\n"
+                f"DO NOT answer yet. Write 1-2 sentences of reading notes: "
+                f"what specific content is in this excerpt and how relevant "
+                f"is it to the task?\nNotes:"
+            )
+            postamble_ids = tokenizer.encode(postamble_text, add_special_tokens=False)
+
+        # Prefill: preamble
+        seq_len = 0
+        p_ids = mx.array(preamble_ids)[None]
+        _logits, round_kv = kv_gen.prefill(p_ids)
+        mx.eval(*[t for pair in round_kv for t in pair])
+        seq_len += len(preamble_ids)
+
+        # Replay window
+        t0 = time.time()
+        w_ids = mx.array(w_tokens)[None]
+        _logits, round_kv = kv_gen.extend(w_ids, round_kv, abs_start=seq_len)
+        mx.eval(*[t for pair in round_kv for t in pair])
+        replay_ms = (time.time() - t0) * 1000
+        seq_len += len(w_tokens)
+
+        # Extend with postamble
+        q_ids = mx.array(postamble_ids)[None]
+        logits, round_kv = kv_gen.extend(q_ids, round_kv, abs_start=seq_len)
+        seq_len += len(postamble_ids)
+
+        # Generate short notes (NOT a full answer).
+        # Shorter generation = residual reflects judgment, not elaboration.
+        round_max_tokens = 50
+        stop_ids: set[int] = set()
+        if tokenizer.eos_token_id is not None:
+            stop_ids.add(tokenizer.eos_token_id)
+
+        round_tokens: list[int] = []
+        for _ in range(round_max_tokens):
+            last_logits = logits[0, -1]
+            if config.temperature == 0.0:
+                next_token = int(mx.argmax(last_logits).item())
+            else:
+                scaled = last_logits / config.temperature
+                next_token = int(mx.random.categorical(scaled[None]).item())
+            if next_token in stop_ids:
+                break
+            round_tokens.append(next_token)
+            logits, round_kv = kv_gen.step_uncompiled(
+                mx.array([[next_token]]), round_kv, seq_len=seq_len,
+            )
+            seq_len += 1
+
+        round_response = tokenizer.decode(round_tokens, skip_special_tokens=True)
+
+        # ── Extract L26 at the LAST GENERATED TOKEN ──
+        # The model's judgment lives here — not at the post-read position.
+        # Re-run the full sequence through to L26 to capture the generation
+        # residual. This is a partial forward (layers 0-26 only), so fast.
+        full_seq = list(preamble_ids) + list(w_tokens) + list(postamble_ids) + round_tokens
+        t0_l26 = time.time()
+        full_ids = mx.array(full_seq)[None]
+        gen_h = kv_gen.prefill_to_layer(full_ids, target_layer=compass_layer)
+        gen_residual = gen_h[0, -1:, :]  # (1, hidden_size) — last generated token
+        mx.eval(gen_residual)
+        l26_ms = (time.time() - t0_l26) * 1000
+
+        notes.append({
+            "window": best_wid,
+            "content_preview": window_text[:500],
+            "response": round_response,
+        })
+
+        print(
+            f"  Round {round_idx + 1}: window {best_wid} "
+            f"(route {route_ms:.0f}ms, replay {replay_ms:.0f}ms, "
+            f"{len(round_tokens)} tok, L{compass_layer} extract {l26_ms:.0f}ms)",
+            file=sys.stderr,
+        )
+        print(f"    Notes: {round_response[:120]}...", file=sys.stderr)
+
+    # ── Final generation: replay last 2 windows + notes summary ──
+    # The model already read every window and wrote notes. Use them.
+    # Replay the LAST 2 discovered windows at full resolution — later
+    # rounds find better content because the generation-guided compass
+    # refines toward it through iterative judgment.
+    # All rounds contribute notes; the best discoveries get full replay.
+    all_windows = [n["window"] for n in notes]
+
+    # Last-discovered windows are the compass's best finds.
+    # Replay up to 3 (the later half of navigation).
+    replay_limit = min(3, len(all_windows))
+    replay_windows = all_windows[-replay_limit:]
+
+    # Build notes summary text
+    notes_summary_parts = []
+    for n in notes:
+        notes_summary_parts.append(
+            f"Window {n['window']}: {n['response'].strip()}"
+        )
+    notes_summary = "\n".join(notes_summary_parts)
+
+    print(
+        f"  Final: replaying {len(replay_windows)} windows {replay_windows}, "
+        f"+ notes from {len(all_windows)} rounds",
+        file=sys.stderr,
+    )
+
+    # Build final framed context with notes + replay
+    if not no_chat and hasattr(tokenizer, "apply_chat_template"):
+        preamble_text = (
+            f"<start_of_turn>user\n{sys_content}\n\n"
+            f"Reading notes from document exploration:\n{notes_summary}\n\n"
+            f"Here is the relevant transcript:\n\n"
+        )
+        preamble_ids = tokenizer.encode(preamble_text, add_special_tokens=True)
+        postamble_text = (
+            f"\n\n---\nUsing both the reading notes above and the transcript, "
+            f"{prompt_text}<end_of_turn>\n"
+            f"<start_of_turn>model\n"
+        )
+        postamble_ids = tokenizer.encode(postamble_text, add_special_tokens=False)
+    else:
+        preamble_text = (
+            f"Reading notes:\n{notes_summary}\n\n"
+            f"Transcript:\n\n"
+        )
+        preamble_ids = tokenizer.encode(preamble_text, add_special_tokens=False)
+        postamble_ids = tokenizer.encode(
+            f"\n\n---\nUsing both the reading notes and transcript, "
+            f"{prompt_text}\nAnswer:", add_special_tokens=False,
+        )
+
+    # Prefill preamble (includes notes summary)
+    seq_len = 0
+    p_ids = mx.array(preamble_ids)[None]
+    _logits, final_kv = kv_gen.prefill(p_ids)
+    mx.eval(*[t for pair in final_kv for t in pair])
+    seq_len += len(preamble_ids)
+    print(f"    preamble + notes: {len(preamble_ids)} tokens", file=sys.stderr)
+
+    # Replay selected windows at full resolution
+    for wid in replay_windows:
+        w_tokens = lib.get_window_tokens(wid)
+        w_ids = mx.array(w_tokens)[None]
+        t0 = time.time()
+        _logits, final_kv = kv_gen.extend(w_ids, final_kv, abs_start=seq_len)
+        mx.eval(*[t for pair in final_kv for t in pair])
+        elapsed_ms = (time.time() - t0) * 1000
+        print(
+            f"    window {wid} @ pos {seq_len}–{seq_len + len(w_tokens) - 1} "
+            f"({elapsed_ms:.0f}ms)",
+            file=sys.stderr,
+        )
+        seq_len += len(w_tokens)
+
+    # Extend with postamble
+    q_ids = mx.array(postamble_ids)[None]
+    print(f"  Extending with {len(postamble_ids)} prompt tokens @ pos {seq_len}...", file=sys.stderr)
+    logits, final_kv = kv_gen.extend(q_ids, final_kv, abs_start=seq_len)
+    seq_len += len(postamble_ids)
+
+    context_tokens = seq_len
+
+    # Generate final answer
+    stop_ids: set[int] = set()
+    if tokenizer.eos_token_id is not None:
+        stop_ids.add(tokenizer.eos_token_id)
+
+    generated_tokens: list[int] = []
+    for _ in range(config.max_tokens):
+        last_logits = logits[0, -1]
+        if config.temperature == 0.0:
+            next_token = int(mx.argmax(last_logits).item())
+        else:
+            scaled = last_logits / config.temperature
+            next_token = int(mx.random.categorical(scaled[None]).item())
+        if next_token in stop_ids:
+            break
+        generated_tokens.append(next_token)
+        token_text = tokenizer.decode([next_token], skip_special_tokens=True)
+        sys.stdout.write(token_text)
+        sys.stdout.flush()
+        logits, final_kv = kv_gen.step_uncompiled(
+            mx.array([[next_token]]), final_kv, seq_len=seq_len,
+        )
+        seq_len += 1
+
+    print()  # newline after streamed output
+
+    return GenerateResult(
+        response=tokenizer.decode(generated_tokens, skip_special_tokens=True),
+        tokens_generated=len(generated_tokens),
+        context_tokens=context_tokens,
+    )
 
 
 def _resolve_replay(

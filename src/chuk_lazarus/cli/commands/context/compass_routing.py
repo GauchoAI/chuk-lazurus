@@ -62,6 +62,7 @@ class RoutingStrategy(str, Enum):
     CONTRASTIVE = "contrastive"  # query-specific subspace discovery at runtime
     GEOMETRIC = "geometric"      # compass + contrastive fused — both model geometry
     QK = "qk"                    # model's own Q/K attention projections — the dark space
+    ITERATIVE = "iterative"      # multi-round compass navigation — model reads, compass shifts
     RESIDUAL = "residual"  # legacy: mean-centered cosine similarity
 
 
@@ -607,6 +608,7 @@ def _compass_score_windows(
     lib,
     kv_gen,
     prompt_ids: list[int],
+    query_vec_np: "np.ndarray | None" = None,
 ) -> list[tuple[int, float]]:
     """Score windows by cosine similarity in the compass subspace.
 
@@ -647,9 +649,12 @@ def _compass_score_windows(
         all_norms = np.linalg.norm(all_projected, axis=1)  # (N_stored,)
 
         # Single-vector query: last position through frame bank
-        q_ids = mx.array(prompt_ids)[None]
-        q_h = kv_gen.prefill_to_layer(q_ids, target_layer=compass_layer)
-        q_vec = np.array(q_h[0, -1, :].tolist(), dtype=np.float32)
+        if query_vec_np is not None:
+            q_vec = query_vec_np
+        else:
+            q_ids = mx.array(prompt_ids)[None]
+            q_h = kv_gen.prefill_to_layer(q_ids, target_layer=compass_layer)
+            q_vec = np.array(q_h[0, -1, :].tolist(), dtype=np.float32)
         q_projected = q_vec @ basis_np.T  # (n_frame_dims,)
         q_norm = np.linalg.norm(q_projected)
 
@@ -682,9 +687,12 @@ def _compass_score_windows(
         all_norms = np.linalg.norm(all_projected, axis=1)  # (N_stored,)
 
         # Single-vector query: last position
-        q_ids = mx.array(prompt_ids)[None]
-        q_h = kv_gen.prefill_to_layer(q_ids, target_layer=compass_layer)
-        q_vec = np.array(q_h[0, -1, :].tolist(), dtype=np.float32)
+        if query_vec_np is not None:
+            q_vec = query_vec_np
+        else:
+            q_ids = mx.array(prompt_ids)[None]
+            q_h = kv_gen.prefill_to_layer(q_ids, target_layer=compass_layer)
+            q_vec = np.array(q_h[0, -1, :].tolist(), dtype=np.float32)
         q_projected = _clean(q_vec)
         q_norm = np.linalg.norm(q_projected)
 
@@ -974,6 +982,7 @@ def _contrastive_score_windows(
     prompt_ids: list[int],
     tokenizer,
     n_dims: int = 8,
+    query_vec_np: "np.ndarray | None" = None,
 ) -> list[tuple[int, float]]:
     """Score windows using query-specific contrastive subspace discovery.
 
@@ -997,9 +1006,12 @@ def _contrastive_score_windows(
     compass_layer = lib.compass_layer
 
     # 1. Extract query residual at L26
-    q_ids = mx.array(prompt_ids)[None]
-    q_h = kv_gen.prefill_to_layer(q_ids, target_layer=compass_layer)
-    q_vec = np.array(q_h[0, -1, :].tolist(), dtype=np.float32)
+    if query_vec_np is not None:
+        q_vec = query_vec_np
+    else:
+        q_ids = mx.array(prompt_ids)[None]
+        q_h = kv_gen.prefill_to_layer(q_ids, target_layer=compass_layer)
+        q_vec = np.array(q_h[0, -1, :].tolist(), dtype=np.float32)
 
     # 2. Contrast set: random interval residuals from the corpus itself.
     # "What makes this query different from typical transcript content?"
@@ -1314,6 +1326,8 @@ def compass_route(
     strategy: RoutingStrategy = RoutingStrategy.BM25,
     top_k: int = 3,
     bm25_shortlist: int = 10,
+    exclude: set[int] | None = None,
+    query_residual: "mx.array | None" = None,
 ) -> list[int]:
     """Route a query to the most relevant windows.
 
@@ -1328,6 +1342,10 @@ def compass_route(
     strategy        : Which routing strategy to use
     top_k           : Number of windows to select
     bm25_shortlist  : Number of BM25 candidates for hybrid re-ranking
+    exclude         : Window IDs to exclude from selection (already visited)
+    query_residual  : Pre-computed L26 residual (e.g. from generation position).
+                      When provided, scoring functions use this instead of
+                      computing from prompt_ids. Enables generation-guided routing.
 
     Returns
     -------
@@ -1405,9 +1423,21 @@ def compass_route(
             scores = _bm25_score_windows(lib, tokenizer, prompt_text)
             method_name = "BM25 (fallback, no compass)"
         else:
+            # Convert pre-computed residual to numpy if provided
+            _qvec_np = None
+            if query_residual is not None:
+                import numpy as np
+                _qvec_np = np.array(
+                    query_residual.reshape(-1).tolist(), dtype=np.float32
+                )
+
             # Both scores from model's own geometry
-            compass_scores = _compass_score_windows(lib, kv_gen, prompt_ids)
-            contrastive_scores = _contrastive_score_windows(lib, kv_gen, prompt_ids, tokenizer)
+            compass_scores = _compass_score_windows(
+                lib, kv_gen, prompt_ids, query_vec_np=_qvec_np,
+            )
+            contrastive_scores = _contrastive_score_windows(
+                lib, kv_gen, prompt_ids, tokenizer, query_vec_np=_qvec_np,
+            )
 
             # Reciprocal rank fusion (RRF) — each strategy votes independently.
             # RRF score = 1/(k+rank_compass) + 1/(k+rank_contrastive)
@@ -1479,6 +1509,10 @@ def compass_route(
         raise ValueError(f"Unknown routing strategy: {strategy}")
 
     elapsed_ms = (time.time() - t0) * 1000
+
+    # Filter out excluded windows before selection
+    if exclude:
+        scores = [(wid, s) for wid, s in scores if wid not in exclude]
 
     # Select top-k
     selected = [wid for wid, _ in scores[:top_k]]

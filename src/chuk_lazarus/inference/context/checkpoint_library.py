@@ -53,6 +53,9 @@ class LibraryFile(str, Enum):
     TOKENS = "tokens.bin"
     WINDOWS = "windows.json"
 
+    def __str__(self) -> str:
+        return self.value
+
 
 class LibraryFormatVersion(str, Enum):
     """Supported library format versions."""

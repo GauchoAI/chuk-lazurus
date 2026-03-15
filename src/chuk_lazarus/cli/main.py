@@ -471,12 +471,16 @@ Examples:
     )
     ctx_generate.add_argument(
         "--strategy", default=None,
-        choices=["bm25", "compass", "qk", "geometric", "contrastive", "darkspace", "guided", "directed", "twopass", "attention", "deflection", "preview", "hybrid", "residual"],
-        help="Routing strategy: bm25 (default), compass (PCA subspace at commitment layer), twopass, attention, preview, hybrid, deflection, residual (legacy)",
+        choices=["bm25", "compass", "qk", "geometric", "contrastive", "darkspace", "guided", "directed", "twopass", "attention", "deflection", "preview", "hybrid", "iterative", "residual"],
+        help="Routing strategy: bm25 (default), compass (PCA subspace at commitment layer), twopass, attention, preview, hybrid, iterative, deflection, residual (legacy)",
     )
     ctx_generate.add_argument(
         "--speculative-tokens", type=int, default=50, dest="speculative_tokens",
         help="Tokens to generate in Pass 1 of twopass strategy (default: 50)",
+    )
+    ctx_generate.add_argument(
+        "--max-rounds", type=int, default=3, dest="max_rounds",
+        help="Max navigation rounds for iterative strategy (default: 3)",
     )
     ctx_generate.add_argument(
         "--system-prompt", default=None, dest="system_prompt",
