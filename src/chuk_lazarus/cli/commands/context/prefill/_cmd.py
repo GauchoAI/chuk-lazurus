@@ -142,6 +142,7 @@ async def context_prefill_cmd(args: Namespace) -> None:
             run_compass=config.run_compass,
             run_darkspace=config.run_darkspace,
             run_pages=config.run_pages,
+            run_surprise=config.run_surprise,
         )
         elapsed = time.monotonic() - start_wall
         s = engine.stats()
@@ -178,6 +179,7 @@ async def context_prefill_cmd(args: Namespace) -> None:
                 frame_bank_path=config.frame_bank,
                 store_pages=True,
                 run_pages=True,
+                run_surprise=False,
             )
             return
         print("Already fully prefilled. Nothing to do.", file=sys.stderr)
@@ -228,6 +230,7 @@ async def context_prefill_cmd(args: Namespace) -> None:
             run_compass=config.run_compass,
             run_darkspace=config.run_darkspace,
             run_pages=config.run_pages,
+            run_surprise=config.run_surprise,
         )
         if quick and current_archived > 1:
             evict_ids = list(range(_last_saved_window, current_archived - 1))

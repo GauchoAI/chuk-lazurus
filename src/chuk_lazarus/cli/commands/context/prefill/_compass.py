@@ -69,7 +69,7 @@ def calibrate_compass(
             compass_dict[f"w{wid}_s{si}"] = vec
             _flat = vec.reshape(-1)
             mx.eval(_flat)
-            all_vecs.append(np.array(_flat, copy=False).astype(np.float32))
+            all_vecs.append(np.array(memoryview(_flat.astype(mx.float32)), copy=False))
         phase_progress(phase_label, wid + 1, num_archived, t_compass)
     print(file=sys.stderr)
 

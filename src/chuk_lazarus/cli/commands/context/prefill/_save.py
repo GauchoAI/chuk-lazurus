@@ -45,6 +45,7 @@ def save_library(
     run_compass: bool = True,
     run_darkspace: bool = True,
     run_pages: bool = True,
+    run_surprise: bool = True,
 ) -> None:
     """Write all library files from the engine's current archived state.
 
@@ -121,14 +122,21 @@ def save_library(
                     engine, output_path, num_archived, residual_mode,
                 )
 
-            if run_compass:
-                from ._compass import calibrate_compass
+        # Compass runs for any residual mode when requested
+        if run_compass:
+            from ._compass import calibrate_compass
 
-                compass_n_samples = None if residual_mode == ResidualMode.FULL else 8
-                calibrate_compass(
-                    engine, output_path, num_archived, config,
-                    n_samples=compass_n_samples,
-                )
+            compass_n_samples = None if residual_mode == ResidualMode.FULL else 8
+            calibrate_compass(
+                engine, output_path, num_archived, config,
+                n_samples=compass_n_samples,
+            )
+
+        # Surprise: per-token perplexity scoring (anomaly detection)
+        if run_surprise:
+            from ._surprise import extract_surprise
+
+            extract_surprise(engine, output_path, num_archived, config)
 
     # --- Pages ---
     if store_pages and run_pages:
