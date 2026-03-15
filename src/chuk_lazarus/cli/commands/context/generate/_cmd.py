@@ -15,6 +15,8 @@ from argparse import Namespace
 from .._types import GenerateConfig, GenerateResult
 from ..compass_routing import RoutingStrategy, compass_route, two_pass_generate
 from ._iterative import _iterative_generate
+from ._probe_driven import _probe_driven_generate
+from ._unified import _unified_generate
 from ._resolve import _resolve_replay
 
 
@@ -146,13 +148,40 @@ async def context_generate_cmd(args: Namespace) -> None:
 
     if replay_ids is None:
         # Auto mode: use compass routing
-        strategy = RoutingStrategy(strategy_arg) if strategy_arg else RoutingStrategy.BM25
+        strategy = RoutingStrategy(strategy_arg) if strategy_arg else RoutingStrategy.UNIFIED
         top_k = top_k_override if top_k_override is not None else 3
+
+        # Unified three-probe strategy — the default. No flags needed.
+        if strategy == RoutingStrategy.UNIFIED:
+            top_k = top_k_override if top_k_override is not None else 10
+            result = _unified_generate(
+                lib, kv_gen, engine, tokenizer, pipeline.config,
+                prompt_ids, prompt_text, config,
+                top_k=top_k,
+                no_chat=no_chat,
+                system_prompt=system_prompt,
+            )
+            print(result.to_display())
+            return
 
         # Iterative strategy handles its own multi-round navigation
         if strategy == RoutingStrategy.ITERATIVE:
             max_rounds = getattr(args, "max_rounds", 3) or 3
             result = _iterative_generate(
+                lib, kv_gen, engine, tokenizer, pipeline.config,
+                prompt_ids, prompt_text, config,
+                top_k=top_k,
+                max_rounds=max_rounds,
+                no_chat=no_chat,
+                system_prompt=system_prompt,
+            )
+            print(result.to_display())
+            return
+
+        # Probe-driven strategy — grounding probe controls everything
+        if strategy == RoutingStrategy.PROBE:
+            max_rounds = getattr(args, "max_rounds", 8) or 8
+            result = _probe_driven_generate(
                 lib, kv_gen, engine, tokenizer, pipeline.config,
                 prompt_ids, prompt_text, config,
                 top_k=top_k,

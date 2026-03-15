@@ -95,8 +95,8 @@ def register_context_parsers(subparsers):
     )
     ctx_generate.add_argument(
         "--strategy", default=None,
-        choices=["bm25", "compass", "qk", "geometric", "contrastive", "darkspace", "guided", "directed", "twopass", "attention", "deflection", "preview", "hybrid", "iterative", "residual"],
-        help="Routing strategy: bm25 (default), compass (PCA subspace at commitment layer), twopass, attention, preview, hybrid, iterative, deflection, residual (legacy)",
+        choices=["unified", "bm25", "compass", "qk", "geometric", "contrastive", "darkspace", "guided", "directed", "twopass", "attention", "deflection", "preview", "hybrid", "iterative", "probe", "residual"],
+        help="Routing strategy: unified (default, three-probe), geometric, iterative, probe, bm25, residual (legacy)",
     )
     ctx_generate.add_argument(
         "--speculative-tokens", type=int, default=50, dest="speculative_tokens",

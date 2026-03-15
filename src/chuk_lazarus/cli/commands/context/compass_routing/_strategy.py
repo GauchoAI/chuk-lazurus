@@ -22,4 +22,6 @@ class RoutingStrategy(str, Enum):
     GEOMETRIC = "geometric"      # compass + contrastive fused — both model geometry
     QK = "qk"                    # model's own Q/K attention projections — the dark space
     ITERATIVE = "iterative"      # multi-round compass navigation — model reads, compass shifts
+    PROBE = "probe"              # probe-driven navigation — grounding probe controls everything
+    UNIFIED = "unified"          # three-probe architecture — dark space decides everything
     RESIDUAL = "residual"  # legacy: mean-centered cosine similarity

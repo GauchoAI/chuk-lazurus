@@ -1,4 +1,13 @@
-"""Iterative compass navigation — grounding-driven generation."""
+"""Iterative compass navigation — generation-guided exploration.
+
+Each round: compass routes to a window, generates a short response,
+extracts the L26 generation residual, and uses it to shift the compass
+for the next round. No grounding probe. No early stopping. The model
+explores for all rounds, discovering content across the document.
+
+After exploration, replays the discovered windows together and generates
+a final answer from combined context.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +16,10 @@ import time
 
 from .._types import GenerateConfig, GenerateResult
 from ..compass_routing import RoutingStrategy, compass_route
-from ._grounding import _calibrate_grounding
+
+
+# Tokens to generate per exploration round (just enough to shift L26).
+_EXPLORE_TOKENS = 50
 
 
 def _iterative_generate(
@@ -24,19 +36,16 @@ def _iterative_generate(
     no_chat: bool = False,
     system_prompt: str | None = None,
 ) -> GenerateResult:
-    """Iterative compass navigation — grounding-driven.
+    """Generation-guided iterative navigation.
 
-    The model's L26 dark space signals whether it's grounding on context
-    or reaching into parametric memory. One dimension. First token.
-    Universal across query types.
+    Explores the document across multiple rounds. Each round generates
+    a short response from one window, then uses the generation residual
+    to steer the compass to a new region. After all rounds, replays
+    discovered windows and generates the final answer.
 
-    Navigation:
-      GROUNDED -> model has what it needs -> generate full answer
-      PARTIAL  -> model has some content -> turn the page
-      REACHING -> model is inventing -> compass re-routes to new region
-
-    No EOS detection. No string matching. No round token budgets.
-    One geometric test at the first generated token drives everything.
+    This strategy is designed for exploration queries ("find amusing
+    moments", "summarize the key events") where the answer spans
+    multiple regions of the document.
     """
     import mlx.core as mx
     import numpy as np
@@ -44,156 +53,88 @@ def _iterative_generate(
     compass_layer = lib.compass_layer
     visited: set[int] = set()
     gen_residual = None
-    last_response = ""
-    last_tokens: list[int] = []
+    discovered: list[int] = []  # windows found during exploration
 
     sys_content = system_prompt or (
         "You are answering questions based on a document transcript. "
-        "Answer using only information from the transcript. Quote exact text when possible."
+        "Answer using only information from the transcript. "
+        "Quote exact text when possible."
     )
 
-    # -- Calibrate grounding detector --
-    pc1, cal_mean, ground_thresh, partial_thresh = _calibrate_grounding(
-        kv_gen, lib, tokenizer, compass_layer, sys_content,
+    print(
+        f"  Iterative navigation: {max_rounds} exploration rounds "
+        f"({_EXPLORE_TOKENS} tokens each), then combined replay",
+        file=sys.stderr,
     )
 
-    print(f"  Iterative navigation: up to {max_rounds} rounds (grounding-driven)", file=sys.stderr)
+    # Build frame templates
+    if not no_chat and hasattr(tokenizer, "apply_chat_template"):
+        preamble_text = (
+            f"<start_of_turn>user\n{sys_content}\n\n"
+            f"Here is the relevant transcript:\n\n"
+        )
+        preamble_ids = tokenizer.encode(preamble_text, add_special_tokens=True)
+        postamble_text = (
+            f"\n\n---\nBased on the transcript above, "
+            f"{prompt_text}<end_of_turn>\n"
+            f"<start_of_turn>model\n"
+        )
+        postamble_ids = tokenizer.encode(postamble_text, add_special_tokens=False)
+    else:
+        preamble_ids = tokenizer.encode("Transcript:\n\n", add_special_tokens=False)
+        postamble_ids = tokenizer.encode(
+            f"\n\n---\nQuestion: {prompt_text}\nAnswer:",
+            add_special_tokens=False,
+        )
 
-    sequential_next: int | None = None
+    stop_ids: set[int] = set()
+    if tokenizer.eos_token_id is not None:
+        stop_ids.add(tokenizer.eos_token_id)
 
+    # ── Exploration phase ────────────────────────────────────────────
     for round_idx in range(max_rounds):
-        # -- Navigate: sequential (page turn) or compass (new region) --
-        if sequential_next is not None and sequential_next not in visited \
-                and 0 <= sequential_next < lib.num_windows:
-            best_wid = sequential_next
-            sequential_next = None
-            visited.add(best_wid)
-            route_ms = 0.0
-            nav_mode = "seq"
-        else:
-            sequential_next = None
-            t0 = time.time()
-            routed = compass_route(
-                lib, kv_gen, prompt_ids, prompt_text, tokenizer,
-                model_config=model_config,
-                strategy=RoutingStrategy.GEOMETRIC,
-                top_k=top_k,
-                exclude=visited,
-                query_residual=gen_residual,
-            )
-            route_ms = (time.time() - t0) * 1000
-            if not routed:
-                print(f"  Round {round_idx + 1}: exhausted", file=sys.stderr)
-                break
-            best_wid = routed[-1]
-            visited.add(best_wid)
-            nav_mode = "compass"
+        # Navigate: compass route with generation residual shift
+        t0 = time.time()
+        routed = compass_route(
+            lib, kv_gen, prompt_ids, prompt_text, tokenizer,
+            model_config=model_config,
+            strategy=RoutingStrategy.GEOMETRIC,
+            top_k=top_k,
+            exclude=visited,
+            query_residual=gen_residual,
+        )
+        route_ms = (time.time() - t0) * 1000
 
-        # -- Replay window --
+        if not routed:
+            print(f"  Round {round_idx + 1}: exhausted", file=sys.stderr)
+            break
+
+        best_wid = routed[-1]
+        visited.add(best_wid)
+        discovered.append(best_wid)
+
+        # Replay window
         w_tokens = lib.get_window_tokens(best_wid)
 
-        if not no_chat and hasattr(tokenizer, "apply_chat_template"):
-            preamble_text = (
-                f"<start_of_turn>user\n{sys_content}\n\n"
-                f"Here is the relevant transcript:\n\n"
-            )
-            preamble_ids = tokenizer.encode(preamble_text, add_special_tokens=True)
-            postamble_text = (
-                f"\n\n---\nBased on the transcript above, "
-                f"{prompt_text}<end_of_turn>\n"
-                f"<start_of_turn>model\n"
-            )
-            postamble_ids = tokenizer.encode(postamble_text, add_special_tokens=False)
-        else:
-            preamble_ids = tokenizer.encode("Transcript:\n\n", add_special_tokens=False)
-            postamble_ids = tokenizer.encode(
-                f"\n\n---\nQuestion: {prompt_text}\nAnswer:",
-                add_special_tokens=False,
-            )
-
         seq_len = 0
-        p_ids = mx.array(preamble_ids)[None]
-        _logits, round_kv = kv_gen.prefill(p_ids)
-        mx.eval(*[t for pair in round_kv for t in pair])
+        _l, round_kv = kv_gen.prefill(mx.array(preamble_ids)[None])
+        mx.eval(*[t for p in round_kv for t in p])
         seq_len += len(preamble_ids)
 
-        t0 = time.time()
-        w_ids = mx.array(w_tokens)[None]
-        _logits, round_kv = kv_gen.extend(w_ids, round_kv, abs_start=seq_len)
-        mx.eval(*[t for pair in round_kv for t in pair])
-        replay_ms = (time.time() - t0) * 1000
+        _l, round_kv = kv_gen.extend(
+            mx.array(w_tokens)[None], round_kv, abs_start=seq_len,
+        )
+        mx.eval(*[t for p in round_kv for t in p])
         seq_len += len(w_tokens)
 
-        q_ids = mx.array(postamble_ids)[None]
-        logits, round_kv = kv_gen.extend(q_ids, round_kv, abs_start=seq_len)
+        logits, round_kv = kv_gen.extend(
+            mx.array(postamble_ids)[None], round_kv, abs_start=seq_len,
+        )
         seq_len += len(postamble_ids)
 
-        # -- Generate first token + grounding test --
-        stop_ids: set[int] = set()
-        if tokenizer.eos_token_id is not None:
-            stop_ids.add(tokenizer.eos_token_id)
-
-        if config.temperature == 0.0:
-            first_tok = int(mx.argmax(logits[0, -1]).item())
-        else:
-            first_tok = int(mx.random.categorical(logits[0, -1:] / config.temperature).item())
-
-        # Extract L26 at first generated token
-        full_probe = list(preamble_ids) + list(w_tokens) + list(postamble_ids) + [first_tok]
-        probe_h = kv_gen.prefill_to_layer(mx.array(full_probe)[None], target_layer=compass_layer)
-        mx.eval(probe_h)
-        probe_vec = np.array(probe_h[0, -1, :].tolist(), dtype=np.float32)
-        proj = float((probe_vec - cal_mean) @ pc1)
-
-        if proj > ground_thresh:
-            state = "GROUNDED"
-        elif proj > partial_thresh:
-            state = "PARTIAL"
-        else:
-            state = "REACHING"
-
-        first_text = tokenizer.decode([first_tok], skip_special_tokens=True)
-
-        # -- Navigation decision based on grounding state --
-        if state == "REACHING":
-            # Wrong region. Don't generate. Compass re-routes.
-            print(
-                f"  Round {round_idx + 1}: W{best_wid} [{nav_mode}] "
-                f"REACHING (proj={proj:+.0f}) → re-route",
-                file=sys.stderr,
-            )
-            # Extract generation residual for compass shift
-            gen_residual = probe_h[0, -1:, :]
-            continue
-
-        if state == "PARTIAL":
-            # Right region, need more. Queue next page.
-            next_wid = best_wid + 1
-            if next_wid < lib.num_windows and next_wid not in visited:
-                sequential_next = next_wid
-            print(
-                f"  Round {round_idx + 1}: W{best_wid} [{nav_mode}] "
-                f"PARTIAL (proj={proj:+.0f}) → page turn",
-                file=sys.stderr,
-            )
-            gen_residual = probe_h[0, -1:, :]
-            continue
-
-        # -- GROUNDED: let the model generate its full answer --
-        print(
-            f"  Round {round_idx + 1}: W{best_wid} [{nav_mode}] "
-            f"GROUNDED (proj={proj:+.0f}) → generating",
-            file=sys.stderr,
-        )
-
-        # Continue from first token
-        round_tokens = [first_tok]
-        logits, round_kv = kv_gen.step_uncompiled(
-            mx.array([[first_tok]]), round_kv, seq_len=seq_len,
-        )
-        seq_len += 1
-
-        for _ in range(config.max_tokens - 1):
+        # Generate exploration tokens
+        round_tokens: list[int] = []
+        for _ in range(_EXPLORE_TOKENS):
             last_logits = logits[0, -1]
             if config.temperature == 0.0:
                 next_token = int(mx.argmax(last_logits).item())
@@ -208,32 +149,90 @@ def _iterative_generate(
             )
             seq_len += 1
 
-        round_response = tokenizer.decode(round_tokens, skip_special_tokens=True)
-        last_response = round_response
-        last_tokens = round_tokens
+        round_text = tokenizer.decode(round_tokens, skip_special_tokens=True)
+        preview = round_text[:80].replace('\n', ' ')
 
-        preview = round_response[:100].replace('\n', ' ')
-        print(f"    {preview}...", file=sys.stderr)
-
-        # Extract generation residual for potential next round
+        # Extract generation residual for compass shift
         full_seq = list(preamble_ids) + list(w_tokens) + list(postamble_ids) + round_tokens
-        gen_h = kv_gen.prefill_to_layer(mx.array(full_seq)[None], target_layer=compass_layer)
+        gen_h = kv_gen.prefill_to_layer(
+            mx.array(full_seq)[None], target_layer=compass_layer,
+        )
         gen_residual = gen_h[0, -1:, :]
         mx.eval(gen_residual)
 
-        # Grounded generation complete. Done.
-        break
+        print(
+            f"  Round {round_idx + 1}: W{best_wid} ({route_ms:.0f}ms) "
+            f"→ {preview}...",
+            file=sys.stderr,
+        )
 
-    if not last_response:
-        last_response = "(No grounded answer found within round limit)"
+    if not discovered:
+        return GenerateResult(
+            response="(No windows discovered)",
+            tokens_generated=0,
+            context_tokens=0,
+        )
+
+    # ── Replay phase: last 3 discovered windows ───────────────────────
+    # Take the last 3 discovered (most recent compass hits) in doc order.
+    # All 5 dilutes attention; last 3 keeps context focused.
+    replay_wids = sorted(discovered[-3:])
+    print(f"  Replaying last {len(replay_wids)} discovered: {replay_wids}", file=sys.stderr)
+
+    seq_len = 0
+    _l, gen_kv = kv_gen.prefill(mx.array(preamble_ids)[None])
+    mx.eval(*[t for p in gen_kv for t in p])
+    seq_len += len(preamble_ids)
+
+    for wid in replay_wids:
+        w_tokens = lib.get_window_tokens(wid)
+        t0 = time.time()
+        _l, gen_kv = kv_gen.extend(
+            mx.array(w_tokens)[None], gen_kv, abs_start=seq_len,
+        )
+        mx.eval(*[t for p in gen_kv for t in p])
+        replay_ms = (time.time() - t0) * 1000
+        seq_len += len(w_tokens)
+        print(
+            f"  Replayed W{wid} @ pos {seq_len - len(w_tokens)}–{seq_len} "
+            f"({replay_ms:.0f}ms)",
+            file=sys.stderr,
+        )
+
+    # Postamble
+    logits, gen_kv = kv_gen.extend(
+        mx.array(postamble_ids)[None], gen_kv, abs_start=seq_len,
+    )
+    seq_len += len(postamble_ids)
+
+    # ── Final generation from combined context ───────────────────────
+    generated_tokens: list[int] = []
+    for _ in range(config.max_tokens):
+        last_logits = logits[0, -1]
+        if config.temperature == 0.0:
+            next_token = int(mx.argmax(last_logits).item())
+        else:
+            scaled = last_logits / config.temperature
+            next_token = int(mx.random.categorical(scaled[None]).item())
+        if next_token in stop_ids:
+            break
+        generated_tokens.append(next_token)
+        logits, gen_kv = kv_gen.step_uncompiled(
+            mx.array([[next_token]]), gen_kv, seq_len=seq_len,
+        )
+        seq_len += 1
+
+    response = tokenizer.decode(generated_tokens, skip_special_tokens=True)
+    preview = response[:120].replace('\n', ' ')
+    print(f"    {preview}...", file=sys.stderr)
 
     print()
-    sys.stdout.write(last_response)
+    sys.stdout.write(response)
     sys.stdout.flush()
     print()
 
     return GenerateResult(
-        response=last_response,
-        tokens_generated=len(last_tokens),
-        context_tokens=seq_len if last_tokens else 0,
+        response=response,
+        tokens_generated=len(generated_tokens),
+        context_tokens=seq_len,
     )
