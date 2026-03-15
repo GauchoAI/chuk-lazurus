@@ -1,14 +1,4 @@
-"""MoE compression via SVD overlay representation.
-
-Implements the overlay compression strategy for pseudo-MoE models:
-    expert_i = base + U_i @ S_i @ V_i^T
-
-Where base is the mean expert and U_i, S_i, V_i are truncated SVD factors
-of the low-rank delta (expert_i - base).
-
-This provides significant compression for pseudo-MoE models (8x typical)
-while preserving quality (<1% reconstruction error).
-"""
+"""MoE compression service via SVD overlay representation."""
 
 from __future__ import annotations
 
@@ -19,221 +9,24 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field
 
-from .detector import get_moe_layers
-from .enums import MoEArchitecture
-from .moe_type import MoETypeService
+from ..detector import get_moe_layers
+from ..enums import MoEArchitecture
+from ..moe_type import MoETypeService
+from ._models import (
+    CompressionConfig,
+    CompressionResult,
+    OverlayRepresentation,
+    ProjectionOverlay,
+    ReconstructionError,
+    ReconstructionVerification,
+    StorageEstimate,
+)
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import mlx.core as mx
-
-
-# =============================================================================
-# Pydantic Models
-# =============================================================================
-
-
-class ProjectionOverlay(BaseModel):
-    """Overlay representation for a single projection type."""
-
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
-
-    name: str = Field(description="Projection name: gate, up, or down")
-    shape: tuple[int, int] = Field(description="(out_features, in_features)")
-    rank: int = Field(ge=1, description="Truncation rank used")
-    num_experts: int = Field(ge=1, description="Number of experts")
-
-    # Storage metrics
-    original_bytes: int = Field(ge=0, description="Original storage in bytes")
-    compressed_bytes: int = Field(ge=0, description="Compressed storage in bytes")
-
-    @property
-    def compression_ratio(self) -> float:
-        """Compression ratio achieved."""
-        return self.original_bytes / self.compressed_bytes if self.compressed_bytes > 0 else 1.0
-
-
-class OverlayRepresentation(BaseModel):
-    """Complete overlay representation for a layer's experts."""
-
-    model_config = ConfigDict(frozen=True)
-
-    model_id: str = Field(description="Model identifier")
-    layer_idx: int = Field(ge=0, description="Layer index")
-    num_experts: int = Field(ge=1, description="Number of experts")
-
-    # Per-projection overlays
-    gate: ProjectionOverlay = Field(description="Gate projection overlay")
-    up: ProjectionOverlay = Field(description="Up projection overlay")
-    down: ProjectionOverlay = Field(description="Down projection overlay")
-
-    # Ranks used
-    gate_rank: int = Field(ge=1, description="Rank used for gate projection")
-    up_rank: int = Field(ge=1, description="Rank used for up projection")
-    down_rank: int = Field(ge=1, description="Rank used for down projection")
-
-    @property
-    def total_original_bytes(self) -> int:
-        """Total original storage in bytes."""
-        return self.gate.original_bytes + self.up.original_bytes + self.down.original_bytes
-
-    @property
-    def total_compressed_bytes(self) -> int:
-        """Total compressed storage in bytes."""
-        return self.gate.compressed_bytes + self.up.compressed_bytes + self.down.compressed_bytes
-
-    @property
-    def compression_ratio(self) -> float:
-        """Overall compression ratio."""
-        return (
-            self.total_original_bytes / self.total_compressed_bytes
-            if self.total_compressed_bytes > 0
-            else 1.0
-        )
-
-
-class ReconstructionError(BaseModel):
-    """Reconstruction error metrics for a projection."""
-
-    model_config = ConfigDict(frozen=True)
-
-    name: str = Field(description="Projection name")
-    mean_relative_error: float = Field(ge=0.0, description="Mean relative error across experts")
-    max_relative_error: float = Field(ge=0.0, description="Max relative error across experts")
-    mean_mse: float = Field(ge=0.0, description="Mean squared error")
-
-
-class ReconstructionVerification(BaseModel):
-    """Verification results for overlay reconstruction."""
-
-    model_config = ConfigDict(frozen=True)
-
-    model_id: str = Field(description="Model identifier")
-    layer_idx: int = Field(ge=0, description="Layer index")
-
-    # Per-projection errors
-    gate: ReconstructionError = Field(description="Gate projection errors")
-    up: ReconstructionError = Field(description="Up projection errors")
-    down: ReconstructionError = Field(description="Down projection errors")
-
-    # Output-level verification
-    mean_output_error: float = Field(ge=0.0, description="Mean output relative error")
-    max_output_error: float = Field(ge=0.0, description="Max output relative error")
-
-    # Ranks used
-    gate_rank: int = Field(ge=1, description="Rank used for gate")
-    up_rank: int = Field(ge=1, description="Rank used for up")
-    down_rank: int = Field(ge=1, description="Rank used for down")
-
-    @property
-    def passed(self) -> bool:
-        """Whether reconstruction quality is acceptable (<1% error)."""
-        return self.max_output_error < 0.01
-
-    @property
-    def overall_weight_error(self) -> float:
-        """Mean weight error across all projections."""
-        return (
-            self.gate.mean_relative_error
-            + self.up.mean_relative_error
-            + self.down.mean_relative_error
-        ) / 3
-
-
-class StorageEstimate(BaseModel):
-    """Storage estimate for overlay compression."""
-
-    model_config = ConfigDict(frozen=True)
-
-    model_id: str = Field(description="Model identifier")
-    num_layers: int = Field(ge=1, description="Number of MoE layers")
-    num_experts: int = Field(ge=1, description="Number of experts per layer")
-
-    # Storage in MB
-    original_mb: float = Field(ge=0.0, description="Original storage in MB")
-    compressed_mb: float = Field(ge=0.0, description="Compressed storage in MB")
-
-    # Ranks used
-    gate_rank: int = Field(ge=1, description="Rank for gate projection")
-    up_rank: int = Field(ge=1, description="Rank for up projection")
-    down_rank: int = Field(ge=1, description="Rank for down projection")
-
-    @property
-    def compression_ratio(self) -> float:
-        """Compression ratio achieved."""
-        return self.original_mb / self.compressed_mb if self.compressed_mb > 0 else 1.0
-
-    @property
-    def savings_mb(self) -> float:
-        """Storage savings in MB."""
-        return self.original_mb - self.compressed_mb
-
-
-class CompressionConfig(BaseModel):
-    """Configuration for compressed model format."""
-
-    model_config = ConfigDict(frozen=True)
-
-    model_id: str = Field(description="Original model identifier")
-    num_layers: int = Field(ge=1, description="Number of MoE layers")
-    num_experts: int = Field(ge=1, description="Number of experts per layer")
-    moe_layer_indices: list[int] = Field(description="Indices of MoE layers in original model")
-
-    # Projection dimensions
-    gate_shape: tuple[int, int] = Field(description="(out_features, in_features) for gate")
-    up_shape: tuple[int, int] = Field(description="(out_features, in_features) for up")
-    down_shape: tuple[int, int] = Field(description="(out_features, in_features) for down")
-
-    # Compression ranks
-    gate_rank: int = Field(ge=1, description="Rank for gate projection")
-    up_rank: int = Field(ge=1, description="Rank for up projection")
-    down_rank: int = Field(ge=1, description="Rank for down projection")
-
-    # Bias info
-    has_biases: bool = Field(default=False, description="Whether biases are stored separately")
-
-    # Storage stats
-    original_bytes: int = Field(ge=0, description="Original expert storage in bytes")
-    compressed_bytes: int = Field(ge=0, description="Compressed storage in bytes")
-
-    @property
-    def compression_ratio(self) -> float:
-        """Compression ratio achieved."""
-        return self.original_bytes / self.compressed_bytes if self.compressed_bytes > 0 else 1.0
-
-
-class CompressionResult(BaseModel):
-    """Result of model compression."""
-
-    model_config = ConfigDict(frozen=True)
-
-    output_path: str = Field(description="Path to compressed model directory")
-    config: CompressionConfig = Field(description="Compression configuration")
-    mean_reconstruction_error: float = Field(ge=0.0, description="Mean reconstruction error")
-    max_reconstruction_error: float = Field(ge=0.0, description="Max reconstruction error")
-
-    @property
-    def compression_ratio(self) -> float:
-        """Compression ratio achieved."""
-        return self.config.compression_ratio
-
-    @property
-    def original_mb(self) -> float:
-        """Original size in MB."""
-        return self.config.original_bytes / (1024 * 1024)
-
-    @property
-    def compressed_mb(self) -> float:
-        """Compressed size in MB."""
-        return self.config.compressed_bytes / (1024 * 1024)
-
-
-# =============================================================================
-# Service Class
-# =============================================================================
 
 
 class MoECompressionService:
@@ -425,7 +218,7 @@ class MoECompressionService:
             raise ValueError(f"Could not extract experts from layer {layer_idx}")
 
         # Detect architecture
-        from .detector import detect_moe_architecture
+        from ..detector import detect_moe_architecture
 
         architecture = detect_moe_architecture(model)
 
@@ -485,7 +278,7 @@ class MoECompressionService:
             raise ValueError(f"Could not extract experts from layer {layer_idx}")
 
         # Detect architecture
-        from .detector import detect_moe_architecture
+        from ..detector import detect_moe_architecture
 
         architecture = detect_moe_architecture(model)
 
@@ -545,7 +338,7 @@ class MoECompressionService:
         if experts is None:
             raise ValueError("Could not extract experts")
 
-        from .detector import detect_moe_architecture
+        from ..detector import detect_moe_architecture
 
         architecture = detect_moe_architecture(model)
         gate_w, up_w, down_w, num_experts = MoETypeService._extract_weights(experts, architecture)
@@ -624,7 +417,7 @@ class MoECompressionService:
         if not moe_layers:
             raise ValueError(f"No MoE layers found in {model_id}")
 
-        from .detector import detect_moe_architecture
+        from ..detector import detect_moe_architecture
 
         architecture = detect_moe_architecture(model)
 
@@ -1067,7 +860,7 @@ class MoECompressionService:
         return mx.array(delta_recon) + base
 
     @classmethod
-    def load_compressed(cls, compressed_path: str | Path) -> OverlayExperts:
+    def load_compressed(cls, compressed_path: str | Path):
         """Load compressed model for inference.
 
         Args:
@@ -1076,188 +869,6 @@ class MoECompressionService:
         Returns:
             OverlayExperts instance for efficient inference
         """
+        from ._overlay_experts import OverlayExperts
+
         return OverlayExperts.load(compressed_path)
-
-
-# =============================================================================
-# Overlay Inference
-# =============================================================================
-
-
-class OverlayExperts:
-    """Efficient expert computation using overlay representation.
-
-    Instead of storing full expert weights, stores:
-    - base: Mean expert weight (shared)
-    - U, V: Low-rank factors per expert
-    - biases: Per-expert biases (if model has them)
-
-    Reconstruction: expert_i = base + U_i @ V_i
-
-    Usage:
-        experts = OverlayExperts.load("gpt-oss-20b-overlay")
-        weight = experts.get_expert_weight(layer=0, projection="gate", expert=5)
-        # or for efficient inference:
-        output = experts.apply_expert(layer=0, projection="gate", expert=5, x=hidden)
-    """
-
-    def __init__(
-        self,
-        config: CompressionConfig,
-        base_weights: dict,
-        delta_weights: dict,
-        biases: dict | None = None,
-    ) -> None:
-        """Initialize from loaded weights."""
-        self.config = config
-        self._base = base_weights
-        self._deltas = delta_weights
-        self._biases = biases or {}
-
-    @classmethod
-    def load(cls, path: str | Path) -> OverlayExperts:
-        """Load compressed model from disk."""
-        import mlx.core as mx
-
-        path = Path(path)
-
-        # Load config
-        config_path = path / "config.json"
-        if not config_path.exists():
-            raise FileNotFoundError(f"Config not found: {config_path}")
-
-        config = CompressionConfig.model_validate_json(config_path.read_text())
-
-        # Load weights
-        base_path = path / "base_weights.safetensors"
-        deltas_path = path / "deltas.safetensors"
-
-        if not base_path.exists():
-            raise FileNotFoundError(f"Base weights not found: {base_path}")
-        if not deltas_path.exists():
-            raise FileNotFoundError(f"Deltas not found: {deltas_path}")
-
-        base_weights = mx.load(str(base_path))
-        delta_weights = mx.load(str(deltas_path))
-
-        # Load biases if available
-        biases = None
-        biases_path = path / "biases.safetensors"
-        if biases_path.exists():
-            biases = mx.load(str(biases_path))
-            logger.info(f"Loaded biases: {list(biases.keys())}")
-
-        logger.info(
-            f"Loaded compressed model: {config.num_layers} layers, "
-            f"{config.num_experts} experts, {config.compression_ratio:.1f}x compression"
-        )
-
-        return cls(config, base_weights, delta_weights, biases)
-
-    def get_expert_weight(
-        self,
-        layer: int,
-        projection: str,
-        expert: int,
-    ):
-        """Reconstruct full expert weight matrix.
-
-        Args:
-            layer: Layer index (from moe_layer_indices)
-            projection: "gate", "up", or "down"
-            expert: Expert index
-
-        Returns:
-            Reconstructed weight matrix: base + U @ V
-        """
-        import mlx.core as mx
-
-        base_key = f"layer_{layer}_{projection}_base"
-        u_key = f"layer_{layer}_{projection}_expert_{expert}_U"
-        v_key = f"layer_{layer}_{projection}_expert_{expert}_V"
-
-        if base_key not in self._base:
-            raise KeyError(f"Base weight not found: {base_key}")
-        if u_key not in self._deltas:
-            raise KeyError(f"Delta U not found: {u_key}")
-
-        base = self._base[base_key]
-        U = self._deltas[u_key]
-        V = self._deltas[v_key]
-
-        # Reconstruct: base + U @ V
-        weight = base + U @ V
-        mx.eval(weight)
-
-        return weight
-
-    def apply_expert(
-        self,
-        layer: int,
-        projection: str,
-        expert: int,
-        x,
-    ):
-        """Apply expert to input efficiently using low-rank factorization.
-
-        Instead of: y = x @ (base + U @ V).T + bias
-        Computes:   y = x @ base.T + (x @ V.T) @ U.T + bias
-
-        This is more efficient when rank << min(in_dim, out_dim).
-
-        Args:
-            layer: Layer index
-            projection: "gate", "up", or "down"
-            expert: Expert index
-            x: Input tensor of shape (..., in_dim)
-
-        Returns:
-            Output tensor of shape (..., out_dim)
-        """
-
-        base_key = f"layer_{layer}_{projection}_base"
-        u_key = f"layer_{layer}_{projection}_expert_{expert}_U"
-        v_key = f"layer_{layer}_{projection}_expert_{expert}_V"
-
-        base = self._base[base_key]
-        U = self._deltas[u_key]  # (out_dim, rank)
-        V = self._deltas[v_key]  # (rank, in_dim)
-
-        # Efficient low-rank application
-        # y = x @ base.T + x @ V.T @ U.T
-        base_out = x @ base.T
-        delta_out = (x @ V.T) @ U.T
-        out = base_out + delta_out
-
-        # Apply bias if available
-        # Biases are stored per-expert: (num_experts, out_dim)
-        bias_key = f"{projection}_bias"
-        if bias_key in self._biases:
-            bias = self._biases[bias_key][expert]  # (out_dim,)
-            out = out + bias
-
-        return out
-
-    @property
-    def num_layers(self) -> int:
-        """Number of MoE layers."""
-        return self.config.num_layers
-
-    @property
-    def num_experts(self) -> int:
-        """Number of experts per layer."""
-        return self.config.num_experts
-
-    @property
-    def moe_layer_indices(self) -> list[int]:
-        """Original layer indices that are MoE layers."""
-        return self.config.moe_layer_indices
-
-    def memory_usage_mb(self) -> float:
-        """Current memory usage in MB."""
-        total = 0
-        for w in self._base.values():
-            total += w.nbytes
-        for w in self._deltas.values():
-            total += w.nbytes
-        return total / (1024 * 1024)
