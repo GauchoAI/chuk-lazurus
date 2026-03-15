@@ -41,14 +41,7 @@ def extract_surprise(
       - max_pos:  (num_windows,) — position of that token within the window
       - max_token: (num_windows,) — the token ID that was surprising
     """
-    from .....inference.context.kv_generator import make_kv_generator
-
-    kv_gen = make_kv_generator(engine.model, config)
-
-    # Warm up
-    _warm = mx.array([[1, 2, 3]])
-    _, _kv = kv_gen.prefill(_warm)
-    mx.eval()
+    kv_gen = engine.kv_gen
 
     t0 = time.time()
     max_ranks = np.zeros(num_archived, dtype=np.int32)
@@ -63,12 +56,9 @@ def extract_surprise(
 
         ids = mx.array(w_tokens)[None]  # (1, seq_len)
 
-        # Chain from prior window if available
-        if wid > 0 and engine.checkpoints.has(wid - 1):
-            prior_kv, prior_abs = engine.checkpoints.load(wid - 1)
-            logits, _kv = kv_gen.extend(ids, prior_kv, abs_start=w_abs)
-        else:
-            logits, _kv = kv_gen.prefill(ids)
+        # Fresh prefill per window — no KV chaining needed.
+        # Surprise measures how unexpected each token is given its window context.
+        logits, _kv = kv_gen.prefill(ids)
 
         mx.eval(logits)
 
@@ -78,21 +68,24 @@ def extract_surprise(
         best_pos = 0
         best_tok = 0
 
-        # Get all logits as numpy for ranking
-        # Use argsort descending on each position, find where actual token lands
-        logits_np = np.array(logits[0].tolist(), dtype=np.float32)  # (seq_len, vocab)
+        # Rank each actual token against the model's predictions.
+        # Use argmax-based ranking: count how many tokens have higher logit.
+        logits_f32 = logits[0].astype(mx.float32)  # (seq_len, vocab)
+        mx.eval(logits_f32)
 
-        for pos in range(len(w_tokens) - 1):
-            actual_token = w_tokens[pos + 1]
-            # Rank: how many tokens have higher logit than the actual token?
-            token_logit = logits_np[pos, actual_token]
-            rank = int(np.sum(logits_np[pos] > token_logit))
-            # rank=0 means it was the top prediction, rank=50000 means very surprising
+        # For each position, count how many vocab tokens have higher logit
+        # than the actual next token. rank=0 → top prediction, rank=50000 → very surprising.
+        actual_ids = mx.array(w_tokens[1:])  # next tokens
+        # Gather the logit of each actual token: logits_f32[pos, actual_ids[pos]]
+        actual_logits = logits_f32[mx.arange(len(w_tokens) - 1), actual_ids]  # (seq_len-1,)
+        # Count tokens with higher logit per position (vectorized)
+        ranks = mx.sum(logits_f32[:len(w_tokens) - 1] > actual_logits[:, None], axis=1)
+        mx.eval(ranks)
 
-            if rank > best_rank:
-                best_rank = rank
-                best_pos = pos + 1  # position of the surprising token
-                best_tok = actual_token
+        max_idx = int(mx.argmax(ranks).item())
+        best_rank = int(ranks[max_idx].item())
+        best_pos = max_idx + 1  # position of the surprising token
+        best_tok = w_tokens[best_pos]
 
         max_ranks[wid] = best_rank
         max_positions[wid] = best_pos

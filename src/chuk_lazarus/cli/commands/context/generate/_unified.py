@@ -111,31 +111,52 @@ def _unified_generate(
             system_prompt=system_prompt,
         )
 
-    # ── FACTUAL: compass geometric → replay directly ──────────────────
+    # ── FACTUAL: dual compass (PCA + geometric), RRF merge ─────────
+    # Run both strategies, merge rankings. Compass is stable, geometric
+    # discovers query-specific directions. Together: robust for any corpus.
     t0 = time.time()
-    routed = compass_route(
+    routed_compass = compass_route(
+        lib, kv_gen, prompt_ids, prompt_text, tokenizer,
+        model_config=model_config,
+        strategy=RoutingStrategy.COMPASS,
+        top_k=_COMPASS_TOP_K,
+    )
+    compass_ms = (time.time() - t0) * 1000
+
+    t0 = time.time()
+    routed_geometric = compass_route(
         lib, kv_gen, prompt_ids, prompt_text, tokenizer,
         model_config=model_config,
         strategy=RoutingStrategy.GEOMETRIC,
         top_k=_COMPASS_TOP_K,
     )
-    route_ms = (time.time() - t0) * 1000
+    geometric_ms = (time.time() - t0) * 1000
 
-    if not routed:
+    # RRF merge: rank fusion with k=60
+    rrf_k = 60
+    rrf_scores: dict[int, float] = {}
+    for rank, wid in enumerate(reversed(routed_compass)):
+        rrf_scores[wid] = rrf_scores.get(wid, 0) + 1.0 / (rrf_k + rank + 1)
+    for rank, wid in enumerate(reversed(routed_geometric)):
+        rrf_scores[wid] = rrf_scores.get(wid, 0) + 1.0 / (rrf_k + rank + 1)
+
+    if not rrf_scores:
         return GenerateResult(
             response="(No candidates found)",
             tokens_generated=0,
             context_tokens=0,
         )
 
+    merged = sorted(rrf_scores.items(), key=lambda x: -x[1])
+    total_ms = compass_ms + geometric_ms
     print(
-        f"  Compass geometric: {len(routed)} candidates ({route_ms:.0f}ms)",
+        f"  Dual compass: {len(merged)} candidates "
+        f"(compass {compass_ms:.0f}ms + geometric {geometric_ms:.0f}ms = {total_ms:.0f}ms)",
         file=sys.stderr,
     )
 
-    # Replay top-3 by compass score (compass_route returns ascending)
-    replay_count = min(3, len(routed))
-    best_wids = routed[-replay_count:]
+    replay_count = min(3, len(merged))
+    best_wids = [wid for wid, _ in merged[:replay_count]]
     print(f"  Replay: {best_wids}", file=sys.stderr)
 
     # ── Replay and generate ───────────────────────────────────────────
