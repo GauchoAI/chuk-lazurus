@@ -216,6 +216,9 @@ class CheckpointLibrary:
             return {}  # darkspace libraries have no checkpoints
         # mx.load returns a lazy dict — arrays materialised only on access.
         raw = mx.load(str(ckpt_path))
+        # Check if checkpoint data actually exists (darkspace may write empty file)
+        if f"w0_l0_k" not in raw:
+            return {}
         result: dict[int, list[tuple[mx.array, mx.array]]] = {}
         for wid in range(self.manifest.num_windows):
             kv_pairs = [
@@ -358,6 +361,11 @@ class CheckpointLibrary:
         if self._compass_basis is None:
             return None
         return int(self._compass_basis["pc_end"].item())
+
+    @property
+    def has_sparse_index(self) -> bool:
+        """True if this library has a sparse semantic index (Mode 5)."""
+        return (self._path / "sparse_index.json").exists()
 
     @property
     def is_darkspace(self) -> bool:

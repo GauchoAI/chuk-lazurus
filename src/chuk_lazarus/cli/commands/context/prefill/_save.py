@@ -46,6 +46,7 @@ def save_library(
     run_darkspace: bool = True,
     run_pages: bool = True,
     run_surprise: bool = True,
+    run_sparse: bool = True,
 ) -> None:
     """Write all library files from the engine's current archived state.
 
@@ -137,6 +138,32 @@ def save_library(
             from ._surprise import extract_surprise
 
             extract_surprise(engine, output_path, num_archived, config)
+
+        # Sparse: keyword extraction for Mode 5 sparse semantic index
+        if run_sparse:
+            # Check if engine is SparseIndexEngine with inline extraction already done
+            if hasattr(engine, 'sparse_index') and len(engine.sparse_index) > 0:
+                # Inline extraction — index was built during _close_window()
+                # Just save it. Zero additional compute.
+                engine.sparse_index.save(output_path / "sparse_index.json")
+                stats = engine.sparse_index.stats()
+                size_kb = (output_path / "sparse_index.json").stat().st_size / 1024
+                parametric_count = sum(
+                    1 for e in engine.sparse_index.entries if not e.keywords
+                )
+                print(
+                    f"  Sparse index (inline): {stats['non_empty']} novel, "
+                    f"{parametric_count} parametric, "
+                    f"{stats['total_keywords']} keywords "
+                    f"({stats['avg_keywords']:.1f}/window), "
+                    f"{size_kb:.0f} KB",
+                    file=sys.stderr,
+                )
+            else:
+                # Fallback: separate extraction pass (forward pass per window)
+                from ._sparse import extract_sparse
+
+                extract_sparse(engine, tokenizer, output_path, num_archived)
 
     # --- Pages ---
     if store_pages and run_pages:

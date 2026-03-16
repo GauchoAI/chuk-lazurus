@@ -25,3 +25,4 @@ class RoutingStrategy(str, Enum):
     PROBE = "probe"              # probe-driven navigation — grounding probe controls everything
     UNIFIED = "unified"          # three-probe architecture — dark space decides everything
     RESIDUAL = "residual"  # legacy: mean-centered cosine similarity
+    SPARSE = "sparse"      # BM25 over pre-extracted keyword index (Mode 5 hybrid routing)

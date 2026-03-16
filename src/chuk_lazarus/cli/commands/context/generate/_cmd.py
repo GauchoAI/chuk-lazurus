@@ -297,9 +297,26 @@ async def context_generate_cmd(args: Namespace) -> None:
         and len(replay_ids) == 1
         and replay_ids[0] == "inject"
     )
+    use_sparse = (
+        isinstance(replay_ids, list)
+        and len(replay_ids) == 1
+        and replay_ids[0] == "sparse"
+    )
 
     # Dispatch to mode handlers
-    if use_accumulated:
+    if use_sparse:
+        from ._modes._sparse_twopass import run_sparse_twopass, needs_verbatim, needs_detail
+        max_kw = getattr(args, "max_keywords", None)
+
+        # Two-pass: sparse index → optional targeted replay
+        result = run_sparse_twopass(
+            lib, kv_gen, engine, tokenizer, prompt_text, config, mx,
+            max_keywords=max_kw,
+        )
+        print(result.to_display())
+        return
+
+    elif use_accumulated:
         from ._modes._accumulated import run_accumulated
         context_kv, seq_len = run_accumulated(lib, kv_gen, mx)
 

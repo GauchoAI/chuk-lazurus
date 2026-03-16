@@ -21,6 +21,7 @@ from ._model_based import (
 )
 from ._composite import _darkspace_score_windows, _guided_score_windows
 from ._legacy import _residual_cosine_score_windows
+from ._sparse import _sparse_score_windows
 
 
 def compass_route(
@@ -202,6 +203,16 @@ def compass_route(
             scores = _directed_score_windows(lib, kv_gen, prompt_ids)
             layer = lib.compass_layer
             method_name = f"directed (L{layer}, query-defined 1D projection)"
+
+    elif strategy == RoutingStrategy.SPARSE:
+        if not lib.has_sparse_index:
+            print("  Warning: no sparse index in library, falling back to BM25", file=sys.stderr)
+            print("  Run prefill with --phases sparse to generate it.", file=sys.stderr)
+            scores = _bm25_score_windows(lib, tokenizer, prompt_text)
+            method_name = "BM25 (fallback, no sparse index)"
+        else:
+            scores = _sparse_score_windows(lib, prompt_text)
+            method_name = "sparse keyword BM25"
 
     elif strategy == RoutingStrategy.RESIDUAL:
         if not lib.has_residuals:

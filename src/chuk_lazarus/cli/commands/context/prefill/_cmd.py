@@ -28,6 +28,7 @@ async def context_prefill_cmd(args: Namespace) -> None:
         LibraryFile,
     )
     from .....inference.context.unlimited_engine import UnlimitedContextEngine
+    from .....inference.context.sparse_engine import SparseIndexEngine
 
     config = PrefillConfig.from_args(args)
 
@@ -86,9 +87,15 @@ async def context_prefill_cmd(args: Namespace) -> None:
     # ------------------------------------------------------------------
     # 4. Build engine
     # ------------------------------------------------------------------
-    engine = UnlimitedContextEngine(
-        pipeline.model, pipeline.config, window_size=config.window_size
-    )
+    if config.run_sparse:
+        engine = SparseIndexEngine(
+            pipeline.model, pipeline.config, window_size=config.window_size
+        )
+        engine.set_tokenizer(tokenizer)
+    else:
+        engine = UnlimitedContextEngine(
+            pipeline.model, pipeline.config, window_size=config.window_size
+        )
 
     # Warm up compute graph
     _warm = mx.array([[1, 2, 3]])
@@ -143,6 +150,7 @@ async def context_prefill_cmd(args: Namespace) -> None:
             run_darkspace=config.run_darkspace,
             run_pages=config.run_pages,
             run_surprise=config.run_surprise,
+            run_sparse=config.run_sparse,
         )
         elapsed = time.monotonic() - start_wall
         s = engine.stats()
@@ -231,6 +239,7 @@ async def context_prefill_cmd(args: Namespace) -> None:
             run_darkspace=config.run_darkspace,
             run_pages=config.run_pages,
             run_surprise=config.run_surprise,
+            run_sparse=config.run_sparse,
         )
         if quick and current_archived > 1:
             evict_ids = list(range(_last_saved_window, current_archived - 1))

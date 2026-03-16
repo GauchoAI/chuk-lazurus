@@ -73,18 +73,26 @@ def extract_surprise(
         logits_f32 = logits[0].astype(mx.float32)  # (seq_len, vocab)
         mx.eval(logits_f32)
 
+        # Skip first 32 positions — boundary artifacts dominate there
+        # (no prior context → everything looks surprising).
+        skip = min(32, len(w_tokens) - 2)
+        n_score = len(w_tokens) - 1 - skip  # positions to score
+
+        if n_score <= 0:
+            continue
+
         # For each position, count how many vocab tokens have higher logit
         # than the actual next token. rank=0 → top prediction, rank=50000 → very surprising.
-        actual_ids = mx.array(w_tokens[1:])  # next tokens
-        # Gather the logit of each actual token: logits_f32[pos, actual_ids[pos]]
-        actual_logits = logits_f32[mx.arange(len(w_tokens) - 1), actual_ids]  # (seq_len-1,)
+        actual_ids = mx.array(w_tokens[skip + 1:])  # next tokens after skip
+        logits_slice = logits_f32[skip:skip + n_score]  # (n_score, vocab)
+        actual_logits = logits_slice[mx.arange(n_score), actual_ids]  # (n_score,)
         # Count tokens with higher logit per position (vectorized)
-        ranks = mx.sum(logits_f32[:len(w_tokens) - 1] > actual_logits[:, None], axis=1)
+        ranks = mx.sum(logits_slice > actual_logits[:, None], axis=1)
         mx.eval(ranks)
 
         max_idx = int(mx.argmax(ranks).item())
         best_rank = int(ranks[max_idx].item())
-        best_pos = max_idx + 1  # position of the surprising token
+        best_pos = skip + max_idx + 1  # position within the window
         best_tok = w_tokens[best_pos]
 
         max_ranks[wid] = best_rank

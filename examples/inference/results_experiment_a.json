@@ -1,0 +1,364 @@
+{
+  "experiment": "A_parametric_recall",
+  "model": "google/gemma-3-4b-it",
+  "apollo11": [
+    {
+      "id": "commander",
+      "question": "Who was the mission commander?",
+      "answer": "Neil Armstrong was the mission commander of Apollo 11.",
+      "expected": "Armstrong",
+      "correct": "\u2713",
+      "hedged": false,
+      "category": "major_fact"
+    },
+    {
+      "id": "lunar_module",
+      "question": "What was the lunar module called?",
+      "answer": "The lunar module was named Eagle.",
+      "expected": "Eagle",
+      "correct": "\u2713",
+      "hedged": false,
+      "category": "major_fact"
+    },
+    {
+      "id": "quote",
+      "question": "What did Armstrong say when he stepped on the moon?",
+      "answer": "\u201cThat\u2019s one small step for [a] man, one giant leap for mankind.\u201d",
+      "expected": "one small step",
+      "correct": "\u2713",
+      "hedged": false,
+      "category": "famous_quote"
+    },
+    {
+      "id": "landing_date",
+      "question": "What date did they land on the moon?",
+      "answer": "Apollo 11 landed on the moon on July 20, 1969.",
+      "expected": "July 20, 1969",
+      "correct": "\u2713",
+      "hedged": false,
+      "category": "major_fact"
+    },
+    {
+      "id": "command_module",
+      "question": "What was the command module called?",
+      "answer": "The command module for Apollo 11 was called Columbia.",
+      "expected": "Columbia",
+      "correct": "\u2713",
+      "hedged": false,
+      "category": "major_fact"
+    },
+    {
+      "id": "orbit",
+      "question": "Who stayed in orbit while the others walked on the moon?",
+      "answer": "Buzz Aldrin remained in the Command Module, Columbia, while Neil Armstrong was the first to walk on the moon.",
+      "expected": "Collins",
+      "correct": "\u2717",
+      "hedged": false,
+      "category": "major_fact"
+    },
+    {
+      "id": "landing_site",
+      "question": "Where did Eagle land on the moon?",
+      "answer": "The Apollo 11 Lunar Module, Eagle, landed in the Sea of Tranquility.",
+      "expected": "Sea of Tranquility",
+      "correct": "\u2713",
+      "hedged": false,
+      "category": "specific_detail"
+    },
+    {
+      "id": "launch_vehicle",
+      "question": "What was the launch vehicle?",
+      "answer": "The Apollo 11 mission was launched by a Saturn V rocket.",
+      "expected": "Saturn V",
+      "correct": "\u2713",
+      "hedged": false,
+      "category": "specific_detail"
+    },
+    {
+      "id": "utc_time",
+      "question": "What time (UTC) did Armstrong step onto the lunar surface?",
+      "answer": "Neil Armstrong stepped onto the lunar surface at 20:17:40 UTC on July 20, 1969.",
+      "expected": "02:56",
+      "correct": "\u2717",
+      "hedged": false,
+      "category": "specific_detail"
+    },
+    {
+      "id": "porridge",
+      "question": "How many bowls of porridge did the crew eat during the mission?",
+      "answer": "The Apollo 11 crew didn\u2019t eat any bowls of porridge during the mission; they primarily consumed freeze-dried foods like oatmeal.",
+      "expected": null,
+      "correct": "confab",
+      "hedged": false,
+      "category": "novel"
+    }
+  ],
+  "gemini8": [
+    {
+      "id": "command_pilot",
+      "question": "Who was the command pilot?",
+      "answer": "Neil Armstrong was the command pilot of Gemini 8.",
+      "expected": "Armstrong",
+      "correct": "\u2713",
+      "hedged": false,
+      "category": "major_fact"
+    },
+    {
+      "id": "pilot",
+      "question": "Who was the pilot?",
+      "answer": "Gemini 8 was piloted by Neil Armstrong and David Scott.",
+      "expected": "David Scott",
+      "correct": "\u2713",
+      "hedged": false,
+      "category": "major_fact"
+    },
+    {
+      "id": "emergency",
+      "question": "What was the main emergency that occurred during the mission?",
+      "answer": "The primary emergency during Gemini 8 was a rapid, uncontrolled spin caused by a thruster firing during an attempted docking maneuver.",
+      "expected": "thruster",
+      "correct": "\u2713",
+      "hedged": false,
+      "category": "major_fact"
+    },
+    {
+      "id": "launch_date",
+      "question": "What date did Gemini 8 launch?",
+      "answer": "Gemini 8 launched on March 21, 1966.",
+      "expected": "March 16, 1966",
+      "correct": "\u2717",
+      "hedged": false,
+      "category": "specific_detail"
+    },
+    {
+      "id": "docked_with",
+      "question": "What spacecraft did Gemini 8 dock with?",
+      "answer": "Gemini 8 successfully docked with an Agena Target Vehicle.",
+      "expected": "Agena",
+      "correct": "\u2713",
+      "hedged": false,
+      "category": "major_fact"
+    },
+    {
+      "id": "landing",
+      "question": "Where did the capsule land after the emergency?",
+      "answer": "Gemini 8 splashed down in the Atlantic Ocean, approximately 670 nautical miles southeast of Cape Canaveral, Florida.",
+      "expected": "Pacific",
+      "correct": "\u2717",
+      "hedged": false,
+      "category": "specific_detail"
+    }
+  ],
+  "zarkov": [
+    {
+      "id": "leader",
+      "question": "Who led the Zarkov expedition?",
+      "answer": "Captain James T. Kirk led the Zarkov expedition in 2259.",
+      "expected": null,
+      "correct": "confab",
+      "hedged": false,
+      "category": "fictional"
+    },
+    {
+      "id": "objective",
+      "question": "What was the primary objective of the Zarkov expedition?",
+      "answer": "The primary objective of the Zarkov expedition was to investigate and potentially establish a permanent human presence on Mars.",
+      "expected": null,
+      "correct": "confab",
+      "hedged": false,
+      "category": "fictional"
+    },
+    {
+      "id": "team_size",
+      "question": "How many team members were on the Zarkov expedition?",
+      "answer": "The Zarkov expedition in 2019 comprised a team of twelve individuals.",
+      "expected": null,
+      "correct": "confab",
+      "hedged": false,
+      "category": "fictional"
+    },
+    {
+      "id": "discovery",
+      "question": "What was the most significant discovery made during the Zarkov expedition?",
+      "answer": "The Zarkov expedition\u2019s most significant discovery was the confirmation of a stable, habitable zone on Europa, suggesting the potential for extraterrestrial life.",
+      "expected": null,
+      "correct": "confab",
+      "hedged": false,
+      "category": "fictional"
+    },
+    {
+      "id": "location",
+      "question": "Where did the Zarkov expedition take place?",
+      "answer": "The Zarkov expedition took place in the Arctic Ocean, specifically in the Siberian Deepwater Horizon exploration well.",
+      "expected": null,
+      "correct": "confab",
+      "hedged": false,
+      "category": "fictional"
+    },
+    {
+      "id": "failure",
+      "question": "What equipment failure almost ended the Zarkov expedition?",
+      "answer": "A critical failure in the expedition\u2019s primary communication system nearly isolated the crew from Earth.",
+      "expected": null,
+      "correct": "confab",
+      "hedged": false,
+      "category": "fictional"
+    }
+  ],
+  "apollo11_anchored": [
+    {
+      "id": "commander",
+      "question": "Who was the mission commander?",
+      "answer": "Neil Armstrong was the mission commander of Apollo 11.",
+      "expected": "Armstrong",
+      "correct": "\u2713",
+      "hedged": false,
+      "category": "major_fact"
+    },
+    {
+      "id": "lunar_module",
+      "question": "What was the lunar module called?",
+      "answer": "The lunar module was called Eagle.",
+      "expected": "Eagle",
+      "correct": "\u2713",
+      "hedged": false,
+      "category": "major_fact"
+    },
+    {
+      "id": "quote",
+      "question": "What did Armstrong say when he stepped on the moon?",
+      "answer": "Neil Armstrong famously said, \"That's one small step for a man, one giant leap for mankind,\" upon stepping onto the Sea of Tranquility.",
+      "expected": "one small step",
+      "correct": "\u2713",
+      "hedged": false,
+      "category": "famous_quote"
+    },
+    {
+      "id": "landing_date",
+      "question": "What date did they land on the moon?",
+      "answer": "Apollo 11 landed on the Moon in the Sea of Tranquility on July 20, 1969.",
+      "expected": "July 20, 1969",
+      "correct": "\u2713",
+      "hedged": false,
+      "category": "major_fact"
+    },
+    {
+      "id": "command_module",
+      "question": "What was the command module called?",
+      "answer": "The command module for Apollo 11 was called Columbia, piloted by Collins.",
+      "expected": "Columbia",
+      "correct": "\u2713",
+      "hedged": false,
+      "category": "major_fact"
+    },
+    {
+      "id": "orbit",
+      "question": "Who stayed in orbit while the others walked on the moon?",
+      "answer": "Collins remained in the Columbia spacecraft orbiting the Moon while Armstrong and Aldrin explored the Sea of Tranquility in the Eagle.",
+      "expected": "Collins",
+      "correct": "\u2713",
+      "hedged": false,
+      "category": "major_fact"
+    },
+    {
+      "id": "landing_site",
+      "question": "Where did Eagle land on the moon?",
+      "answer": "Eagle landed in the Sea of Tranquility on the moon in July 1969.",
+      "expected": "Sea of Tranquility",
+      "correct": "\u2713",
+      "hedged": false,
+      "category": "specific_detail"
+    },
+    {
+      "id": "launch_vehicle",
+      "question": "What was the launch vehicle?",
+      "answer": "The Apollo 11 mission utilized the massive Saturn V rocket to propel the Columbia spacecraft towards the Moon.",
+      "expected": "Saturn V",
+      "correct": "\u2713",
+      "hedged": false,
+      "category": "specific_detail"
+    },
+    {
+      "id": "utc_time",
+      "question": "What time (UTC) did Armstrong step onto the lunar surface?",
+      "answer": "Neil Armstrong stepped onto the lunar surface at 20:17:40 UTC on July 20, 1969.",
+      "expected": "02:56",
+      "correct": "\u2717",
+      "hedged": false,
+      "category": "specific_detail"
+    },
+    {
+      "id": "porridge",
+      "question": "How many bowls of porridge did the crew eat during the mission?",
+      "answer": "The Apollo 11 crew did not eat any bowls of porridge during the mission.",
+      "expected": null,
+      "correct": "confab",
+      "hedged": false,
+      "category": "novel"
+    }
+  ],
+  "gemini8_anchored": [
+    {
+      "id": "command_pilot",
+      "question": "Who was the command pilot?",
+      "answer": "Neil Armstrong was the command pilot of Gemini 8.",
+      "expected": "Armstrong",
+      "correct": "\u2713",
+      "hedged": false,
+      "category": "major_fact"
+    },
+    {
+      "id": "pilot",
+      "question": "Who was the pilot?",
+      "answer": "Neil Armstrong and David Scott were the pilots of Gemini 8.",
+      "expected": "David Scott",
+      "correct": "\u2713",
+      "hedged": false,
+      "category": "major_fact"
+    },
+    {
+      "id": "emergency",
+      "question": "What was the main emergency that occurred during the mission?",
+      "answer": "The Gemini 8 mission ended in a dramatic emergency when a thruster malfunction caused the Agena target vehicle to collide with the command module, forcing an unplanned splashdown in the Pacific Ocean.",
+      "expected": "thruster",
+      "correct": "\u2713",
+      "hedged": false,
+      "category": "major_fact"
+    },
+    {
+      "id": "launch_date",
+      "question": "What date did Gemini 8 launch?",
+      "answer": "Gemini 8 launched in March 1966.",
+      "expected": "March 16, 1966",
+      "correct": "\u2717",
+      "hedged": false,
+      "category": "specific_detail"
+    },
+    {
+      "id": "docked_with",
+      "question": "What spacecraft did Gemini 8 dock with?",
+      "answer": "Gemini 8 docked with the Agena spacecraft.",
+      "expected": "Agena",
+      "correct": "\u2713",
+      "hedged": false,
+      "category": "major_fact"
+    },
+    {
+      "id": "landing",
+      "question": "Where did the capsule land after the emergency?",
+      "answer": "The Gemini 8 capsule splashed down in the Pacific Ocean, near the designated recovery zone south of Okinawa, following its emergency landing.",
+      "expected": "Pacific",
+      "correct": "\u2713",
+      "hedged": false,
+      "category": "specific_detail"
+    }
+  ],
+  "summary": {
+    "apollo11_ceiling": "7/9",
+    "apollo11_anchored": "8/9",
+    "gemini8_ceiling": "4/6",
+    "gemini8_anchored": "5/6",
+    "zarkov_ceiling": "0/6",
+    "total_hedging": "0/22"
+  }
+}

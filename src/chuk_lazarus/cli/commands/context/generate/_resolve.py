@@ -45,6 +45,8 @@ def _resolve_replay(
                 return ["explore"]  # agentic navigation
             elif val == "inject":
                 return ["inject"]  # L26 residual injection
+            elif val == "sparse":
+                return ["sparse"]  # Mode 5 sparse semantic index
             else:
                 try:
                     return [int(val)]

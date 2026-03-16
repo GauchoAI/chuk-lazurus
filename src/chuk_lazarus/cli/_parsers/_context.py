@@ -67,8 +67,8 @@ def register_context_parsers(subparsers):
         "--phases",
         default="all",
         help=(
-            "Comma-separated phases to run: windows, interval, compass, darkspace, pages, all. "
-            "E.g. --phases windows to prefill only, --phases compass to recalibrate routing "
+            "Comma-separated phases to run: windows, interval, compass, darkspace, pages, surprise, sparse, all. "
+            "E.g. --phases windows to prefill only, --phases sparse to extract keyword index "
             "on an existing library. Default: all"
         ),
     )
@@ -104,7 +104,7 @@ def register_context_parsers(subparsers):
     )
     ctx_generate.add_argument(
         "--strategy", default=None,
-        choices=["unified", "bm25", "compass", "qk", "geometric", "contrastive", "darkspace", "guided", "directed", "twopass", "attention", "deflection", "preview", "hybrid", "iterative", "probe", "residual"],
+        choices=["unified", "bm25", "compass", "qk", "geometric", "contrastive", "darkspace", "guided", "directed", "twopass", "attention", "deflection", "preview", "hybrid", "iterative", "probe", "residual", "sparse"],
         help="Routing strategy: unified (default, three-probe), geometric, iterative, probe, bm25, residual (legacy)",
     )
     ctx_generate.add_argument(
@@ -124,6 +124,10 @@ def register_context_parsers(subparsers):
         action="store_true",
         dest="no_chat_template",
         help="Send prompt as raw text without chat template wrapping",
+    )
+    ctx_generate.add_argument(
+        "--max-keywords", type=int, default=3, dest="max_keywords",
+        help="Max keywords per window in sparse mode (default: 3 for triplet compression)",
     )
     ctx_generate.set_defaults(func=lambda args: asyncio.run(context_generate_cmd(args)))
 

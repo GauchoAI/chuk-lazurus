@@ -74,6 +74,13 @@ from .unlimited_engine import (
     TokenArchive,
     UnlimitedContextEngine,
 )
+from .sparse_index import (
+    EntityExtractor,
+    SparseEntry,
+    SparseSemanticIndex,
+    SurpriseClassifier,
+)
+from .sparse_engine import SparseIndexEngine
 
 __all__ = [
     # Protocols
@@ -116,4 +123,10 @@ __all__ = [
     "ContextCheckpointFile",
     "ContextCheckpointStatus",
     "KVCheckpoint",
+    # Mode 5 — sparse semantic index
+    "EntityExtractor",
+    "SparseEntry",
+    "SparseSemanticIndex",
+    "SurpriseClassifier",
+    "SparseIndexEngine",
 ]

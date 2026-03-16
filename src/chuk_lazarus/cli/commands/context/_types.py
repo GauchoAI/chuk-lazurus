@@ -60,7 +60,7 @@ class PrefillConfig(CommandConfig):
     )
     phases: set[str] = Field(
         default_factory=lambda: {"all"},
-        description="Phases to run: windows, interval, compass, darkspace, pages, surprise, all",
+        description="Phases to run: windows, interval, compass, darkspace, pages, surprise, sparse, all",
     )
 
     @property
@@ -86,6 +86,10 @@ class PrefillConfig(CommandConfig):
     @property
     def run_surprise(self) -> bool:
         return "all" in self.phases or "surprise" in self.phases
+
+    @property
+    def run_sparse(self) -> bool:
+        return "all" in self.phases or "sparse" in self.phases
 
     @classmethod
     def from_args(cls, args: Namespace) -> PrefillConfig:
