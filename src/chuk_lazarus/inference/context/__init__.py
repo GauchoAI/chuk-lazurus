@@ -1,12 +1,13 @@
 """
 Context management for stateful inference.
 
-Four generation strategies:
+Five generation strategies:
 
   KVDirectGenerator        — model-agnostic KV-direct step generator (Mode 2)
   CompiledRSGenerator      — compiled residual-stream generator (Mode 1b, Gemma-only)
   BoundedKVEngine (Mode 3) — three-tier bounded memory (HOT/WARM/COLD, Gemma-only)
   UnlimitedContextEngine   — checkpoint-chained window replay (Mode 4)
+  KV Injection (Mode 6)    — prefix caching with pre-saved full KV per window
 
 Protocols and adapters for any transformer architecture:
   ModelBackboneProtocol    — interface that any backbone adapter must satisfy
@@ -76,6 +77,7 @@ from .unlimited_engine import (
 )
 from .sparse_index import (
     EntityExtractor,
+    FactSpan,
     SparseEntry,
     SparseSemanticIndex,
     SurpriseClassifier,

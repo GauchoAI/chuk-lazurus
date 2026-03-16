@@ -58,6 +58,10 @@ class PrefillConfig(CommandConfig):
         default=False,
         description="Store pre-RoPE K,V pages for instant injection at generate time",
     )
+    store_kv_full: bool = Field(
+        default=False,
+        description="Save full KV cache per window for Mode 6 KV injection",
+    )
     phases: set[str] = Field(
         default_factory=lambda: {"all"},
         description="Phases to run: windows, interval, compass, darkspace, pages, surprise, sparse, all",
@@ -107,6 +111,7 @@ class PrefillConfig(CommandConfig):
             residual_mode=ResidualMode(getattr(args, "residual_mode", "interval")),
             frame_bank=Path(fb) if fb else None,
             store_pages=getattr(args, "store_pages", False),
+            store_kv_full=getattr(args, "store_kv_full", False),
             phases=phases,
         )
 
@@ -115,7 +120,7 @@ class GenerateConfig(CommandConfig):
     """Configuration for the context generate command (library format)."""
 
     model: str = Field(..., description="Model ID or local path")
-    checkpoint: Path = Field(..., description="Library directory to load from")
+    checkpoint: Path | None = Field(default=None, description="Library directory to load from (None for plain generation)")
     prompt: str | None = Field(default=None, description="Prompt text")
     prompt_file: Path | None = Field(default=None, description="File containing the prompt")
     max_tokens: int = Field(
@@ -132,9 +137,10 @@ class GenerateConfig(CommandConfig):
 
     @classmethod
     def from_args(cls, args: Namespace) -> GenerateConfig:
+        cp = getattr(args, "checkpoint", None)
         return cls(
             model=args.model,
-            checkpoint=Path(args.checkpoint),
+            checkpoint=Path(cp) if cp else None,
             prompt=getattr(args, "prompt", None),
             prompt_file=Path(args.prompt_file) if getattr(args, "prompt_file", None) else None,
             max_tokens=getattr(args, "max_tokens", ContextDefaults.GENERATE_MAX_TOKENS),

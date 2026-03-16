@@ -29,6 +29,7 @@ def extract_sparse(
     from .....inference.context.sparse_index import (
         FUNCTION_WORDS,
         EntityExtractor,
+        FactSpan,
         SparseEntry,
         SparseSemanticIndex,
     )
@@ -133,10 +134,26 @@ def extract_sparse(
                     for p in range(max(0, tok_idx - 3), min(len(full_ranks), tok_idx + 4)):
                         used_positions.add(p)
 
+        # Extract fact spans — top-N most surprising positions, deduplicated
+        n_spans = min(8, len(w_tokens))
+        span_candidates = sorted(range(len(full_ranks)), key=lambda i: -full_ranks[i])
+        fact_spans = []
+        span_positions: set[int] = set()
+        for pos in span_candidates:
+            if full_ranks[pos] < 3:
+                break
+            if any(abs(pos - sp) <= 5 for sp in span_positions):
+                continue
+            fact_spans.append(FactSpan(position=pos, radius=5))
+            span_positions.add(pos)
+            if len(fact_spans) >= n_spans:
+                break
+
         idx.add(SparseEntry(
             window_id=wid,
             keywords=keywords[:max_keywords],
             surprise_rank=max_rank,
+            fact_spans=fact_spans,
         ))
 
         if (wid + 1) % 50 == 0:

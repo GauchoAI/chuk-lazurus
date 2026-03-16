@@ -37,6 +37,7 @@ def _sparse_score_windows(
         entries = data
 
     # Build per-window keyword map
+    import re as _re
     window_keywords: dict[int, list[str]] = {}
     for entry in entries:
         wid = entry.get("window_id", -1)
@@ -45,15 +46,18 @@ def _sparse_score_windows(
         terms: list[str] = []
         for kw in kws:
             for word in kw.lower().split():
-                if len(word) > 1:
-                    terms.append(word)
+                clean = _re.sub(r'[^\w]', '', word)
+                if len(clean) > 1:
+                    terms.append(clean)
         window_keywords[wid] = terms
 
-    # Query terms
+    # Query terms (strip punctuation for matching)
+    import re as _re
     query_terms = set()
     for word in query_text.lower().split():
-        if len(word) > 1:
-            query_terms.add(word)
+        clean = _re.sub(r'[^\w]', '', word)
+        if len(clean) > 1:
+            query_terms.add(clean)
 
     if not query_terms:
         return [(wid, 0.0) for wid in range(lib.num_windows)]

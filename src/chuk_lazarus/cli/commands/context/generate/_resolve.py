@@ -47,6 +47,8 @@ def _resolve_replay(
                 return ["inject"]  # L26 residual injection
             elif val == "sparse":
                 return ["sparse"]  # Mode 5 sparse semantic index
+            elif val == "kv":
+                return ["kv"]  # Mode 6 KV injection (prefix caching)
             else:
                 try:
                     return [int(val)]

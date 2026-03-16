@@ -420,6 +420,173 @@ class KVDirectGenerator:
         return logits, kv_store, interval_residuals
 
     # ------------------------------------------------------------------
+    # Prefill with attention weight capture (L26 routing)
+    # ------------------------------------------------------------------
+
+    def prefill_with_attention(
+        self,
+        input_ids: mx.array,  # (1, S)
+        capture_layers: set[int] | None = None,
+    ) -> tuple[mx.array, KVStore, dict[int, mx.array]]:
+        """Prefill with manual attention at specified layers to capture weights.
+
+        Returns (logits, kv_store, attention_weights) where
+        attention_weights[layer_idx] has shape (1, num_heads, S, S) in float32.
+        """
+        backbone = self.backbone
+        B, S = input_ids.shape
+        h = backbone.embed(input_ids)
+        kv_store: KVStore = []
+
+        if capture_layers is None:
+            capture_layers = {26}
+
+        captured_weights: dict[int, mx.array] = {}
+
+        for i, layer in enumerate(backbone.adapted_layers):
+            mask = backbone.prefill_mask(i, h)
+            x = layer.pre_attn_norm(h)
+            q, k, v = layer.project_qkv(x, B, S, offset=0)
+
+            k_rpt = mx.repeat(k, layer.n_rep, axis=1) if layer.n_rep > 1 else k
+            v_rpt = mx.repeat(v, layer.n_rep, axis=1) if layer.n_rep > 1 else v
+
+            if i in capture_layers:
+                scores = (q @ k_rpt.transpose(0, 1, 3, 2)) * layer.attn_scale
+                scores = scores.astype(mx.float32)
+                if mask is not None:
+                    scores = scores + mask.astype(mx.float32)
+                weights = mx.softmax(scores, axis=-1)
+                captured_weights[i] = weights
+                attn_out = (weights.astype(v_rpt.dtype) @ v_rpt)
+                attn_out = attn_out.transpose(0, 2, 1, 3).reshape(B, S, -1)
+            else:
+                attn_out = mx.fast.scaled_dot_product_attention(
+                    q, k_rpt, v_rpt, scale=layer.attn_scale, mask=mask
+                )
+                attn_out = attn_out.transpose(0, 2, 1, 3).reshape(B, S, -1)
+
+            attn_out = layer.output_project(attn_out)
+            h = layer.residual_add_attn(h, attn_out)
+            h = layer.residual_add_ffn(h, layer.ffn(layer.pre_ffn_norm(h)))
+            kv_store.append((k, v))
+
+        h = backbone.final_norm(h)
+        logits = backbone.unembed(h)
+
+        eval_targets = [logits]
+        eval_targets.extend(t for pair in kv_store for t in pair)
+        eval_targets.extend(captured_weights.values())
+        mx.eval(*eval_targets)
+
+        return logits, kv_store, captured_weights
+
+    # ------------------------------------------------------------------
+    # Pre-RoPE KV capture (Mode 6 — save for position-independent caching)
+    # ------------------------------------------------------------------
+
+    def prefill_pre_rope(
+        self,
+        input_ids: mx.array,  # (1, S)
+    ) -> tuple[mx.array, KVStore, KVStore, mx.array]:
+        """Prefill returning both post-RoPE KV and pre-RoPE K + V.
+
+        Returns (logits, kv_store, pre_rope_kv, residual_last) where:
+          - kv_store: standard post-RoPE KV (for continued generation)
+          - pre_rope_kv: list[L] of (K_pre_rope, V) per layer
+            K_pre_rope is post-norm, post-q/k-norm, but WITHOUT RoPE
+            V is position-independent (no RoPE on values)
+          - residual_last: pre-final-norm hidden state at last token
+
+        Save pre_rope_kv to disk. At load time, apply RoPE at desired
+        contiguous positions via inject_pre_rope_kv().
+        """
+        backbone = self.backbone
+        B, S = input_ids.shape
+        h = backbone.embed(input_ids)
+        kv_store: KVStore = []
+        pre_rope_kv: KVStore = []
+
+        for i, layer in enumerate(backbone.adapted_layers):
+            mask = backbone.prefill_mask(i, h)
+            x = layer.pre_attn_norm(h)
+
+            # Get both pre-RoPE and post-RoPE projections
+            _q_pre, k_pre, v = layer.project_qkv_pre_rope(x, B, S)
+            q, k, _v = layer.project_qkv(x, B, S, offset=0)
+
+            k_rpt = mx.repeat(k, layer.n_rep, axis=1) if layer.n_rep > 1 else k
+            v_rpt = mx.repeat(v, layer.n_rep, axis=1) if layer.n_rep > 1 else v
+
+            attn_out = mx.fast.scaled_dot_product_attention(
+                q, k_rpt, v_rpt, scale=layer.attn_scale, mask=mask
+            )
+            attn_out = attn_out.transpose(0, 2, 1, 3).reshape(B, S, -1)
+            attn_out = layer.output_project(attn_out)
+
+            h = layer.residual_add_attn(h, attn_out)
+            h = layer.residual_add_ffn(h, layer.ffn(layer.pre_ffn_norm(h)))
+
+            kv_store.append((k, v))
+            pre_rope_kv.append((k_pre, v))
+
+        residual_last = h[:, -1:, :]
+        h = backbone.final_norm(h)
+        logits = backbone.unembed(h)
+
+        eval_targets = [logits, residual_last]
+        eval_targets.extend(t for pair in kv_store for t in pair)
+        eval_targets.extend(t for pair in pre_rope_kv for t in pair)
+        mx.eval(*eval_targets)
+        return logits, kv_store, pre_rope_kv, residual_last
+
+    def inject_pre_rope_kv(
+        self,
+        windows_kv: list[KVStore],
+        window_sizes: list[int],
+        offset: int = 0,
+    ) -> KVStore:
+        """Build a KV store from pre-RoPE K,V with contiguous RoPE positions.
+
+        Takes multiple windows' pre-RoPE KV and applies RoPE so positions
+        are contiguous: window 0 gets offset..offset+S0-1, etc.
+
+        Args:
+            windows_kv: list of N windows, each is list[L] of (K_pre_rope, V)
+            window_sizes: list of N sequence lengths (tokens per window)
+            offset: starting RoPE position (e.g., after preamble)
+
+        Returns:
+            KVStore with all windows concatenated, RoPE at contiguous positions.
+        """
+        backbone = self.backbone
+        num_layers = len(backbone.adapted_layers)
+        kv_store: KVStore = []
+
+        # Compute position offsets for each window
+        offsets = []
+        pos = offset
+        for size in window_sizes:
+            offsets.append(pos)
+            pos += size
+
+        for li, layer in enumerate(backbone.adapted_layers):
+            k_parts = []
+            v_parts = []
+            for wi, wkv in enumerate(windows_kv):
+                k_pre, v = wkv[li]
+                # Apply RoPE at contiguous offset
+                k_roped = layer.apply_rope(k_pre, offset=offsets[wi])
+                k_parts.append(k_roped)
+                v_parts.append(v)
+            k_all = mx.concatenate(k_parts, axis=2)
+            v_all = mx.concatenate(v_parts, axis=2)
+            kv_store.append((k_all, v_all))
+
+        mx.eval(*[t for pair in kv_store for t in pair])
+        return kv_store
+
+    # ------------------------------------------------------------------
     # Extend — N new tokens batched against existing K,V store
     # ------------------------------------------------------------------
 

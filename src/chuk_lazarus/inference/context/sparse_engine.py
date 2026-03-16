@@ -43,6 +43,7 @@ from .sparse_index import (
     COMMON_ABBREVIATIONS,
     FUNCTION_WORDS,
     EntityExtractor,
+    FactSpan,
     SparseEntry,
     SparseSemanticIndex,
     SurpriseClassifier,
@@ -232,11 +233,31 @@ class SparseIndexEngine(UnlimitedContextEngine):
         # Step 3: extract keywords near novel positions
         keywords = self._extract_novel_keywords(text, token_texts, full_ranks)
 
-        # Step 4: accumulate
+        # Step 4: extract fact spans — top-N most surprising token positions
+        n_spans = min(8, len(token_ids))
+        ranked_positions = sorted(
+            range(len(full_ranks)),
+            key=lambda i: -full_ranks[i],
+        )
+        # Deduplicate: skip positions within ±5 of an already-selected one
+        fact_spans = []
+        selected_positions: set[int] = set()
+        for pos in ranked_positions:
+            if full_ranks[pos] < 3:
+                break  # below semi-parametric threshold
+            if any(abs(pos - sp) <= 5 for sp in selected_positions):
+                continue
+            fact_spans.append(FactSpan(position=pos, radius=5))
+            selected_positions.add(pos)
+            if len(fact_spans) >= n_spans:
+                break
+
+        # Step 5: accumulate
         entry = SparseEntry(
             window_id=window_id,
             keywords=keywords,
             surprise_rank=max_rank,
+            fact_spans=fact_spans,
         )
         self.sparse_index.add(entry)
 

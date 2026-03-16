@@ -378,6 +378,33 @@ class UnlimitedContextEngine:
         self.hot_len: int = 0  # tokens in kv_store
         self.abs_offset: int = 0  # abs position of first token in kv_store
         self._last_residual: mx.array | None = None  # residual at last token
+        self._kv_full_dir: str | None = None  # path to save full KV per window
+        self._kv_n_facts: int = 8  # fact positions to save per window
+        self._pre_rope_kv: list | None = None  # pre-RoPE K,V captured for Mode 6
+        self._last_logits: mx.array | None = None  # logits for surprise ranking
+
+    # ------------------------------------------------------------------
+    # Full KV save (Mode 6)
+    # ------------------------------------------------------------------
+
+    def enable_kv_full_save(self, output_dir: str, n_facts: int = 8) -> None:
+        """Enable saving fact-position pre-RoPE KV per window during _close_window().
+
+        Saves pre-RoPE K + V at the top-N most surprising token positions,
+        identified by prediction rank from the forward pass logits.
+
+        Storage per window: n_facts × 34L × 4 kv_heads × 320 head_dim × 2(K,V) × 2B
+          n_facts=8  → ~140 KB per window (vs 68 MB at all 512 positions)
+          725 windows → ~100 MB total (vs 48 GB)
+
+        At generation time, RoPE is re-applied at contiguous positions via
+        kv_gen.inject_pre_rope_kv().
+        """
+        import os
+        kv_dir = os.path.join(output_dir, "kv_pre_rope")
+        os.makedirs(kv_dir, exist_ok=True)
+        self._kv_full_dir = kv_dir
+        self._kv_n_facts = n_facts
 
     # ------------------------------------------------------------------
     # Public API
@@ -785,7 +812,13 @@ class UnlimitedContextEngine:
 
         if self.kv_store is None:
             if self.current_window_id == 0:
-                logits, self.kv_store, self._last_residual = self.kv_gen.prefill_with_residual(ids)
+                if self._kv_full_dir is not None:
+                    # Capture pre-RoPE KV for Mode 6 storage
+                    logits, self.kv_store, self._pre_rope_kv, self._last_residual = (
+                        self.kv_gen.prefill_pre_rope(ids)
+                    )
+                else:
+                    logits, self.kv_store, self._last_residual = self.kv_gen.prefill_with_residual(ids)
             else:
                 # Chain from prior window's checkpoint — cumulative Markov state
                 prior_kv, _prior_abs = self.checkpoints.load(
@@ -794,12 +827,18 @@ class UnlimitedContextEngine:
                 logits, self.kv_store, self._last_residual = self.kv_gen.extend_with_residual(
                     ids, prior_kv, abs_start=self.abs_offset
                 )
+                # For non-first windows, do a separate standalone prefill
+                # to get pre-RoPE K at position-independent state.
+                if self._kv_full_dir is not None:
+                    _, _, self._pre_rope_kv, _ = self.kv_gen.prefill_pre_rope(ids)
         else:
             abs_start = self.abs_offset + self.hot_len
             logits, self.kv_store, self._last_residual = self.kv_gen.extend_with_residual(
                 ids, self.kv_store, abs_start=abs_start
             )
 
+        if self._kv_full_dir is not None:
+            self._last_logits = logits  # keep for surprise ranking in _close_window
         mx.eval(logits)
         self.hot_len += len(token_ids)
         self.current_window_tokens.extend(token_ids)
@@ -826,6 +865,23 @@ class UnlimitedContextEngine:
         if hasattr(self, '_last_residual') and self._last_residual is not None:
             self.residuals.save(self.current_window_id, self._last_residual)
 
+        # Save fact-position pre-RoPE KV to disk (Mode 6)
+        if self._kv_full_dir is not None and self._pre_rope_kv is not None:
+            import os
+            fact_positions = self._compute_fact_positions(
+                self.current_window_tokens, self._last_logits, self._kv_n_facts,
+            )
+            kv_data: dict[str, mx.array] = {}
+            pos_idx = mx.array(fact_positions)
+            for li, (k_pre, v) in enumerate(self._pre_rope_kv):
+                kv_data[f"l{li}_k"] = k_pre[:, :, pos_idx, :]
+                kv_data[f"l{li}_v"] = v[:, :, pos_idx, :]
+            kv_data["positions"] = pos_idx
+            out_path = os.path.join(self._kv_full_dir, f"w{self.current_window_id}.npz")
+            mx.savez(out_path, **kv_data)
+            self._pre_rope_kv = None
+            self._last_logits = None
+
         # Archive token IDs
         self.archive.archive(
             self.current_window_id,
@@ -840,6 +896,57 @@ class UnlimitedContextEngine:
         self.kv_store = None
         self.hot_len = 0
         self._last_residual = None
+        self._pre_rope_kv = None
+
+    @staticmethod
+    def _compute_fact_positions(
+        token_ids: list[int],
+        logits: mx.array | None,
+        n_facts: int,
+    ) -> list[int]:
+        """Identify the most surprising token positions from forward-pass logits.
+
+        Returns sorted list of up to n_facts token indices where the model
+        was most surprised (highest prediction rank). These are the fact-bearing
+        positions whose KV should be saved for Mode 6 injection.
+
+        Falls back to evenly-spaced positions if logits are unavailable.
+        """
+        n_tokens = len(token_ids)
+        if n_tokens <= n_facts:
+            return list(range(n_tokens))
+
+        if logits is None:
+            # Fallback: evenly spaced
+            step = max(1, n_tokens // n_facts)
+            return [i * step for i in range(n_facts)]
+
+        # Compute per-token surprise rank from logits
+        # logits[0, i, :] predicts token at position i+1
+        logits_f32 = logits[0].astype(mx.float32)
+        skip = min(32, n_tokens - 2)
+        n_score = n_tokens - 1 - skip
+
+        if n_score <= n_facts:
+            return list(range(n_tokens))[:n_facts]
+
+        actual_ids = mx.array(token_ids[skip + 1:])
+        logits_slice = logits_f32[skip:skip + n_score]
+        actual_logits = logits_slice[mx.arange(n_score), actual_ids]
+        ranks = mx.sum(logits_slice > actual_logits[:, None], axis=1)
+        mx.eval(ranks)
+
+        # Map ranks back to token positions (rank[i] corresponds to token[skip+1+i])
+        ranked_positions = [
+            (int(ranks[i].item()), skip + 1 + i)
+            for i in range(n_score)
+        ]
+        # Sort by rank descending (most surprising first)
+        ranked_positions.sort(key=lambda x: -x[0])
+
+        # Take top n_facts positions, then sort by position for spatial coherence
+        selected = sorted([pos for _, pos in ranked_positions[:n_facts]])
+        return selected
 
     def _merge_kv_parts(self, parts: list[KVStore]) -> KVStore:
         """

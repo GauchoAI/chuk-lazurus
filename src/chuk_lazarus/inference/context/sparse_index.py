@@ -85,24 +85,50 @@ class FactTriplet:
 
 
 @dataclass
+class FactSpan:
+    """A fact-bearing token span within a window."""
+    position: int  # token index of the fact token
+    radius: int = 5  # ±N context tokens around the fact
+
+    @property
+    def start(self) -> int:
+        return max(0, self.position - self.radius)
+
+    def end(self, window_size: int) -> int:
+        return min(window_size, self.position + self.radius)
+
+    def to_dict(self) -> dict:
+        return {"position": self.position, "radius": self.radius}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> FactSpan:
+        return cls(position=d["position"], radius=d.get("radius", 5))
+
+
+@dataclass
 class SparseEntry:
-    """One window's extracted keywords."""
+    """One window's extracted keywords and fact spans."""
     window_id: int
     keywords: list[str] = field(default_factory=list)
     surprise_rank: int = 0
+    fact_spans: list[FactSpan] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         d: dict = {"window_id": self.window_id, "keywords": self.keywords}
         if self.surprise_rank > 0:
             d["surprise_rank"] = self.surprise_rank
+        if self.fact_spans:
+            d["fact_spans"] = [s.to_dict() for s in self.fact_spans]
         return d
 
     @classmethod
     def from_dict(cls, d: dict) -> SparseEntry:
+        spans = [FactSpan.from_dict(s) for s in d.get("fact_spans", [])]
         return cls(
             window_id=d["window_id"],
             keywords=d.get("keywords", []),
             surprise_rank=d.get("surprise_rank", 0),
+            fact_spans=spans,
         )
 
 

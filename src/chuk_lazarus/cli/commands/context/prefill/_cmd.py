@@ -97,6 +97,11 @@ async def context_prefill_cmd(args: Namespace) -> None:
             pipeline.model, pipeline.config, window_size=config.window_size
         )
 
+    # Enable full KV save for Mode 6 (prefix caching)
+    if config.store_kv_full:
+        engine.enable_kv_full_save(str(config.checkpoint))
+        print("  Full KV save enabled (Mode 6)", file=sys.stderr)
+
     # Warm up compute graph
     _warm = mx.array([[1, 2, 3]])
     _, _kv = engine.kv_gen.prefill(_warm)

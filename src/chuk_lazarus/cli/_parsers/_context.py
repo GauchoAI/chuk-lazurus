@@ -64,6 +64,12 @@ def register_context_parsers(subparsers):
         help="Store pre-RoPE K,V pages for instant page injection at generate time",
     )
     ctx_prefill.add_argument(
+        "--store-kv-full",
+        action="store_true",
+        dest="store_kv_full",
+        help="Save full KV cache per window for Mode 6 KV injection (~9MB/window for 4B)",
+    )
+    ctx_prefill.add_argument(
         "--phases",
         default="all",
         help=(
@@ -76,11 +82,11 @@ def register_context_parsers(subparsers):
 
     # context generate
     ctx_generate = ctx_subparsers.add_parser(
-        "generate", help="Generate text from a checkpoint library"
+        "generate", help="Generate text (optionally from a checkpoint library)"
     )
     ctx_generate.add_argument("--model", "-m", required=True, help="Model ID or local path")
     ctx_generate.add_argument(
-        "--checkpoint", "-c", required=True, help="Library directory to load"
+        "--checkpoint", "-c", default=None, help="Library directory to load (optional — omit for plain generation)"
     )
     ctx_generate.add_argument("--prompt", "-p", help="Prompt text")
     ctx_generate.add_argument(
@@ -92,7 +98,7 @@ def register_context_parsers(subparsers):
     ctx_generate.add_argument("--temperature", type=float, default=0.7, help="Sampling temperature")
     ctx_generate.add_argument(
         "--replay", nargs="*", default=None,
-        help='Window IDs to replay: "auto" (default, compass routing), "all", "last", or specific IDs (e.g. --replay 0 1 45)',
+        help='Window IDs to replay: "auto" (default, compass routing), "all", "last", "kv" (Mode 6 prefix caching), "sparse" (Mode 5), or specific IDs (e.g. --replay 0 1 45)',
     )
     ctx_generate.add_argument(
         "--find", default=None,

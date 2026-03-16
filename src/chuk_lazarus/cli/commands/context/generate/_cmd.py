@@ -75,6 +75,15 @@ async def context_generate_cmd(args: Namespace) -> None:
     config = GenerateConfig.from_args(args)
 
     # ------------------------------------------------------------------
+    # 0. Plain generation (no checkpoint)
+    # ------------------------------------------------------------------
+    if config.checkpoint is None:
+        from ._plain import _plain_generate
+        result = _plain_generate(config, args)
+        print(result.to_display())
+        return
+
+    # ------------------------------------------------------------------
     # 1. Load library
     # ------------------------------------------------------------------
     if not config.checkpoint.exists():
@@ -302,8 +311,18 @@ async def context_generate_cmd(args: Namespace) -> None:
         and len(replay_ids) == 1
         and replay_ids[0] == "sparse"
     )
+    use_kv = (
+        isinstance(replay_ids, list)
+        and len(replay_ids) == 1
+        and replay_ids[0] == "kv"
+    )
 
     # Dispatch to mode handlers
+    if use_kv:
+        from ._modes._kv_inject import run_kv_inject
+        run_kv_inject(lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, config, args, mx)
+        return
+
     if use_sparse:
         from ._modes._sparse_twopass import run_sparse_twopass, needs_verbatim, needs_detail
         max_kw = getattr(args, "max_keywords", None)

@@ -405,6 +405,95 @@ class CheckpointLibrary:
         """
         return self._compass_basis["structural_basis"]
 
+    # ------------------------------------------------------------------
+    # Full KV (Mode 6 — prefix caching)
+    # ------------------------------------------------------------------
+
+    @property
+    def has_full_kv(self) -> bool:
+        """True if this library has per-window full KV caches (Mode 6)."""
+        kv_dir = self._path / "kv_full"
+        return kv_dir.exists() and (kv_dir / "w0.npz").exists()
+
+    @property
+    def has_pre_rope_kv(self) -> bool:
+        """True if this library has pre-RoPE KV caches (Mode 6 zero-compute)."""
+        kv_dir = self._path / "kv_pre_rope"
+        return kv_dir.exists() and (kv_dir / "w0.npz").exists()
+
+    def get_pre_rope_kv(self, window_id: int) -> list[tuple[mx.array, mx.array]]:
+        """Load pre-RoPE K + V for a window from disk.
+
+        Returns list[L] of (K_pre_rope, V) per layer, where:
+            K_pre_rope shape: (1, nkv, n_facts, head_dim) — post-norm, WITHOUT RoPE
+            V shape: (1, nkv, n_facts, head_dim) — position-independent
+
+        n_facts is typically ~8 (the most surprising positions per window).
+        Apply RoPE at desired positions via kv_gen.inject_pre_rope_kv().
+        """
+        kv_path = self._path / "kv_pre_rope" / f"w{window_id}.npz"
+        if not kv_path.exists():
+            raise FileNotFoundError(
+                f"Pre-RoPE KV not found for window {window_id}: {kv_path}\n"
+                f"Re-run prefill with --store-kv-full to save per-window KV caches."
+            )
+        raw = mx.load(str(kv_path))
+        kv_pairs = []
+        li = 0
+        while f"l{li}_k" in raw:
+            k = raw[f"l{li}_k"]
+            v = raw[f"l{li}_v"]
+            kv_pairs.append((k, v))
+            li += 1
+        mx.eval(*[t for pair in kv_pairs for t in pair])
+        return kv_pairs
+
+    def get_pre_rope_positions(self, window_id: int) -> list[int]:
+        """Return the original token positions saved for this window's pre-RoPE KV."""
+        kv_path = self._path / "kv_pre_rope" / f"w{window_id}.npz"
+        if not kv_path.exists():
+            return []
+        raw = mx.load(str(kv_path))
+        if "positions" in raw:
+            return raw["positions"].tolist()
+        # Legacy: full positions (all positions saved)
+        n = raw["l0_k"].shape[2]
+        return list(range(n))
+
+    def get_full_kv(self, window_id: int) -> list[tuple[mx.array, mx.array]]:
+        """Load the full KV cache for a window from disk.
+
+        Returns list[L] of (K, V) per layer, where:
+            K shape: (1, num_kv_heads, seq_len, head_dim) — post-norm, post-RoPE
+            V shape: (1, num_kv_heads, seq_len, head_dim)
+
+        Lazy-loaded: only materializes the requested window's KV.
+        """
+        kv_path = self._path / "kv_full" / f"w{window_id}.npz"
+        if not kv_path.exists():
+            raise FileNotFoundError(
+                f"Full KV not found for window {window_id}: {kv_path}\n"
+                f"Re-run prefill with --store-kv-full to save per-window KV caches."
+            )
+        raw = mx.load(str(kv_path))
+        kv_pairs = []
+        li = 0
+        while f"l{li}_k" in raw:
+            k = raw[f"l{li}_k"]
+            v = raw[f"l{li}_v"]
+            kv_pairs.append((k, v))
+            li += 1
+        mx.eval(*[t for pair in kv_pairs for t in pair])
+        return kv_pairs
+
+    @property
+    def full_kv_size_bytes(self) -> int:
+        """Total size of full KV data on disk."""
+        kv_dir = self._path / "kv_full"
+        if not kv_dir.exists():
+            return 0
+        return sum(f.stat().st_size for f in kv_dir.glob("w*.npz"))
+
     def window_abs_range(self, window_id: int) -> tuple[int, int]:
         """Return (abs_start, abs_end) for a window."""
         w = self.windows[window_id]
