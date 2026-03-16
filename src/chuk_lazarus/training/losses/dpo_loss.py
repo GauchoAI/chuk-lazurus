@@ -11,21 +11,24 @@ classification-style loss.
 Paper: https://arxiv.org/abs/2305.18290
 """
 
-from dataclasses import dataclass
-
 import mlx.core as mx
 import mlx.nn as nn
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..utils.log_probs import compute_sequence_log_prob, extract_log_probs
 
 
-@dataclass
-class DPOConfig:
+class DPOConfig(BaseModel):
     """Configuration for DPO training."""
 
-    beta: float = 0.1  # KL penalty coefficient (higher = stay closer to reference)
-    label_smoothing: float = 0.0  # Optional label smoothing
-    reference_free: bool = False  # If True, skip reference model (simpler but less stable)
+    model_config = ConfigDict(frozen=True)
+    beta: float = Field(
+        default=0.1, gt=0, description="KL penalty coefficient (higher = stay closer to reference)"
+    )
+    label_smoothing: float = Field(default=0.0, ge=0, le=1, description="Optional label smoothing")
+    reference_free: bool = Field(
+        default=False, description="If True, skip reference model (simpler but less stable)"
+    )
 
 
 def dpo_loss(

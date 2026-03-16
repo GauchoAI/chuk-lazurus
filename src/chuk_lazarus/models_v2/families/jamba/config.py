@@ -142,26 +142,26 @@ class JambaConfig(ModelConfig):
             max_position_embeddings=hf_config.get(
                 ConfigField.MAX_POSITION_EMBEDDINGS.value, 262144
             ),
-            hidden_act=hf_config.get("hidden_act", "silu"),
+            hidden_act=hf_config.get(ConfigField.HIDDEN_ACT.value, "silu"),
             rms_norm_eps=hf_config.get(ConfigField.RMS_NORM_EPS.value, DefaultNormEps.JAMBA.value),
             tie_word_embeddings=hf_config.get(ConfigField.TIE_WORD_EMBEDDINGS.value, False),
             # Hybrid layer pattern
             attn_layer_period=hf_config.get(ConfigField.ATTN_LAYER_PERIOD.value, 8),
-            attn_layer_offset=hf_config.get("attn_layer_offset", 4),
+            attn_layer_offset=hf_config.get(ConfigField.ATTN_LAYER_OFFSET.value, 4),
             # MoE pattern
             expert_layer_period=hf_config.get(ConfigField.EXPERT_LAYER_PERIOD.value, 2),
-            expert_layer_offset=hf_config.get("expert_layer_offset", 1),
+            expert_layer_offset=hf_config.get(ConfigField.EXPERT_LAYER_OFFSET.value, 1),
             num_experts=hf_config.get(ConfigField.NUM_EXPERTS.value, 16),
             num_experts_per_tok=hf_config.get(ConfigField.NUM_EXPERTS_PER_TOK.value, 2),
             # Mamba parameters
             mamba_d_state=hf_config.get(ConfigField.MAMBA_D_STATE.value, 16),
             mamba_d_conv=hf_config.get(ConfigField.MAMBA_D_CONV.value, 4),
             mamba_expand=hf_config.get(ConfigField.MAMBA_EXPAND.value, 2),
-            mamba_dt_rank=hf_config.get("mamba_dt_rank", 256),
-            mamba_conv_bias=hf_config.get("mamba_conv_bias", True),
-            mamba_proj_bias=hf_config.get("mamba_proj_bias", False),
+            mamba_dt_rank=hf_config.get(ConfigField.MAMBA_DT_RANK.value, 256),
+            mamba_conv_bias=hf_config.get(ConfigField.MAMBA_CONV_BIAS.value, True),
+            mamba_proj_bias=hf_config.get(ConfigField.MAMBA_PROJ_BIAS.value, False),
             # RoPE scaling
-            rope_scaling=hf_config.get("rope_scaling"),
+            rope_scaling=hf_config.get(ConfigField.ROPE_SCALING.value),
         )
 
     @classmethod

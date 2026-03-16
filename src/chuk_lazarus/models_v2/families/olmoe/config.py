@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from ...core.config import ModelConfig
-from ..constants import DefaultNormEps, DefaultRoPETheta
+from ..constants import ConfigField, DefaultNormEps, DefaultRoPETheta, HFModelType
 
 
 class OLMoEConfig(ModelConfig):
@@ -102,27 +102,28 @@ class OLMoEConfig(ModelConfig):
             OLMoEConfig instance
         """
         return cls(
-            model_type=hf_config.get("model_type", "olmoe"),
-            vocab_size=hf_config["vocab_size"],
-            hidden_size=hf_config["hidden_size"],
-            num_hidden_layers=hf_config["num_hidden_layers"],
-            num_attention_heads=hf_config["num_attention_heads"],
+            model_type=hf_config.get(ConfigField.MODEL_TYPE.value, HFModelType.OLMOE.value),
+            vocab_size=hf_config[ConfigField.VOCAB_SIZE.value],
+            hidden_size=hf_config[ConfigField.HIDDEN_SIZE.value],
+            num_hidden_layers=hf_config[ConfigField.NUM_HIDDEN_LAYERS.value],
+            num_attention_heads=hf_config[ConfigField.NUM_ATTENTION_HEADS.value],
             num_key_value_heads=hf_config.get(
-                "num_key_value_heads", hf_config["num_attention_heads"]
+                ConfigField.NUM_KEY_VALUE_HEADS.value,
+                hf_config[ConfigField.NUM_ATTENTION_HEADS.value],
             ),
-            intermediate_size=hf_config["intermediate_size"],
-            max_position_embeddings=hf_config.get("max_position_embeddings", 4096),
-            rope_theta=hf_config.get("rope_theta", DefaultRoPETheta.LLAMA2.value),
-            rms_norm_eps=hf_config.get("rms_norm_eps", DefaultNormEps.LLAMA.value),
-            tie_word_embeddings=hf_config.get("tie_word_embeddings", False),
-            bos_token_id=hf_config.get("bos_token_id", 1),
-            eos_token_id=hf_config.get("eos_token_id", 50279),
-            pad_token_id=hf_config.get("pad_token_id", 1),
+            intermediate_size=hf_config[ConfigField.INTERMEDIATE_SIZE.value],
+            max_position_embeddings=hf_config.get(ConfigField.MAX_POSITION_EMBEDDINGS.value, 4096),
+            rope_theta=hf_config.get(ConfigField.ROPE_THETA.value, DefaultRoPETheta.LLAMA2.value),
+            rms_norm_eps=hf_config.get(ConfigField.RMS_NORM_EPS.value, DefaultNormEps.LLAMA.value),
+            tie_word_embeddings=hf_config.get(ConfigField.TIE_WORD_EMBEDDINGS.value, False),
+            bos_token_id=hf_config.get(ConfigField.BOS_TOKEN_ID.value, 1),
+            eos_token_id=hf_config.get(ConfigField.EOS_TOKEN_ID.value, 50279),
+            pad_token_id=hf_config.get(ConfigField.PAD_TOKEN_ID.value, 1),
             # MoE specific
-            num_experts=hf_config.get("num_experts", 64),
-            num_experts_per_tok=hf_config.get("num_experts_per_tok", 8),
-            router_aux_loss_coef=hf_config.get("router_aux_loss_coef", 0.01),
-            norm_topk_prob=hf_config.get("norm_topk_prob", False),
-            output_router_logits=hf_config.get("output_router_logits", False),
-            rope_scaling=hf_config.get("rope_scaling"),
+            num_experts=hf_config.get(ConfigField.NUM_EXPERTS.value, 64),
+            num_experts_per_tok=hf_config.get(ConfigField.NUM_EXPERTS_PER_TOK.value, 8),
+            router_aux_loss_coef=hf_config.get(ConfigField.ROUTER_AUX_LOSS_COEF.value, 0.01),
+            norm_topk_prob=hf_config.get(ConfigField.NORM_TOPK_PROB.value, False),
+            output_router_logits=hf_config.get(ConfigField.OUTPUT_ROUTER_LOGITS.value, False),
+            rope_scaling=hf_config.get(ConfigField.ROPE_SCALING.value),
         )

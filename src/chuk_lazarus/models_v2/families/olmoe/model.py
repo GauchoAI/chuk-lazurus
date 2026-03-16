@@ -19,6 +19,7 @@ from ...components.normalization import RMSNorm
 from ...core.registry import register_model
 from ...heads import LMHead
 from ...models.base import Model, ModelOutput
+from ..constants import HFArchitecture, HFModelType
 from .config import OLMoEConfig
 
 
@@ -416,8 +417,8 @@ class OLMoEModel(Backbone):
 
 
 @register_model(
-    model_type="olmoe",
-    architectures=["OlmoeForCausalLM"],
+    model_type=HFModelType.OLMOE,
+    architectures=[HFArchitecture.OLMOE_FOR_CAUSAL_LM],
 )
 class OLMoEForCausalLM(Model):
     """

@@ -36,6 +36,7 @@ from ...core.enums import ActivationType, PositionEmbeddingType
 from ...core.registry import register_model
 from ...heads import LMHead
 from ...models.base import Model, ModelOutput
+from ..constants import HFArchitecture, HFModelType
 from .config import StarCoder2Config, StarCoderConfig
 
 
@@ -239,8 +240,8 @@ class StarCoder2Model(Backbone):
 
 
 @register_model(
-    model_type="starcoder2",
-    architectures=["Starcoder2ForCausalLM"],
+    model_type=HFModelType.STARCODER2,
+    architectures=[HFArchitecture.STARCODER2_FOR_CAUSAL_LM],
 )
 class StarCoder2ForCausalLM(Model):
     """
@@ -659,8 +660,8 @@ class StarCoderModel(Backbone):
 
 
 @register_model(
-    model_type="gpt_bigcode",
-    architectures=["GPTBigCodeForCausalLM"],
+    model_type=HFModelType.GPT_BIGCODE,
+    architectures=[HFArchitecture.GPT_BIGCODE_FOR_CAUSAL_LM],
 )
 class StarCoderForCausalLM(Model):
     """

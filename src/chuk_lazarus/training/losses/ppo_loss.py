@@ -12,22 +12,21 @@ Key components:
 Paper: https://arxiv.org/abs/1707.06347
 """
 
-from dataclasses import dataclass
-
 import mlx.core as mx
 import mlx.nn as nn
+from pydantic import BaseModel, ConfigDict, Field
 
 
-@dataclass
-class PPOConfig:
+class PPOConfig(BaseModel):
     """Configuration for PPO training."""
 
-    clip_epsilon: float = 0.2  # Clipping parameter
-    value_loss_coef: float = 0.5  # Value loss weight
-    entropy_coef: float = 0.01  # Entropy bonus weight
-    max_grad_norm: float = 0.5  # Gradient clipping
-    target_kl: float = 0.01  # KL target for early stopping
-    normalize_advantages: bool = True  # Normalize advantages
+    model_config = ConfigDict(frozen=True)
+    clip_epsilon: float = Field(default=0.2, gt=0, le=1, description="Clipping parameter")
+    value_loss_coef: float = Field(default=0.5, ge=0, description="Value loss weight")
+    entropy_coef: float = Field(default=0.01, ge=0, description="Entropy bonus weight")
+    max_grad_norm: float = Field(default=0.5, gt=0, description="Gradient clipping")
+    target_kl: float = Field(default=0.01, gt=0, description="KL target for early stopping")
+    normalize_advantages: bool = Field(default=True, description="Normalize advantages")
 
 
 def ppo_loss(

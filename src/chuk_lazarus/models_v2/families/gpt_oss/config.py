@@ -146,17 +146,17 @@ class GptOssConfig(ModelConfig):
             rope_theta=hf_config.get(ConfigField.ROPE_THETA.value, 150000.0),
             rms_norm_eps=hf_config.get(ConfigField.RMS_NORM_EPS.value, DefaultNormEps.LLAMA.value),
             # MoE config
-            num_local_experts=hf_config.get("num_local_experts", 32),
-            num_experts_per_tok=hf_config.get("num_experts_per_tok", 4),
+            num_local_experts=hf_config.get(ConfigField.NUM_LOCAL_EXPERTS.value, 32),
+            num_experts_per_tok=hf_config.get(ConfigField.NUM_EXPERTS_PER_TOK.value, 4),
             # Layer types
-            layer_types=hf_config.get("layer_types"),
+            layer_types=hf_config.get(ConfigField.LAYER_TYPES.value),
             sliding_window=hf_config.get(ConfigField.SLIDING_WINDOW.value, 128),
             # RoPE scaling
-            rope_scaling=hf_config.get("rope_scaling"),
+            rope_scaling=hf_config.get(ConfigField.ROPE_SCALING.value),
             # SwiGLU limit
-            swiglu_limit=hf_config.get("swiglu_limit"),
+            swiglu_limit=hf_config.get(ConfigField.SWIGLU_LIMIT.value),
             # Attention bias
-            attention_bias=hf_config.get("attention_bias", True),
+            attention_bias=hf_config.get(ConfigField.ATTENTION_BIAS.value, True),
             # Token IDs
             tie_word_embeddings=hf_config.get(ConfigField.TIE_WORD_EMBEDDINGS.value, False),
             bos_token_id=hf_config.get(ConfigField.BOS_TOKEN_ID.value),

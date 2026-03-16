@@ -204,30 +204,32 @@ class LlamaConfig(ModelConfig):
             >>> config = LlamaConfig.from_hf_config(hf_config)
         """
         # Detect mlx-community format (uses n_layers, dim, etc.)
-        is_mlx_format = "n_layers" in hf_config or "dim" in hf_config
+        is_mlx_format = ConfigField.N_LAYERS in hf_config or ConfigField.DIM in hf_config
 
         if is_mlx_format:
             # MLX community format mapping
-            hidden_size = hf_config.get("dim", hf_config.get(ConfigField.HIDDEN_SIZE.value))
+            hidden_size = hf_config.get(
+                ConfigField.DIM, hf_config.get(ConfigField.HIDDEN_SIZE.value)
+            )
             num_hidden_layers = hf_config.get(
-                "n_layers", hf_config.get(ConfigField.NUM_HIDDEN_LAYERS.value)
+                ConfigField.N_LAYERS, hf_config.get(ConfigField.NUM_HIDDEN_LAYERS.value)
             )
             num_attention_heads = hf_config.get(
-                "n_heads", hf_config.get(ConfigField.NUM_ATTENTION_HEADS.value)
+                ConfigField.N_HEADS, hf_config.get(ConfigField.NUM_ATTENTION_HEADS.value)
             )
             num_key_value_heads = hf_config.get(
-                "n_kv_heads",
+                ConfigField.N_KV_HEADS,
                 hf_config.get(ConfigField.NUM_KEY_VALUE_HEADS.value, num_attention_heads),
             )
             intermediate_size = hf_config.get(
-                "hidden_dim", hf_config.get(ConfigField.INTERMEDIATE_SIZE.value)
+                ConfigField.HIDDEN_DIM, hf_config.get(ConfigField.INTERMEDIATE_SIZE.value)
             )
             rms_norm_eps = hf_config.get(
-                "norm_eps",
+                ConfigField.NORM_EPS,
                 hf_config.get(ConfigField.RMS_NORM_EPS.value, DefaultNormEps.LLAMA.value),
             )
             # head_dim is extracted but currently unused (computed from hidden_size/heads)
-            _ = hf_config.get("head_dim")
+            _ = hf_config.get(ConfigField.HEAD_DIM)
         else:
             # Standard HuggingFace format
             hidden_size = hf_config[ConfigField.HIDDEN_SIZE.value]
@@ -251,7 +253,7 @@ class LlamaConfig(ModelConfig):
             rope_theta=hf_config.get(ConfigField.ROPE_THETA.value, DefaultRoPETheta.LLAMA2.value),
             rms_norm_eps=rms_norm_eps,
             sliding_window=hf_config.get(ConfigField.SLIDING_WINDOW.value),
-            rope_scaling=hf_config.get("rope_scaling"),
+            rope_scaling=hf_config.get(ConfigField.ROPE_SCALING),
             tie_word_embeddings=hf_config.get(ConfigField.TIE_WORD_EMBEDDINGS.value, False),
             bos_token_id=hf_config.get(ConfigField.BOS_TOKEN_ID.value, 1),
             eos_token_id=hf_config.get(ConfigField.EOS_TOKEN_ID.value, 2),

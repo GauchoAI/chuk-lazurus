@@ -22,6 +22,7 @@ from ...core.config import AttentionConfig, FFNConfig
 from ...core.registry import register_model
 from ...heads import LMHead
 from ...models.base import Model, ModelOutput
+from ..constants import HFArchitecture, HFModelType
 from .config import Qwen3Config
 
 
@@ -308,8 +309,8 @@ class Qwen3Model(Backbone):
 
 
 @register_model(
-    model_type="qwen3",
-    architectures=["Qwen3ForCausalLM"],
+    model_type=HFModelType.QWEN3,
+    architectures=[HFArchitecture.QWEN3_FOR_CAUSAL_LM],
 )
 class Qwen3ForCausalLM(Model):
     """

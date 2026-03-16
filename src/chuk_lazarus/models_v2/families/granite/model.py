@@ -24,6 +24,7 @@ from ...core.config import FFNConfig
 from ...core.registry import register_model
 from ...heads import LMHead
 from ...models.base import Model, ModelOutput
+from ..constants import HFArchitecture, HFModelType
 from .config import GraniteConfig
 
 
@@ -305,8 +306,8 @@ class GraniteModel(Backbone):
 
 
 @register_model(
-    model_type="granite",
-    architectures=["GraniteForCausalLM"],
+    model_type=HFModelType.GRANITE,
+    architectures=[HFArchitecture.GRANITE_FOR_CAUSAL_LM],
 )
 class GraniteForCausalLM(Model):
     """

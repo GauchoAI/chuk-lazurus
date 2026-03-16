@@ -24,7 +24,6 @@ Usage:
 
 import logging
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -84,7 +83,6 @@ class SFTTrainingResult(BaseModel):
     adapter_path: Path | None = Field(default=None, description="Path to saved LoRA adapter")
 
 
-@dataclass
 class SFTConfig(BaseTrainerConfig):
     """Low-level configuration for SFT trainer.
 
@@ -92,22 +90,22 @@ class SFTConfig(BaseTrainerConfig):
     """
 
     # Training settings
-    num_epochs: int = 3
-    batch_size: int = 4
-    learning_rate: float = 1e-5
-    weight_decay: float = 0.0
-    max_grad_norm: float = 1.0
-    warmup_steps: int = 100
-
+    num_epochs: int = Field(default=3, ge=1, description="Number of training epochs")
+    batch_size: int = Field(default=4, ge=1, description="Batch size")
+    learning_rate: float = Field(default=1e-5, gt=0, description="Learning rate")
+    weight_decay: float = Field(default=0.0, ge=0, description="Weight decay")
+    max_grad_norm: float = Field(default=1.0, gt=0, description="Maximum gradient norm")
+    warmup_steps: int = Field(default=100, ge=0, description="Warmup steps")
     # Logging and checkpoints
-    log_interval: int = 10
-    eval_interval: int = 100
-    checkpoint_interval: int = 500
-    checkpoint_dir: str = "./checkpoints/sft"
-
+    log_interval: int = Field(default=10, ge=1, description="Log interval")
+    eval_interval: int = Field(default=100, ge=1, description="Evaluation interval")
+    checkpoint_interval: int = Field(default=500, ge=1, description="Checkpoint interval")
+    checkpoint_dir: str = Field(default="./checkpoints/sft", description="Checkpoint directory")
     # Early stopping
-    max_steps: int | None = None
-    min_loss: float | None = None
+    max_steps: int | None = Field(default=None, description="Maximum training steps")
+    min_loss: float | None = Field(
+        default=None, description="Target minimum loss for early stopping"
+    )
 
 
 class SFTTrainer(BaseTrainer):

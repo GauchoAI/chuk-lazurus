@@ -20,7 +20,6 @@ Usage:
 import logging
 import time
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -86,30 +85,28 @@ class DPOTrainingResult(BaseModel):
     adapter_path: Path | None = Field(default=None, description="Path to saved LoRA adapter")
 
 
-@dataclass
 class DPOTrainerConfig(BaseTrainerConfig):
     """Configuration for DPO training."""
 
     # DPO hyperparameters
-    dpo: DPOConfig = field(default_factory=DPOConfig)
-
+    dpo: DPOConfig = Field(default_factory=DPOConfig, description="DPO loss configuration")
     # Training settings
-    num_epochs: int = 3
-    batch_size: int = 4
-    learning_rate: float = 1e-6
-    weight_decay: float = 0.0
-    warmup_steps: int = 100
-    max_grad_norm: float = 1.0
-
+    num_epochs: int = Field(default=3, ge=1, description="Number of training epochs")
+    batch_size: int = Field(default=4, ge=1, description="Batch size")
+    learning_rate: float = Field(default=1e-6, gt=0, description="Learning rate")
+    weight_decay: float = Field(default=0.0, ge=0, description="Weight decay")
+    warmup_steps: int = Field(default=100, ge=0, description="Warmup steps")
+    max_grad_norm: float = Field(default=1.0, gt=0, description="Maximum gradient norm")
     # Logging and checkpoints
-    log_interval: int = 10
-    eval_interval: int = 100
-    checkpoint_interval: int = 500
-    checkpoint_dir: str = "./checkpoints/dpo"
-
+    log_interval: int = Field(default=10, ge=1, description="Log interval")
+    eval_interval: int = Field(default=100, ge=1, description="Evaluation interval")
+    checkpoint_interval: int = Field(default=500, ge=1, description="Checkpoint interval")
+    checkpoint_dir: str = Field(default="./checkpoints/dpo", description="Checkpoint directory")
     # Early stopping
-    max_steps: int | None = None
-    target_reward_margin: float = 2.0  # Stop if margin exceeds this
+    max_steps: int | None = Field(default=None, description="Maximum training steps")
+    target_reward_margin: float = Field(
+        default=2.0, gt=0, description="Stop if margin exceeds this"
+    )
 
 
 class DPOTrainer(BaseTrainer):

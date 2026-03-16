@@ -9,33 +9,33 @@ import logging
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as optim
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class BaseTrainerConfig:
+class BaseTrainerConfig(BaseModel):
     """Base configuration shared by all trainers."""
 
+    model_config = ConfigDict(frozen=True)
     # Training settings
-    learning_rate: float = 1e-5
-    weight_decay: float = 0.0
-    max_grad_norm: float = 1.0
-
+    learning_rate: float = Field(default=1e-5, gt=0, description="Learning rate")
+    weight_decay: float = Field(default=0.0, ge=0, description="Weight decay")
+    max_grad_norm: float = Field(
+        default=1.0, gt=0, description="Maximum gradient norm for clipping"
+    )
     # Logging and checkpoints
-    log_interval: int = 10
-    checkpoint_interval: int = 500
-    checkpoint_dir: str = "./checkpoints"
-
+    log_interval: int = Field(default=10, ge=1, description="Log every N steps")
+    checkpoint_interval: int = Field(default=500, ge=1, description="Checkpoint every N steps")
+    checkpoint_dir: str = Field(default="./checkpoints", description="Checkpoint directory")
     # Early stopping
-    max_steps: int | None = None
+    max_steps: int | None = Field(default=None, description="Maximum training steps")
 
 
 class BaseTrainer(ABC):

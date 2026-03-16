@@ -263,14 +263,14 @@ class StarCoder2Config(ModelConfig):
             ...     hf_config = json.load(f)
             >>> config = StarCoder2Config.from_hf_config(hf_config)
         """
-        hidden_size = hf_config["hidden_size"]
-        head_dim = hf_config.get("head_dim") or (
-            hidden_size // hf_config.get("num_attention_heads", 1)
+        hidden_size = hf_config[ConfigField.HIDDEN_SIZE.value]
+        head_dim = hf_config.get(ConfigField.HEAD_DIM.value) or (
+            hidden_size // hf_config.get(ConfigField.NUM_ATTENTION_HEADS.value, 1)
         )
 
         # Try to get head counts from config, otherwise infer from weights
-        num_attention_heads = hf_config.get("num_attention_heads")
-        num_key_value_heads = hf_config.get("num_key_value_heads")
+        num_attention_heads = hf_config.get(ConfigField.NUM_ATTENTION_HEADS.value)
+        num_key_value_heads = hf_config.get(ConfigField.NUM_KEY_VALUE_HEADS.value)
 
         if weights and (num_attention_heads is None or num_key_value_heads is None):
             for k, v in weights.items():
@@ -290,7 +290,7 @@ class StarCoder2Config(ModelConfig):
 
         # Check if lm_head is present to determine if embeddings are tied
         has_lm_head = weights is not None and any("lm_head" in k for k in weights)
-        tie_embeddings = hf_config.get("tie_word_embeddings", not has_lm_head)
+        tie_embeddings = hf_config.get(ConfigField.TIE_WORD_EMBEDDINGS.value, not has_lm_head)
 
         return cls(
             model_type=hf_config.get(ConfigField.MODEL_TYPE.value, HFModelType.STARCODER2.value),
@@ -304,9 +304,9 @@ class StarCoder2Config(ModelConfig):
             rope_theta=hf_config.get(
                 ConfigField.ROPE_THETA.value, DefaultRoPETheta.STARCODER2.value
             ),
-            layer_norm_eps=hf_config.get("norm_epsilon", 1e-5),
+            layer_norm_eps=hf_config.get(ConfigField.NORM_EPSILON.value, 1e-5),
             sliding_window=hf_config.get(ConfigField.SLIDING_WINDOW.value, 4096),
-            attention_bias=hf_config.get("use_bias", True),
-            mlp_bias=hf_config.get("use_bias", True),
+            attention_bias=hf_config.get(ConfigField.USE_BIAS.value, True),
+            mlp_bias=hf_config.get(ConfigField.USE_BIAS.value, True),
             tie_word_embeddings=tie_embeddings,
         )

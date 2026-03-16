@@ -21,6 +21,7 @@ from ...core.config import FFNConfig
 from ...core.registry import register_model
 from ...heads import LMHead
 from ...models.base import Model, ModelOutput
+from ..constants import HFArchitecture, HFModelType
 from .config import LlamaConfig
 
 
@@ -194,8 +195,8 @@ class LlamaModel(Backbone):
 
 
 @register_model(
-    model_type="llama",
-    architectures=["LlamaForCausalLM", "MistralForCausalLM"],
+    model_type=HFModelType.LLAMA,
+    architectures=[HFArchitecture.LLAMA_FOR_CAUSAL_LM, HFArchitecture.MISTRAL_FOR_CAUSAL_LM],
 )
 class LlamaForCausalLM(Model):
     """

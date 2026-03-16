@@ -28,6 +28,7 @@ from ...core.config import FFNConfig
 from ...core.registry import register_model
 from ...heads import LMHead
 from ...models.base import Model, ModelOutput
+from ..constants import HFArchitecture, HFModelType
 from .config import GptOssConfig
 
 # =============================================================================
@@ -637,8 +638,8 @@ class GptOssModel(Backbone):
 
 
 @register_model(
-    model_type="gpt_oss",
-    architectures=["GptOssForCausalLM"],
+    model_type=HFModelType.GPT_OSS,
+    architectures=[HFArchitecture.GPT_OSS_FOR_CAUSAL_LM],
 )
 class GptOssForCausalLM(Model):
     """

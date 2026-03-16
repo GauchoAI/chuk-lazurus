@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from argparse import Namespace
-from pathlib import Path
-
 from enum import Enum
+from pathlib import Path
 
 from pydantic import Field
 
@@ -16,10 +15,26 @@ from .._constants import ContextDefaults
 class ResidualMode(str, Enum):
     """Residual extraction mode for prefill."""
 
-    INTERVAL = "interval"    # 8 samples per window (~40 KB/window)
-    FULL = "full"            # every position (~5 MB/window for 512-token windows)
-    NONE = "none"            # skip residual extraction (fastest, no compass)
+    INTERVAL = "interval"  # 8 samples per window (~40 KB/window)
+    FULL = "full"  # every position (~5 MB/window for 512-token windows)
+    NONE = "none"  # skip residual extraction (fastest, no compass)
     DARKSPACE = "darkspace"  # frame bank projection per position (single-pass, ~90 KB/window)
+
+
+class PrefillPhase(str, Enum):
+    """Phases of the prefill pipeline. No magic strings."""
+
+    ALL = "all"
+    WINDOWS = "windows"
+    INTERVAL = "interval"
+    COMPASS = "compass"
+    DARKSPACE = "darkspace"
+    PAGES = "pages"
+    SURPRISE = "surprise"
+    SPARSE = "sparse"
+
+    def __str__(self) -> str:
+        return self.value
 
 
 class PrefillConfig(CommandConfig):
@@ -62,44 +77,48 @@ class PrefillConfig(CommandConfig):
         default=False,
         description="Save full KV cache per window for Mode 6 KV injection",
     )
-    phases: set[str] = Field(
-        default_factory=lambda: {"all"},
-        description="Phases to run: windows, interval, compass, darkspace, pages, surprise, sparse, all",
+    phases: set[PrefillPhase] = Field(
+        default_factory=lambda: {PrefillPhase.ALL},
+        description="Phases to run",
     )
+
+    def _should_run(self, phase: PrefillPhase) -> bool:
+        """Check if a phase should run (enabled explicitly or via ALL)."""
+        return PrefillPhase.ALL in self.phases or phase in self.phases
 
     @property
     def run_windows(self) -> bool:
-        return "all" in self.phases or "windows" in self.phases
+        return self._should_run(PrefillPhase.WINDOWS)
 
     @property
     def run_interval(self) -> bool:
-        return "all" in self.phases or "interval" in self.phases
+        return self._should_run(PrefillPhase.INTERVAL)
 
     @property
     def run_compass(self) -> bool:
-        return "all" in self.phases or "compass" in self.phases
+        return self._should_run(PrefillPhase.COMPASS)
 
     @property
     def run_darkspace(self) -> bool:
-        return "all" in self.phases or "darkspace" in self.phases
+        return self._should_run(PrefillPhase.DARKSPACE)
 
     @property
     def run_pages(self) -> bool:
-        return "all" in self.phases or "pages" in self.phases
+        return self._should_run(PrefillPhase.PAGES)
 
     @property
     def run_surprise(self) -> bool:
-        return "all" in self.phases or "surprise" in self.phases
+        return self._should_run(PrefillPhase.SURPRISE)
 
     @property
     def run_sparse(self) -> bool:
-        return "all" in self.phases or "sparse" in self.phases
+        return self._should_run(PrefillPhase.SPARSE)
 
     @classmethod
     def from_args(cls, args: Namespace) -> PrefillConfig:
         fb = getattr(args, "frame_bank", None)
         raw_phases = getattr(args, "phases", "all")
-        phases = {p.strip() for p in raw_phases.split(",")}
+        phases = {PrefillPhase(p.strip()) for p in raw_phases.split(",")}
         return cls(
             model=args.model,
             input_file=Path(args.input),
@@ -120,7 +139,9 @@ class GenerateConfig(CommandConfig):
     """Configuration for the context generate command (library format)."""
 
     model: str = Field(..., description="Model ID or local path")
-    checkpoint: Path | None = Field(default=None, description="Library directory to load from (None for plain generation)")
+    checkpoint: Path | None = Field(
+        default=None, description="Library directory to load from (None for plain generation)"
+    )
     prompt: str | None = Field(default=None, description="Prompt text")
     prompt_file: Path | None = Field(default=None, description="File containing the prompt")
     max_tokens: int = Field(
@@ -201,6 +222,7 @@ __all__ = [
     "GenerateConfig",
     "GenerateResult",
     "PrefillConfig",
+    "PrefillPhase",
     "PrefillResult",
     "ResidualMode",
 ]

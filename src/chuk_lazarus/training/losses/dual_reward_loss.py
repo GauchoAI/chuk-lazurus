@@ -9,24 +9,26 @@ This loss function trains V/O projections to create vocabulary-mappable
 classifiers while maintaining answer quality.
 """
 
-from dataclasses import dataclass, field
-
 import mlx.core as mx
+from pydantic import BaseModel, ConfigDict, Field
 
 
-@dataclass
-class DualRewardLossConfig:
+class DualRewardLossConfig(BaseModel):
     """Configuration for dual-reward loss."""
 
-    # Intermediate classification loss
-    classifier_layer: int = -1  # -1 means 55% depth
-    classifier_weight: float = 0.4
-
-    # Target tokens for classification (operation -> token_id)
-    classifier_targets: dict[str, int] = field(default_factory=dict)
-
-    # Whether to use softmax or direct logit for classification
-    use_softmax: bool = True
+    model_config = ConfigDict(frozen=True)
+    classifier_layer: int = Field(
+        default=-1, description="Intermediate layer for classification (-1 means 55% depth)"
+    )
+    classifier_weight: float = Field(
+        default=0.4, ge=0, le=1, description="Weight for classification loss"
+    )
+    classifier_targets: dict[str, int] = Field(
+        default_factory=dict, description="Target tokens for classification (operation -> token_id)"
+    )
+    use_softmax: bool = Field(
+        default=True, description="Whether to use softmax or direct logit for classification"
+    )
 
 
 def dual_reward_loss(

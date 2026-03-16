@@ -21,6 +21,7 @@ from ...backbones.base import Backbone, BackboneOutput
 from ...blocks.base import Block, BlockOutput
 from ...core.registry import register_model
 from ...models.base import Model, ModelOutput
+from ..constants import HFArchitecture, HFModelType
 from .config import GemmaConfig
 
 
@@ -411,8 +412,8 @@ class GemmaModel(Backbone):
 
 
 @register_model(
-    model_type="gemma3_text",
-    architectures=["Gemma3ForCausalLM"],
+    model_type=HFModelType.GEMMA3_TEXT,
+    architectures=[HFArchitecture.GEMMA3_FOR_CAUSAL_LM],
 )
 class GemmaForCausalLM(Model):
     """

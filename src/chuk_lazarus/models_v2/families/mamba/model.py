@@ -16,6 +16,7 @@ from ...components.ssm import MambaBlock
 from ...core.registry import register_model
 from ...heads import LMHead
 from ...models.base import Model, ModelOutput
+from ..constants import HFArchitecture, HFModelType
 from .config import MambaConfig
 
 
@@ -123,8 +124,8 @@ class MambaModel(Backbone):
 
 
 @register_model(
-    model_type="mamba",
-    architectures=["MambaForCausalLM", "MambaLMHeadModel"],
+    model_type=HFModelType.MAMBA,
+    architectures=[HFArchitecture.MAMBA_FOR_CAUSAL_LM, HFArchitecture.MAMBA_LM_HEAD_MODEL],
 )
 class MambaForCausalLM(Model):
     """

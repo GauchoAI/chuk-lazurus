@@ -97,21 +97,21 @@ class GraniteConfig(ModelConfig):
             num_key_value_heads=hf_config.get(ConfigField.NUM_KEY_VALUE_HEADS.value, 8),
             intermediate_size=hf_config.get(ConfigField.INTERMEDIATE_SIZE.value, 12800),
             max_position_embeddings=hf_config.get(ConfigField.MAX_POSITION_EMBEDDINGS.value, 4096),
-            hidden_act=hf_config.get("hidden_act", "silu"),
+            hidden_act=hf_config.get(ConfigField.HIDDEN_ACT.value, "silu"),
             rope_theta=hf_config.get(ConfigField.ROPE_THETA.value, DefaultRoPETheta.LLAMA2.value),
             rms_norm_eps=hf_config.get(ConfigField.RMS_NORM_EPS.value, DefaultNormEps.LLAMA.value),
             tie_word_embeddings=hf_config.get(ConfigField.TIE_WORD_EMBEDDINGS.value, True),
             # Granite-specific multipliers
-            embedding_multiplier=hf_config.get("embedding_multiplier", 12.0),
-            attention_multiplier=hf_config.get("attention_multiplier", 1.0),
-            residual_multiplier=hf_config.get("residual_multiplier", 1.0),
-            logits_scaling=hf_config.get("logits_scaling", 1.0),
+            embedding_multiplier=hf_config.get(ConfigField.EMBEDDING_MULTIPLIER.value, 12.0),
+            attention_multiplier=hf_config.get(ConfigField.ATTENTION_MULTIPLIER.value, 1.0),
+            residual_multiplier=hf_config.get(ConfigField.RESIDUAL_MULTIPLIER.value, 1.0),
+            logits_scaling=hf_config.get(ConfigField.LOGITS_SCALING.value, 1.0),
             # Attention settings
-            attention_dropout=hf_config.get("attention_dropout", 0.0),
-            attention_bias=hf_config.get("attention_bias", False),
-            mlp_bias=hf_config.get("mlp_bias", False),
+            attention_dropout=hf_config.get(ConfigField.ATTENTION_DROPOUT.value, 0.0),
+            attention_bias=hf_config.get(ConfigField.ATTENTION_BIAS.value, False),
+            mlp_bias=hf_config.get(ConfigField.MLP_BIAS.value, False),
             # RoPE scaling
-            rope_scaling=hf_config.get("rope_scaling"),
+            rope_scaling=hf_config.get(ConfigField.ROPE_SCALING.value),
         )
 
     @classmethod
@@ -282,10 +282,10 @@ class GraniteHybridConfig(ModelConfig):
             Configured GraniteHybridConfig instance
         """
         # Extract layer types from config
-        layer_types = hf_config.get("layer_types")
+        layer_types = hf_config.get(ConfigField.LAYER_TYPES.value)
         if layer_types is None:
             # Default to all attention if not specified
-            num_layers = hf_config.get("num_hidden_layers", 40)
+            num_layers = hf_config.get(ConfigField.NUM_HIDDEN_LAYERS.value, 40)
             layer_types = ["attention"] * num_layers
 
         return cls(
@@ -304,38 +304,40 @@ class GraniteHybridConfig(ModelConfig):
             tie_word_embeddings=hf_config.get(ConfigField.TIE_WORD_EMBEDDINGS.value, True),
             # Layer configuration
             layer_types=layer_types,
-            position_embedding_type=hf_config.get("position_embedding_type", "rope"),
+            position_embedding_type=hf_config.get(
+                ConfigField.POSITION_EMBEDDING_TYPE.value, "rope"
+            ),
             # Granite-specific multipliers
-            embedding_multiplier=hf_config.get("embedding_multiplier", 12.0),
-            attention_multiplier=hf_config.get("attention_multiplier", 0.0078125),
-            residual_multiplier=hf_config.get("residual_multiplier", 0.22),
-            logits_scaling=hf_config.get("logits_scaling", 6.0),
+            embedding_multiplier=hf_config.get(ConfigField.EMBEDDING_MULTIPLIER.value, 12.0),
+            attention_multiplier=hf_config.get(ConfigField.ATTENTION_MULTIPLIER.value, 0.0078125),
+            residual_multiplier=hf_config.get(ConfigField.RESIDUAL_MULTIPLIER.value, 0.22),
+            logits_scaling=hf_config.get(ConfigField.LOGITS_SCALING.value, 6.0),
             # Standard settings
-            hidden_act=hf_config.get("hidden_act", "silu"),
+            hidden_act=hf_config.get(ConfigField.HIDDEN_ACT.value, "silu"),
             rope_theta=hf_config.get(ConfigField.ROPE_THETA.value, DefaultRoPETheta.LLAMA2.value),
             rms_norm_eps=hf_config.get(ConfigField.RMS_NORM_EPS.value, DefaultNormEps.LLAMA.value),
             normalization_function=hf_config.get("normalization_function", "rmsnorm"),
             # Attention settings
-            attention_dropout=hf_config.get("attention_dropout", 0.0),
-            attention_bias=hf_config.get("attention_bias", False),
+            attention_dropout=hf_config.get(ConfigField.ATTENTION_DROPOUT.value, 0.0),
+            attention_bias=hf_config.get(ConfigField.ATTENTION_BIAS.value, False),
             # Mamba-2 settings
             mamba_d_state=hf_config.get(ConfigField.MAMBA_D_STATE.value, 128),
             mamba_d_conv=hf_config.get(ConfigField.MAMBA_D_CONV.value, 4),
             mamba_expand=hf_config.get(ConfigField.MAMBA_EXPAND.value, 2),
-            mamba_n_heads=hf_config.get("mamba_n_heads", 48),
-            mamba_d_head=hf_config.get("mamba_d_head", 64),
-            mamba_n_groups=hf_config.get("mamba_n_groups", 1),
-            mamba_chunk_size=hf_config.get("mamba_chunk_size", 256),
-            mamba_conv_bias=hf_config.get("mamba_conv_bias", True),
-            mamba_proj_bias=hf_config.get("mamba_proj_bias", False),
+            mamba_n_heads=hf_config.get(ConfigField.MAMBA_N_HEADS.value, 48),
+            mamba_d_head=hf_config.get(ConfigField.MAMBA_D_HEAD.value, 64),
+            mamba_n_groups=hf_config.get(ConfigField.MAMBA_N_GROUPS.value, 1),
+            mamba_chunk_size=hf_config.get(ConfigField.MAMBA_CHUNK_SIZE.value, 256),
+            mamba_conv_bias=hf_config.get(ConfigField.MAMBA_CONV_BIAS.value, True),
+            mamba_proj_bias=hf_config.get(ConfigField.MAMBA_PROJ_BIAS.value, False),
             # MoE settings
             num_local_experts=hf_config.get(ConfigField.NUM_EXPERTS.value, 0),
             num_experts_per_tok=hf_config.get(ConfigField.NUM_EXPERTS_PER_TOK.value, 0),
-            shared_intermediate_size=hf_config.get("shared_intermediate_size", 0),
-            router_aux_loss_coef=hf_config.get("router_aux_loss_coef", 0.0),
-            output_router_logits=hf_config.get("output_router_logits", False),
+            shared_intermediate_size=hf_config.get(ConfigField.SHARED_INTERMEDIATE_SIZE.value, 0),
+            router_aux_loss_coef=hf_config.get(ConfigField.ROUTER_AUX_LOSS_COEF.value, 0.0),
+            output_router_logits=hf_config.get(ConfigField.OUTPUT_ROUTER_LOGITS.value, False),
             # RoPE scaling
-            rope_scaling=hf_config.get("rope_scaling"),
+            rope_scaling=hf_config.get(ConfigField.ROPE_SCALING.value),
         )
 
     @property

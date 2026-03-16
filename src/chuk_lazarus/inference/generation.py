@@ -10,10 +10,24 @@ Supports virtual expert plugins for tool-augmented generation.
 from __future__ import annotations
 
 import time
+from enum import Enum
 from typing import TYPE_CHECKING
 
 import mlx.core as mx
 from pydantic import BaseModel, ConfigDict, Field
+
+
+class StopReason(str, Enum):
+    """Why text generation stopped. No magic strings."""
+
+    MAX_TOKENS = "max_tokens"
+    EOS = "eos"
+    STOP_TOKEN = "stop_token"
+    PLUGIN = "plugin"
+
+    def __str__(self) -> str:
+        return self.value
+
 
 if TYPE_CHECKING:
     from transformers import PreTrainedTokenizer
@@ -61,7 +75,7 @@ class GenerationResult(BaseModel):
 
     text: str = Field(..., description="Generated text")
     stats: GenerationStats = Field(..., description="Generation statistics")
-    stop_reason: str = Field("max_tokens", description="Why generation stopped")
+    stop_reason: StopReason = Field(StopReason.MAX_TOKENS, description="Why generation stopped")
     plugin_used: str | None = Field(None, description="Name of plugin used, if any")
 
 
@@ -130,7 +144,7 @@ def generate(
                     return GenerationResult(
                         text=result,
                         stats=stats,
-                        stop_reason="plugin",
+                        stop_reason=StopReason.PLUGIN,
                         plugin_used=plugin.name,
                     )
 
@@ -160,12 +174,12 @@ def generate(
     generated_text = tokenizer.decode(new_tokens.tolist(), skip_special_tokens=True)
 
     # Determine stop reason
-    stop_reason = "max_tokens"
+    stop_reason = StopReason.MAX_TOKENS
     if output_length < config.max_new_tokens:
         if new_tokens.size > 0 and int(new_tokens[-1]) in stop_tokens:
-            stop_reason = "eos"
+            stop_reason = StopReason.EOS
         else:
-            stop_reason = "stop_token"
+            stop_reason = StopReason.STOP_TOKEN
 
     # Build stats
     stats = GenerationStats(

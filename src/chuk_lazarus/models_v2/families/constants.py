@@ -50,6 +50,13 @@ class HFModelType(str, Enum):
 
     # GPT-OSS (OpenAI open source MoE)
     GPT_OSS = "gpt_oss"
+    GPT_OSS_LITE = "gpt_oss_lite"
+
+    # GPT BigCode
+    GPT_BIGCODE = "gpt_bigcode"
+
+    # OLMoE
+    OLMOE = "olmoe"
 
 
 class HFArchitecture(str, Enum):
@@ -95,6 +102,17 @@ class HFArchitecture(str, Enum):
 
     # GPT-OSS (OpenAI open source MoE)
     GPT_OSS_FOR_CAUSAL_LM = "GptOssForCausalLM"
+    GPT_OSS_LITE_FOR_CAUSAL_LM = "GptOssLiteForCausalLM"
+    GPT_OSS_LITE_FOR_CAUSAL_LM_ALT = "GPTOSSLiteForCausalLM"
+
+    # GPT BigCode (StarCoder1)
+    GPT_BIGCODE_FOR_CAUSAL_LM = "GPTBigCodeForCausalLM"
+
+    # Mamba alt
+    MAMBA_LM_HEAD_MODEL = "MambaLMHeadModel"
+
+    # OLMoE
+    OLMOE_FOR_CAUSAL_LM = "OlmoeForCausalLM"
 
 
 class DefaultVocabSize(int, Enum):
@@ -192,11 +210,84 @@ class ConfigField(str, Enum):
     SLIDING_WINDOW_PATTERN = "sliding_window_pattern"
     QUERY_PRE_ATTN_SCALAR = "query_pre_attn_scalar"
 
+    # Common optional fields
+    HIDDEN_ACT = "hidden_act"
+    HIDDEN_ACTIVATION = "hidden_activation"
+    ATTENTION_BIAS = "attention_bias"
+    MLP_BIAS = "mlp_bias"
+    ATTENTION_DROPOUT = "attention_dropout"
+    ROPE_SCALING = "rope_scaling"
+    USE_BIAS = "use_bias"
+
     # Jamba specific
     ATTN_LAYER_PERIOD = "attn_layer_period"
+    ATTN_LAYER_OFFSET = "attn_layer_offset"
     EXPERT_LAYER_PERIOD = "expert_layer_period"
+    EXPERT_LAYER_OFFSET = "expert_layer_offset"
     NUM_EXPERTS = "num_experts"
     NUM_EXPERTS_PER_TOK = "num_experts_per_tok"
     MAMBA_D_STATE = "mamba_d_state"
     MAMBA_D_CONV = "mamba_d_conv"
     MAMBA_EXPAND = "mamba_expand"
+    MAMBA_DT_RANK = "mamba_dt_rank"
+    MAMBA_CONV_BIAS = "mamba_conv_bias"
+    MAMBA_PROJ_BIAS = "mamba_proj_bias"
+
+    # Mamba standalone
+    D_MODEL = "d_model"
+    STATE_SIZE = "state_size"
+    CONV_KERNEL = "conv_kernel"
+    EXPAND_FACTOR = "expand_factor"
+
+    # Gemma extended
+    ROPE_LOCAL_BASE_FREQ = "rope_local_base_freq"
+    TEXT_CONFIG = "text_config"
+
+    # Granite specific
+    EMBEDDING_MULTIPLIER = "embedding_multiplier"
+    ATTENTION_MULTIPLIER = "attention_multiplier"
+    RESIDUAL_MULTIPLIER = "residual_multiplier"
+    LOGITS_SCALING = "logits_scaling"
+    POSITION_EMBEDDING_TYPE = "position_embedding_type"
+
+    # Granite hybrid / Mamba2
+    LAYER_TYPES = "layer_types"
+    MAMBA_N_HEADS = "mamba_n_heads"
+    MAMBA_D_HEAD = "mamba_d_head"
+    MAMBA_N_GROUPS = "mamba_n_groups"
+    MAMBA_CHUNK_SIZE = "mamba_chunk_size"
+    SHARED_INTERMEDIATE_SIZE = "shared_intermediate_size"
+    ROUTER_AUX_LOSS_COEF = "router_aux_loss_coef"
+    OUTPUT_ROUTER_LOGITS = "output_router_logits"
+
+    # OLMoE specific
+    NORM_TOPK_PROB = "norm_topk_prob"
+    NUM_LOCAL_EXPERTS = "num_local_experts"
+
+    # Llama4 specific
+    NO_ROPE_LAYERS = "no_rope_layers"
+    NOPE_LAYER_INTERVAL = "nope_layer_interval"
+    INTERMEDIATE_SIZE_MLP = "intermediate_size_mlp"
+    MOE_ROUTER_TOPK = "moe_router_topk"
+    USE_QK_NORM = "use_qk_norm"
+    ATTN_TEMPERATURE_TUNING = "attn_temperature_tuning"
+
+    # StarCoder2 specific
+    NORM_EPSILON = "norm_epsilon"
+
+    # GPT-OSS specific
+    SWIGLU_LIMIT = "swiglu_limit"
+
+    # GPT-OSS-Lite specific
+    SOURCE_MODEL = "source_model"
+    REDUCTION_PERCENT = "reduction_percent"
+    ORIGINAL_EXPERTS = "original_experts"
+    TOTAL_EXPERTS = "total_experts"
+
+    # MLX community format aliases
+    DIM = "dim"
+    N_LAYERS = "n_layers"
+    N_HEADS = "n_heads"
+    N_KV_HEADS = "n_kv_heads"
+    HIDDEN_DIM = "hidden_dim"
+    NORM_EPS = "norm_eps"

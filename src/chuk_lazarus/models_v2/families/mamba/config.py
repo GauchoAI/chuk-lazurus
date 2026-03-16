@@ -83,8 +83,12 @@ class MambaConfig(ModelConfig):
             Configured MambaConfig instance
         """
         # Mamba uses d_model for hidden_size
-        hidden_size = hf_config.get("hidden_size") or hf_config.get("d_model", 768)
-        num_layers = hf_config.get("num_hidden_layers") or hf_config.get("n_layer", 24)
+        hidden_size = hf_config.get(ConfigField.HIDDEN_SIZE) or hf_config.get(
+            ConfigField.D_MODEL, 768
+        )
+        num_layers = hf_config.get(ConfigField.NUM_HIDDEN_LAYERS) or hf_config.get(
+            ConfigField.N_LAYER, 24
+        )
 
         return cls(
             model_type=hf_config.get(ConfigField.MODEL_TYPE.value, HFModelType.MAMBA.value),
@@ -94,9 +98,9 @@ class MambaConfig(ModelConfig):
             max_position_embeddings=hf_config.get(ConfigField.MAX_POSITION_EMBEDDINGS.value, 2048),
             tie_word_embeddings=hf_config.get(ConfigField.TIE_WORD_EMBEDDINGS.value, False),
             # Mamba-specific
-            d_state=hf_config.get("d_state") or hf_config.get("state_size", 16),
-            d_conv=hf_config.get("d_conv") or hf_config.get("conv_kernel", 4),
-            expand=hf_config.get("expand") or hf_config.get("expand_factor", 2),
+            d_state=hf_config.get("d_state") or hf_config.get(ConfigField.STATE_SIZE, 16),
+            d_conv=hf_config.get("d_conv") or hf_config.get(ConfigField.CONV_KERNEL, 4),
+            expand=hf_config.get("expand") or hf_config.get(ConfigField.EXPAND_FACTOR, 2),
         )
 
     @classmethod

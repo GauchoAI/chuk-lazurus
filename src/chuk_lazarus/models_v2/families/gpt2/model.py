@@ -24,6 +24,7 @@ from ...components.normalization import LayerNorm
 from ...core.registry import register_model
 from ...heads import LMHead
 from ...models.base import Model, ModelOutput
+from ..constants import HFArchitecture, HFModelType
 from .config import GPT2Config
 
 
@@ -257,8 +258,8 @@ class GPT2Model(Backbone):
 
 
 @register_model(
-    model_type="gpt2",
-    architectures=["GPT2LMHeadModel"],
+    model_type=HFModelType.GPT2,
+    architectures=[HFArchitecture.GPT2_LM_HEAD_MODEL],
 )
 class GPT2ForCausalLM(Model):
     """
