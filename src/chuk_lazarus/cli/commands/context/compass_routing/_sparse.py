@@ -42,13 +42,18 @@ def _sparse_score_windows(
     for entry in entries:
         wid = entry.get("window_id", -1)
         kws = entry.get("keywords", [])
-        # Flatten keyword triplets into individual terms for matching
+        content = entry.get("content_words", [])
+        # Flatten keyword triplets + content words into individual terms
         terms: list[str] = []
         for kw in kws:
             for word in kw.lower().split():
                 clean = _re.sub(r'[^\w]', '', word)
                 if len(clean) > 1:
                     terms.append(clean)
+        for cw in content:
+            clean = _re.sub(r'[^\w]', '', cw.lower())
+            if len(clean) > 1:
+                terms.append(clean)
         window_keywords[wid] = terms
 
     # Query terms (strip punctuation for matching)

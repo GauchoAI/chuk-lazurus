@@ -47,6 +47,7 @@ def save_library(
     run_pages: bool = True,
     run_surprise: bool = True,
     run_sparse: bool = True,
+    compass_layer: int | None = None,
 ) -> None:
     """Write all library files from the engine's current archived state.
 
@@ -131,6 +132,7 @@ def save_library(
             calibrate_compass(
                 engine, output_path, num_archived, config,
                 n_samples=compass_n_samples,
+                compass_layer=compass_layer,
             )
 
         # Surprise: per-token perplexity scoring (anomaly detection)

@@ -156,6 +156,7 @@ async def context_prefill_cmd(args: Namespace) -> None:
             run_pages=config.run_pages,
             run_surprise=config.run_surprise,
             run_sparse=config.run_sparse,
+            compass_layer=config.compass_layer,
         )
         elapsed = time.monotonic() - start_wall
         s = engine.stats()
@@ -245,6 +246,7 @@ async def context_prefill_cmd(args: Namespace) -> None:
             run_pages=config.run_pages,
             run_surprise=config.run_surprise,
             run_sparse=config.run_sparse,
+            compass_layer=config.compass_layer,
         )
         if quick and current_archived > 1:
             evict_ids = list(range(_last_saved_window, current_archived - 1))

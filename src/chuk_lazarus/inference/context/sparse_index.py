@@ -50,6 +50,68 @@ COMMON_ABBREVIATIONS = frozenset({
     "NO", "SO", "DO",
 })
 
+# -----------------------------------------------------------------------
+# Stopwords — broader set for content word extraction
+# -----------------------------------------------------------------------
+
+STOPWORDS = frozenset({
+    'the', 'a', 'an', 'this', 'that', 'these', 'those',
+    'in', 'of', 'at', 'to', 'for', 'with', 'by', 'on',
+    'he', 'she', 'it', 'they', 'we', 'you', 'i', 'me',
+    'was', 'were', 'is', 'are', 'have', 'had', 'do', 'did',
+    'and', 'or', 'but', 'so', 'because', 'if', 'when',
+    'very', 'really', 'just', 'also', 'then', 'not', 'no',
+    'be', 'been', 'being', 'has', 'will', 'would', 'could',
+    'should', 'may', 'might', 'can', 'shall', 'must',
+    'about', 'from', 'into', 'through', 'during', 'before',
+    'after', 'above', 'below', 'between', 'under', 'over',
+    'here', 'there', 'where', 'how', 'what', 'which', 'who',
+    'all', 'each', 'every', 'both', 'few', 'more', 'most',
+    'other', 'some', 'such', 'only', 'own', 'same', 'than',
+    'too', 'out', 'up', 'down', 'off', 'over', 'now',
+    'get', 'got', 'go', 'going', 'went', 'come', 'came',
+    'make', 'made', 'take', 'took', 'give', 'gave',
+    'say', 'said', 'tell', 'told', 'ask', 'asked',
+    'think', 'thought', 'know', 'knew', 'see', 'saw',
+    'want', 'need', 'like', 'look', 'looked',
+    'well', 'back', 'way', 'right', 'good', 'new',
+    'roger', 'copy', 'over', 'okay',  # transcript-specific
+})
+
+
+# -----------------------------------------------------------------------
+# Content word extraction
+# -----------------------------------------------------------------------
+
+def extract_content_words(tokens: list[int], tokenizer) -> list[str]:
+    """Extract content words from a window's token IDs.
+
+    Decodes all tokens to text, splits into words, filters stopwords
+    and short tokens. Handles multi-token words (e.g. "Namath" split
+    into "Nam"+"ath") by working on the decoded text rather than
+    individual tokens.
+
+    Returns deduplicated list of lowercase content words.
+    """
+    text = tokenizer.decode(tokens, skip_special_tokens=True)
+
+    # Split into words: mixed-case words (3+ chars) and all-caps (2+ chars)
+    words = re.findall(r'[A-Za-z][a-z]{2,}|[A-Z]{2,}', text)
+
+    content_words: list[str] = []
+    seen: set[str] = set()
+    for word in words:
+        lower = word.lower()
+        if lower in STOPWORDS:
+            continue
+        if len(lower) < 3:
+            continue
+        if lower not in seen:
+            seen.add(lower)
+            content_words.append(lower)
+
+    return content_words
+
 
 # -----------------------------------------------------------------------
 # Data classes
@@ -110,11 +172,14 @@ class SparseEntry:
     """One window's extracted keywords and fact spans."""
     window_id: int
     keywords: list[str] = field(default_factory=list)
+    content_words: list[str] = field(default_factory=list)
     surprise_rank: int = 0
     fact_spans: list[FactSpan] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         d: dict = {"window_id": self.window_id, "keywords": self.keywords}
+        if self.content_words:
+            d["content_words"] = self.content_words
         if self.surprise_rank > 0:
             d["surprise_rank"] = self.surprise_rank
         if self.fact_spans:
@@ -127,6 +192,7 @@ class SparseEntry:
         return cls(
             window_id=d["window_id"],
             keywords=d.get("keywords", []),
+            content_words=d.get("content_words", []),
             surprise_rank=d.get("surprise_rank", 0),
             fact_spans=spans,
         )

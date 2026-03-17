@@ -81,6 +81,10 @@ class PrefillConfig(CommandConfig):
         default_factory=lambda: {PrefillPhase.ALL},
         description="Phases to run",
     )
+    compass_layer: int | None = Field(
+        default=None,
+        description="Explicit layer for compass extraction (default: auto ~77% depth)",
+    )
 
     def _should_run(self, phase: PrefillPhase) -> bool:
         """Check if a phase should run (enabled explicitly or via ALL)."""
@@ -132,6 +136,7 @@ class PrefillConfig(CommandConfig):
             store_pages=getattr(args, "store_pages", False),
             store_kv_full=getattr(args, "store_kv_full", False),
             phases=phases,
+            compass_layer=getattr(args, "compass_layer", None),
         )
 
 

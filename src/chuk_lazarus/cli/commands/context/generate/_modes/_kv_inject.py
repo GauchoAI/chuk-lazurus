@@ -1,15 +1,16 @@
-"""Mode 6 — Fact-span prefill.
+"""Mode 6 — Fact-span prefill, with auto Mode 7 escalation.
 
 Architecture:
-  1. Route to top-K windows (compass or BM25, ~4ms)
-  2. Load fact-span tokens from the token archive (~10 tokens per fact span)
-  3. Single prefill: preamble + fact spans + postamble (~100ms for 5 windows)
-  4. Generate (~50ms)
-  5. Total: ~150ms from 741KB cold storage
+  1. BM25 score all windows (24ms)
+  2. IF high BM25 score: Mode 6 (fact retrieval)
+     → Top-5 windows by BM25, ±5 fact spans, ~500 tokens, ~475ms
+  3. IF low BM25 score: Mode 7 (broad reasoning)
+     → Geometric routing, 20 windows, ~3000 tokens, ~2.5s
 
-The fact spans are identified during prefill by surprise ranking — the most
-surprising token positions ±5 context tokens. 10 tokens per span is enough
-for "USS Hornet" to be a complete phrase, "scratchy" to have sentence context.
+The BM25 max score is the mode selector:
+  > 8.0: strong keyword match → Mode 6
+  < 5.0: no keyword match → Mode 7
+  5.0-8.0: partial match → Mode 6 with more windows
 
 Storage: 741KB token archive + sparse_index.json with fact_spans (~150KB).
 No pre-computed KV. No replay of full 512-token windows.
@@ -19,6 +20,10 @@ from __future__ import annotations
 
 import sys
 import time
+
+# BM25 score thresholds for auto mode selection
+_THRESHOLD_HIGH = 8.0   # Strong keyword match → Mode 6 (fact)
+_THRESHOLD_LOW = 5.0    # Below this → Mode 7 (broad reasoning)
 
 
 def run_kv_inject(
@@ -32,11 +37,45 @@ def run_kv_inject(
     args,
     mx,
 ):
-    """Route → load fact spans → single prefill → decode."""
+    """Route → auto mode select → fact spans or broad context → decode."""
     from ..._types import GenerateResult
     from ...compass_routing import RoutingStrategy, compass_route
 
-    # ── Route to select windows ──────────────────────────────────────
+    # ── Mode selection ───────────────────────────────────────────────
+    mode_override = getattr(args, "mode", None)  # auto|fact|broad
+
+    # Always compute BM25 for mode selection (fast, ~24ms)
+    bm25_scores = None
+    if lib.has_sparse_index:
+        from ...compass_routing._sparse import _sparse_score_windows
+        bm25_scores = _sparse_score_windows(lib, prompt_text)
+
+    max_bm25 = bm25_scores[0][1] if bm25_scores else 0.0
+
+    if mode_override == "broad" or (mode_override != "fact" and max_bm25 < _THRESHOLD_LOW):
+        # Mode 7: broad reasoning
+        print(
+            f"  Mode 7 (broad reasoning): BM25 max={max_bm25:.1f} < {_THRESHOLD_LOW}",
+            file=sys.stderr,
+        )
+        from ._broad import run_broad
+        return run_broad(
+            lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text,
+            config, args, mx, bm25_scores=bm25_scores,
+        )
+
+    if max_bm25 < _THRESHOLD_HIGH:
+        print(
+            f"  Mode 6 (fact, partial match): BM25 max={max_bm25:.1f}",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            f"  Mode 6 (fact, strong match): BM25 max={max_bm25:.1f}",
+            file=sys.stderr,
+        )
+
+    # ── Mode 6: fact retrieval ───────────────────────────────────────
     strategy_arg = getattr(args, "strategy", None)
     top_k_override = getattr(args, "top_k", None)
     top_k = top_k_override if top_k_override is not None else 5
@@ -51,6 +90,24 @@ def run_kv_inject(
             strategy=strategy,
             top_k=top_k,
         )
+    elif bm25_scores and max_bm25 >= _THRESHOLD_LOW:
+        # BM25 already scored — use those scores directly
+        last_wid = lib.num_windows - 1
+        inject_wids = [wid for wid, _ in bm25_scores[:top_k]]
+        if last_wid not in inject_wids:
+            inject_wids.append(last_wid)
+        # Print routing table
+        elapsed_ms = 0  # already computed during mode selection
+        print(f"  Compass routing (sparse keyword BM25, auto):", file=sys.stderr)
+        for i, (wid, score) in enumerate(bm25_scores[:top_k + 2]):
+            marker = " *" if wid in inject_wids else ""
+            w = lib.windows[wid]
+            print(
+                f"    window {wid:>2} (score={score:+.4f}){marker}  {w.preview[:50]}",
+                file=sys.stderr,
+            )
+            if i == top_k - 1:
+                print(f"    {'─' * 60}", file=sys.stderr)
     else:
         # Default: L26 attention routing over sparse index
         sparse_path = lib._path / "sparse_index.json"
@@ -84,9 +141,27 @@ def run_kv_inject(
 
     # ── Build preamble + postamble ────────────────────────────────────
     no_chat = getattr(args, "no_chat_template", False)
+    no_framing = getattr(args, "no_framing", False)
     system_prompt = getattr(args, "system_prompt", None)
+    span_radius = getattr(args, "span_radius", None)
 
-    if not no_chat and hasattr(tokenizer, "apply_chat_template"):
+    if no_framing:
+        # Clean architecture: [span tokens][chat-wrapped query]
+        # The spans provide facts. The query provides generation context.
+        # No preamble. No postamble. No instructions.
+        preamble_ids = []
+        if not no_chat and hasattr(tokenizer, "apply_chat_template"):
+            query_text = (
+                f"<start_of_turn>user\n{prompt_text}<end_of_turn>\n"
+                f"<start_of_turn>model\n"
+            )
+            postamble_ids = tokenizer.encode(query_text, add_special_tokens=True)
+        else:
+            postamble_ids = tokenizer.encode(
+                f"Question: {prompt_text}\nAnswer:",
+                add_special_tokens=False,
+            )
+    elif not no_chat and hasattr(tokenizer, "apply_chat_template"):
         sys_content = system_prompt or (
             "You are answering questions based on a document. "
             "Answer using only information from the document. "
@@ -112,7 +187,9 @@ def run_kv_inject(
 
     # ── Single prefill: preamble + fact spans + postamble ─────────────
     t0 = time.time()
-    span_tokens, n_spans = _collect_span_tokens(lib, inject_wids)
+    span_tokens, n_spans = _collect_span_tokens(
+        lib, inject_wids, radius_override=span_radius,
+    )
     combined = preamble_ids + span_tokens + postamble_ids
     logits, gen_kv = kv_gen.prefill(mx.array(combined)[None])
     mx.eval(logits)
@@ -120,10 +197,11 @@ def run_kv_inject(
     prefill_ms = (time.time() - t0) * 1000
 
     mode = f"{n_spans} spans" if n_spans > 0 else "full tokens"
+    framing_label = "no framing" if no_framing else "framed"
     print(
         f"  Prefill: {len(span_tokens)} span tokens ({mode}) + "
-        f"{len(preamble_ids) + len(postamble_ids)} framing = "
-        f"{len(combined)} total ({prefill_ms:.0f}ms)",
+        f"{len(preamble_ids) + len(postamble_ids)} query = "
+        f"{len(combined)} total ({prefill_ms:.0f}ms, {framing_label})",
         file=sys.stderr,
     )
 
@@ -264,11 +342,15 @@ def _route_l26_attention(lib, kv_gen, tokenizer, prompt_text, top_k, mx):
     return None
 
 
-def _collect_span_tokens(lib, inject_wids):
+def _collect_span_tokens(lib, inject_wids, radius_override=None):
     """Collect fact-span tokens from selected windows.
 
     Uses fact_spans from sparse index if available (±5 tokens per fact).
     Falls back to full window tokens.
+
+    Args:
+        radius_override: if set, override the stored span radius (e.g. 15
+            for sentence-boundary spans instead of ±5 token spans).
 
     Returns (span_tokens, n_spans).
     """
@@ -281,6 +363,10 @@ def _collect_span_tokens(lib, inject_wids):
         w_tokens = lib.get_window_tokens(wid)
         if use_spans and wid in spans_by_window:
             spans = spans_by_window[wid]
+            if radius_override is not None:
+                from chuk_lazarus.inference.context.sparse_index import FactSpan
+                spans = [FactSpan(position=s.position, radius=radius_override)
+                         for s in spans]
             all_tokens.extend(_extract_span_tokens(w_tokens, spans))
             total_spans += len(spans)
         else:

@@ -78,6 +78,10 @@ def register_context_parsers(subparsers):
             "on an existing library. Default: all"
         ),
     )
+    ctx_prefill.add_argument(
+        "--compass-layer", type=int, default=None, dest="compass_layer",
+        help="Explicit layer for compass extraction (default: auto ~77%% depth, e.g. 29 for retrieval-layer routing)",
+    )
     ctx_prefill.set_defaults(func=lambda args: asyncio.run(context_prefill_cmd(args)))
 
     # context generate
@@ -134,6 +138,33 @@ def register_context_parsers(subparsers):
     ctx_generate.add_argument(
         "--max-keywords", type=int, default=3, dest="max_keywords",
         help="Max keywords per window in sparse mode (default: 3 for triplet compression)",
+    )
+    ctx_generate.add_argument(
+        "--no-framing",
+        action="store_true",
+        dest="no_framing",
+        help="KV mode: raw [span tokens][query] prefill, no preamble/postamble",
+    )
+    ctx_generate.add_argument(
+        "--span-radius", type=int, default=None, dest="span_radius",
+        help="Override fact span radius (default: 5, try 15 for sentence-boundary spans)",
+    )
+    ctx_generate.add_argument(
+        "--mode", default="auto", choices=["auto", "fact", "broad"],
+        help="KV mode: auto (BM25 score selects), fact (Mode 6), broad (Mode 7)",
+    )
+    ctx_generate.add_argument(
+        "--token-budget", type=int, default=None, dest="token_budget",
+        help="Max tokens for broad context mode (default: 3000)",
+    )
+    ctx_generate.add_argument(
+        "--broad-windows", type=int, default=None, dest="broad_windows",
+        help="Number of windows for broad mode (default: 20)",
+    )
+    ctx_generate.add_argument(
+        "--broad-strategy", default=None, dest="broad_strategy",
+        choices=["contrastive", "compass", "geometric"],
+        help="Geometric strategy for broad mode (default: contrastive)",
     )
     ctx_generate.set_defaults(func=lambda args: asyncio.run(context_generate_cmd(args)))
 

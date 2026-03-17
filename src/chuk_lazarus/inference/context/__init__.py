@@ -81,6 +81,7 @@ from .sparse_index import (
     SparseEntry,
     SparseSemanticIndex,
     SurpriseClassifier,
+    extract_content_words,
 )
 from .sparse_engine import SparseIndexEngine
 

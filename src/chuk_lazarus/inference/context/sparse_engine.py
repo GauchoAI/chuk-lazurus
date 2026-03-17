@@ -47,6 +47,7 @@ from .sparse_index import (
     SparseEntry,
     SparseSemanticIndex,
     SurpriseClassifier,
+    extract_content_words,
 )
 from .unlimited_engine import UnlimitedContextEngine
 
@@ -233,6 +234,9 @@ class SparseIndexEngine(UnlimitedContextEngine):
         # Step 3: extract keywords near novel positions
         keywords = self._extract_novel_keywords(text, token_texts, full_ranks)
 
+        # Step 3b: extract content words (stopword-filtered, merged subwords)
+        content_words = extract_content_words(token_ids, self._tokenizer)
+
         # Step 4: extract fact spans — top-N most surprising token positions
         n_spans = min(8, len(token_ids))
         ranked_positions = sorted(
@@ -256,6 +260,7 @@ class SparseIndexEngine(UnlimitedContextEngine):
         entry = SparseEntry(
             window_id=window_id,
             keywords=keywords,
+            content_words=content_words,
             surprise_rank=max_rank,
             fact_spans=fact_spans,
         )

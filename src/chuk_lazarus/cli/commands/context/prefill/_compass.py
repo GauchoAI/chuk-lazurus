@@ -15,17 +15,20 @@ def calibrate_compass(
     num_archived: int,
     config,
     n_samples: int | None = 8,
+    compass_layer: int | None = None,
 ) -> None:
     """Extract commitment-layer residuals and compute PCA basis for compass routing.
 
     Auto-calibrates:
-      - Commitment layer at ~75% model depth
+      - Commitment layer at ~75% model depth (or explicit layer if provided)
       - Structural/content boundary from the explained variance knee
       - Content subspace width (16 PCs after structural boundary)
 
     Parameters
     ----------
     n_samples : Positions to sample per window. None = all positions (full mode).
+    compass_layer : Explicit layer index for residual extraction. None = auto
+                    (~77% depth). Use 29 for novel-fact routing geometry.
 
     Saves:
       - compass_residuals.npz — per-window residuals at the commitment layer
@@ -37,7 +40,8 @@ def calibrate_compass(
     import numpy as np
 
     num_layers = config.num_hidden_layers
-    compass_layer = round(num_layers * 0.77)
+    if compass_layer is None:
+        compass_layer = round(num_layers * 0.77)
 
     full_mode = n_samples is None
     phase_label = f"compass L{compass_layer}" + (" (full)" if full_mode else "")

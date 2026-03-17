@@ -32,6 +32,7 @@ def extract_sparse(
         FactSpan,
         SparseEntry,
         SparseSemanticIndex,
+        extract_content_words,
     )
 
     extractor = EntityExtractor(max_keywords=max_keywords)
@@ -149,9 +150,13 @@ def extract_sparse(
             if len(fact_spans) >= n_spans:
                 break
 
+        # Content word extraction (stopword-filtered, merged subwords)
+        content_words = extract_content_words(w_tokens, tokenizer)
+
         idx.add(SparseEntry(
             window_id=wid,
             keywords=keywords[:max_keywords],
+            content_words=content_words,
             surprise_rank=max_rank,
             fact_spans=fact_spans,
         ))
