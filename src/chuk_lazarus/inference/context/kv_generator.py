@@ -605,7 +605,7 @@ class KVDirectGenerator:
         Returns (logits_for_N_tokens, extended_kv_store).
         extended_kv_store[i] has K,V of shape (1, nkv, S+N, head_dim).
         """
-        logits, kv_store, _ = self._extend_core(new_token_ids, kv_store, abs_start)
+        logits, kv_store, _, _ = self._extend_core(new_token_ids, kv_store, abs_start)
         return logits, kv_store
 
     def extend_with_residual(
@@ -620,15 +620,47 @@ class KVDirectGenerator:
         Returns (logits, extended_kv_store, residual_last) where residual_last
         is the pre-final-norm hidden state at the last new token: (1, 1, hidden_size).
         """
-        return self._extend_core(new_token_ids, kv_store, abs_start)
+        logits, kv_store, residual_last, _ = self._extend_core(
+            new_token_ids, kv_store, abs_start
+        )
+        return logits, kv_store, residual_last
+
+    def extend_to_layer(
+        self,
+        new_token_ids: mx.array,  # (1, N)
+        kv_store: KVStore,
+        abs_start: int,
+        target_layer: int,
+    ) -> tuple[mx.array, KVStore, mx.array]:
+        """Extend and capture hidden state at target_layer (last new-token position).
+
+        Same forward pass as extend() but also captures the residual stream
+        after layer target_layer before continuing to the final output.
+
+        Returns (logits, extended_kv_store, layer_h) where layer_h is the
+        hidden state at the last new token after target_layer:
+        shape (1, 1, hidden_size).
+
+        Use this instead of extend() + a separate prefill_to_layer() call when
+        you need an intermediate residual — it halves the compute cost.
+        """
+        logits, kv_store, _, layer_h = self._extend_core(
+            new_token_ids, kv_store, abs_start, capture_layer=target_layer
+        )
+        return logits, kv_store, layer_h
 
     def _extend_core(
         self,
         new_token_ids: mx.array,
         kv_store: KVStore,
         abs_start: int,
-    ) -> tuple[mx.array, KVStore, mx.array]:
-        """Core extend returning (logits, extended_kv_store, residual_last)."""
+        capture_layer: int | None = None,
+    ) -> tuple[mx.array, KVStore, mx.array, "mx.array | None"]:
+        """Core extend returning (logits, extended_kv_store, residual_last, layer_h).
+
+        layer_h is the hidden state at capture_layer (last new-token position),
+        or None if capture_layer is None.
+        """
         backbone = self.backbone
         B, N = new_token_ids.shape
         S = kv_store[0][0].shape[2]
@@ -659,6 +691,7 @@ class KVDirectGenerator:
         sw_mask = mx.concatenate([sw_stored, causal_new], axis=-1)[None, None]
 
         new_kv_store: KVStore = []
+        layer_h_captured: "mx.array | None" = None
 
         for i, layer in enumerate(backbone.adapted_layers):
             k_old, v_old = kv_store[i]
@@ -684,13 +717,19 @@ class KVDirectGenerator:
 
             new_kv_store.append((k_all, v_all))
 
+            if capture_layer is not None and i == capture_layer:
+                layer_h_captured = h[:, -1:, :]  # (1, 1, hidden_size)
+
         # Capture residual at last position BEFORE final norm
         residual_last = h[:, -1:, :]  # (1, 1, hidden_size)
 
         h = backbone.final_norm(h)
         logits = backbone.unembed(h)
-        mx.eval(logits, residual_last, *[t for pair in new_kv_store for t in pair])
-        return logits, new_kv_store, residual_last
+        eval_targets = [logits, residual_last, *[t for pair in new_kv_store for t in pair]]
+        if layer_h_captured is not None:
+            eval_targets.append(layer_h_captured)
+        mx.eval(*eval_targets)
+        return logits, new_kv_store, residual_last, layer_h_captured
 
     # ------------------------------------------------------------------
     # Extend with attention weight capture

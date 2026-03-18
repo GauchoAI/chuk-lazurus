@@ -149,6 +149,7 @@ class CheckpointLibrary:
         self._interval_residuals: dict[int, list[mx.array]] = self._load_interval_residuals()
         self._l26_interval_residuals: dict[int, list[mx.array]] = self._load_l26_interval_residuals()
         self._compass_basis: dict[str, mx.array] | None = self._load_compass_basis()
+        self._kv_route_index: dict[str, mx.array] | None = self._load_kv_route_index()
 
     # ------------------------------------------------------------------
     # Properties — delegate to manifest for a clean public interface
@@ -282,6 +283,13 @@ class CheckpointLibrary:
             return None
         return mx.load(str(basis_path))
 
+    def _load_kv_route_index(self) -> dict[str, mx.array] | None:
+        """Load K-vector routing index (L29 H4 K vectors at fact positions)."""
+        index_path = self._path / "kv_route_index.npz"
+        if not index_path.exists():
+            return None
+        return mx.load(str(index_path))
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -404,6 +412,47 @@ class CheckpointLibrary:
         Shape: (pc_start, hidden_size).
         """
         return self._compass_basis["structural_basis"]
+
+    # ------------------------------------------------------------------
+    # K-vector routing index (L29 H4 Q·K routing)
+    # ------------------------------------------------------------------
+
+    @property
+    def has_kv_route_index(self) -> bool:
+        """True if this library has a K-vector routing index."""
+        return self._kv_route_index is not None
+
+    @property
+    def kv_route_layer(self) -> int | None:
+        """Layer used for K-vector extraction."""
+        if self._kv_route_index is None:
+            return None
+        return int(self._kv_route_index["layer"].item())
+
+    @property
+    def kv_route_kv_head(self) -> int | None:
+        """KV head used for K-vector extraction."""
+        if self._kv_route_index is None:
+            return None
+        return int(self._kv_route_index["kv_head"].item())
+
+    def get_kv_route_vectors(self) -> tuple[mx.array, list[tuple[int, int]]]:
+        """Return (K_matrix, position_map) for K-vector routing.
+
+        K_matrix: (N_total, head_dim) — all stored K vectors.
+        position_map: list of (window_id, sample_idx) per row.
+        """
+        idx = self._kv_route_index
+        all_k = []
+        wid_map = []
+        for wid in range(self.num_windows):
+            key = f"w{wid}"
+            if key in idx:
+                k = idx[key]  # (n_facts, head_dim)
+                for si in range(k.shape[0]):
+                    all_k.append(k[si])
+                    wid_map.append((wid, si))
+        return mx.stack(all_k, axis=0) if all_k else mx.zeros((0,)), wid_map
 
     # ------------------------------------------------------------------
     # Full KV (Mode 6 — prefix caching)

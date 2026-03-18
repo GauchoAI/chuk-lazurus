@@ -49,6 +49,8 @@ def _resolve_replay(
                 return ["sparse"]  # Mode 5 sparse semantic index
             elif val == "kv":
                 return ["kv"]  # Mode 6 KV injection (prefix caching)
+            elif val == "vec_inject":
+                return ["vec_inject"]  # 1D subspace fact injection at L30
             else:
                 try:
                     return [int(val)]

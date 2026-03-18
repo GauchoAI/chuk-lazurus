@@ -73,9 +73,10 @@ def register_context_parsers(subparsers):
         "--phases",
         default="all",
         help=(
-            "Comma-separated phases to run: windows, interval, compass, darkspace, pages, surprise, sparse, all. "
-            "E.g. --phases windows to prefill only, --phases sparse to extract keyword index "
-            "on an existing library. Default: all"
+            "Comma-separated phases to run: windows, interval, compass, darkspace, pages, surprise, sparse, kvectors, kvectors_full, mode7, all. "
+            "E.g. --phases windows to prefill only, --phases kvectors to extract K-vector routing index "
+            "(sparse/interval sampling), --phases kvectors_full for 100%% position coverage (~256KB/window), "
+            "--phases mode7 to calibrate Mode 7 probes. Default: all"
         ),
     )
     ctx_prefill.add_argument(
@@ -102,7 +103,7 @@ def register_context_parsers(subparsers):
     ctx_generate.add_argument("--temperature", type=float, default=0.7, help="Sampling temperature")
     ctx_generate.add_argument(
         "--replay", nargs="*", default=None,
-        help='Window IDs to replay: "auto" (default, compass routing), "all", "last", "kv" (Mode 6 prefix caching), "sparse" (Mode 5), or specific IDs (e.g. --replay 0 1 45)',
+        help='Window IDs to replay: "auto" (default, compass routing), "all", "last", "kv" (Mode 6 prefix caching), "sparse" (Mode 5), "vec_inject" (1D subspace injection at L30), or specific IDs (e.g. --replay 0 1 45)',
     )
     ctx_generate.add_argument(
         "--find", default=None,
@@ -114,8 +115,8 @@ def register_context_parsers(subparsers):
     )
     ctx_generate.add_argument(
         "--strategy", default=None,
-        choices=["unified", "bm25", "compass", "qk", "geometric", "contrastive", "darkspace", "guided", "directed", "twopass", "attention", "deflection", "preview", "hybrid", "iterative", "probe", "residual", "sparse"],
-        help="Routing strategy: unified (default, three-probe), geometric, iterative, probe, bm25, residual (legacy)",
+        choices=["mode7", "unified", "bm25", "compass", "qk", "kv_route", "geometric", "contrastive", "darkspace", "guided", "directed", "twopass", "attention", "deflection", "preview", "hybrid", "iterative", "probe", "residual", "sparse", "temporal"],
+        help="Routing strategy: mode7 (default, auto-classifies query), unified (legacy), geometric, iterative, probe, bm25, temporal, residual (legacy)",
     )
     ctx_generate.add_argument(
         "--speculative-tokens", type=int, default=50, dest="speculative_tokens",
@@ -165,6 +166,18 @@ def register_context_parsers(subparsers):
         "--broad-strategy", default=None, dest="broad_strategy",
         choices=["contrastive", "compass", "geometric"],
         help="Geometric strategy for broad mode (default: contrastive)",
+    )
+    ctx_generate.add_argument(
+        "--routing-layer", type=int, default=29, dest="routing_layer",
+        help="Layer for kv_route strategy (default: 29, the retrieval layer)",
+    )
+    ctx_generate.add_argument(
+        "--routing-head", type=int, default=4, dest="routing_head",
+        help="Query head for kv_route strategy (default: 4, the fact-copying head)",
+    )
+    ctx_generate.add_argument(
+        "--confidence-threshold", type=float, default=0.15, dest="confidence_threshold",
+        help="Min Q·K score to trust vec_inject routing (default: 0.15; below = fallback to replay)",
     )
     ctx_generate.set_defaults(func=lambda args: asyncio.run(context_generate_cmd(args)))
 

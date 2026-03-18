@@ -21,7 +21,9 @@ from ._model_based import (
 )
 from ._composite import _darkspace_score_windows, _guided_score_windows
 from ._legacy import _residual_cosine_score_windows
+from ._kv_route import _kv_route_score_windows
 from ._sparse import _sparse_score_windows
+from ._temporal import _temporal_stride_windows
 
 
 def compass_route(
@@ -36,6 +38,8 @@ def compass_route(
     bm25_shortlist: int = 10,
     exclude: set[int] | None = None,
     query_residual: "mx.array | None" = None,
+    routing_layer: int = 29,
+    routing_head: int = 4,
 ) -> list[int]:
     """Route a query to the most relevant windows.
 
@@ -150,7 +154,7 @@ def compass_route(
             # Reciprocal rank fusion (RRF) — each strategy votes independently.
             # RRF score = 1/(k+rank_compass) + 1/(k+rank_contrastive)
             # k=60 is standard. Windows ranked high by EITHER strategy rise.
-            _RRF_K = 5
+            _RRF_K = 30  # standard RRF constant; low values → winner-take-all
             compass_rank = {wid: rank for rank, (wid, _) in enumerate(compass_scores)}
             contrastive_rank = {wid: rank for rank, (wid, _) in enumerate(contrastive_scores)}
             scores = [
@@ -204,6 +208,26 @@ def compass_route(
             layer = lib.compass_layer
             method_name = f"directed (L{layer}, query-defined 1D projection)"
 
+    elif strategy == RoutingStrategy.KV_ROUTE:
+        if not lib.has_compass:
+            print("  Warning: no compass data, falling back to BM25", file=sys.stderr)
+            scores = _bm25_score_windows(lib, tokenizer, prompt_text)
+            method_name = "BM25 (fallback, no compass)"
+        else:
+            # L29 H4 Q·K routing — the model's own fact-addressing mechanism
+            retrieval_layer = routing_layer
+            retrieval_head = routing_head
+            scores = _kv_route_score_windows(
+                lib, kv_gen, prompt_ids,
+                retrieval_layer=retrieval_layer,
+                query_head=retrieval_head,
+            )
+            layer = lib.compass_layer
+            method_name = (
+                f"KV route (L{retrieval_layer} H{retrieval_head} Q·K, "
+                f"compass residuals at L{layer})"
+            )
+
     elif strategy == RoutingStrategy.SPARSE:
         if not lib.has_sparse_index:
             print("  Warning: no sparse index in library, falling back to BM25", file=sys.stderr)
@@ -222,6 +246,10 @@ def compass_route(
         else:
             scores = _residual_cosine_score_windows(lib, kv_gen, prompt_ids)
             method_name = "residual cosine (legacy)"
+
+    elif strategy == RoutingStrategy.TEMPORAL:
+        scores = _temporal_stride_windows(lib, k=top_k)
+        method_name = f"temporal stride ({top_k} evenly spaced)"
 
     else:
         raise ValueError(f"Unknown routing strategy: {strategy}")

@@ -12,6 +12,17 @@ from .._base import CommandConfig, CommandResult, OutputMixin
 from .._constants import ContextDefaults
 
 
+class KVectorMode(str, Enum):
+    """K-vector extraction coverage mode."""
+
+    SPARSE = "sparse"    # Use sparse_index fact positions (surprise-guided)
+    INTERVAL = "interval"  # 8 evenly-spaced samples per window (1.6% coverage)
+    FULL = "full"        # Every position — 100% coverage (~256KB/window for 256D bf16)
+
+    def __str__(self) -> str:
+        return self.value
+
+
 class ResidualMode(str, Enum):
     """Residual extraction mode for prefill."""
 
@@ -32,6 +43,10 @@ class PrefillPhase(str, Enum):
     PAGES = "pages"
     SURPRISE = "surprise"
     SPARSE = "sparse"
+    KVECTORS = "kvectors"
+    KVECTORS_FULL = "kvectors_full"
+    VEC_INJECT = "vec_inject"
+    MODE7 = "mode7"
 
     def __str__(self) -> str:
         return self.value
@@ -85,7 +100,6 @@ class PrefillConfig(CommandConfig):
         default=None,
         description="Explicit layer for compass extraction (default: auto ~77% depth)",
     )
-
     def _should_run(self, phase: PrefillPhase) -> bool:
         """Check if a phase should run (enabled explicitly or via ALL)."""
         return PrefillPhase.ALL in self.phases or phase in self.phases
@@ -117,6 +131,28 @@ class PrefillConfig(CommandConfig):
     @property
     def run_sparse(self) -> bool:
         return self._should_run(PrefillPhase.SPARSE)
+
+    @property
+    def run_kvectors(self) -> bool:
+        return self._should_run(PrefillPhase.KVECTORS) or self._should_run(PrefillPhase.KVECTORS_FULL)
+
+    @property
+    def run_kvectors_full(self) -> bool:
+        return self._should_run(PrefillPhase.KVECTORS_FULL)
+
+    @property
+    def kvector_mode(self) -> KVectorMode:
+        if self.run_kvectors_full:
+            return KVectorMode.FULL
+        return KVectorMode.SPARSE
+
+    @property
+    def run_vec_inject(self) -> bool:
+        return self._should_run(PrefillPhase.VEC_INJECT)
+
+    @property
+    def run_mode7(self) -> bool:
+        return self._should_run(PrefillPhase.MODE7)
 
     @classmethod
     def from_args(cls, args: Namespace) -> PrefillConfig:
@@ -226,6 +262,7 @@ class GenerateResult(CommandResult, OutputMixin):
 __all__ = [
     "GenerateConfig",
     "GenerateResult",
+    "KVectorMode",
     "PrefillConfig",
     "PrefillPhase",
     "PrefillResult",

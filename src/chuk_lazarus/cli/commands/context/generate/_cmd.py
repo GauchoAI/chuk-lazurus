@@ -15,6 +15,7 @@ from argparse import Namespace
 from .._types import GenerateConfig, GenerateResult
 from ..compass_routing import RoutingStrategy, compass_route, two_pass_generate
 from ._iterative import _iterative_generate
+from ._mode7 import _mode7_generate
 from ._probe_driven import _probe_driven_generate
 from ._unified import _unified_generate
 from ._resolve import _resolve_replay
@@ -157,10 +158,22 @@ async def context_generate_cmd(args: Namespace) -> None:
 
     if replay_ids is None:
         # Auto mode: use compass routing
-        strategy = RoutingStrategy(strategy_arg) if strategy_arg else RoutingStrategy.UNIFIED
+        strategy = RoutingStrategy(strategy_arg) if strategy_arg else RoutingStrategy.MODE7
         top_k = top_k_override if top_k_override is not None else 3
 
-        # Unified three-probe strategy — the default. No flags needed.
+        # Mode 7: unified dark space router — the new default
+        if strategy == RoutingStrategy.MODE7:
+            result = _mode7_generate(
+                lib, kv_gen, engine, tokenizer, pipeline.config,
+                prompt_ids, prompt_text, config,
+                top_k=top_k_override,  # None = let Mode 7 pick per query type
+                no_chat=no_chat,
+                system_prompt=system_prompt,
+            )
+            print(result.to_display())
+            return
+
+        # Unified three-probe strategy (legacy default)
         if strategy == RoutingStrategy.UNIFIED:
             top_k = top_k_override if top_k_override is not None else 10
             result = _unified_generate(
@@ -224,6 +237,8 @@ async def context_generate_cmd(args: Namespace) -> None:
             model_config=pipeline.config,
             strategy=strategy,
             top_k=top_k,
+            routing_layer=getattr(args, "routing_layer", 29),
+            routing_head=getattr(args, "routing_head", 4),
         )
 
     print(f"  Replaying windows: {replay_ids}", file=sys.stderr)
@@ -316,8 +331,18 @@ async def context_generate_cmd(args: Namespace) -> None:
         and len(replay_ids) == 1
         and replay_ids[0] == "kv"
     )
+    use_vec_inject = (
+        isinstance(replay_ids, list)
+        and len(replay_ids) == 1
+        and replay_ids[0] == "vec_inject"
+    )
 
     # Dispatch to mode handlers
+    if use_vec_inject:
+        from ._modes._vec_inject import run_vec_inject
+        run_vec_inject(lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, config, args, mx)
+        return
+
     if use_kv:
         from ._modes._kv_inject import run_kv_inject
         run_kv_inject(lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, config, args, mx)

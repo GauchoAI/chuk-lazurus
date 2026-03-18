@@ -8,7 +8,7 @@ import struct
 import sys
 from pathlib import Path
 
-from .._types import ResidualMode
+from .._types import KVectorMode, ResidualMode
 
 
 def compute_config_hash(config) -> str:
@@ -47,7 +47,11 @@ def save_library(
     run_pages: bool = True,
     run_surprise: bool = True,
     run_sparse: bool = True,
+    run_kvectors: bool = True,
+    run_vec_inject: bool = False,
+    run_mode7: bool = False,
     compass_layer: int | None = None,
+    kvector_mode: KVectorMode = KVectorMode.SPARSE,
 ) -> None:
     """Write all library files from the engine's current archived state.
 
@@ -166,6 +170,30 @@ def save_library(
                 from ._sparse import extract_sparse
 
                 extract_sparse(engine, tokenizer, output_path, num_archived)
+
+        # K-vector routing index: L29 H4 K vectors at fact positions
+        if run_kvectors:
+            from ._kv_route import extract_kv_route_index
+
+            extract_kv_route_index(engine, output_path, num_archived, config, kvector_mode=kvector_mode)
+
+        # Vec injection index: K vectors + coefficients c = dot(R_L30, embed(token))
+        if run_vec_inject:
+            from ._vec_inject import extract_vec_inject_index
+
+            extract_vec_inject_index(
+                engine, output_path, num_archived, config,
+                tokenizer=tokenizer, kvector_mode=kvector_mode,
+            )
+
+        # Mode 7: calibrate query classifier + engagement/tension probes
+        if run_mode7:
+            from ._mode7_calibrate import calibrate_mode7_probes
+
+            calibrate_mode7_probes(
+                engine, output_path, num_archived, config,
+                tokenizer, model_id, compass_layer,
+            )
 
     # --- Pages ---
     if store_pages and run_pages:

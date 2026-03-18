@@ -84,6 +84,19 @@ from .sparse_index import (
     extract_content_words,
 )
 from .sparse_engine import SparseIndexEngine
+from .vec_inject import (
+    KV_ROUTE_FILE,
+    VEC_INJECT_FILE,
+    LocalVecInjectProvider,
+    VecInjectMatch,
+    VecInjectMeta,
+    VecInjectMetaKey,
+    VecInjectProvider,
+    VecInjectResult,
+    VecInjectWindowKey,
+    vec_inject,
+    vec_inject_all,
+)
 
 __all__ = [
     # Protocols
@@ -132,4 +145,16 @@ __all__ = [
     "SparseSemanticIndex",
     "SurpriseClassifier",
     "SparseIndexEngine",
+    # Vec injection (Experiment 2bd41b18)
+    "VecInjectMatch",
+    "VecInjectResult",
+    "VecInjectMeta",
+    "VecInjectProvider",
+    "vec_inject",
+    "vec_inject_all",
+    "LocalVecInjectProvider",
+    "VecInjectMetaKey",
+    "VecInjectWindowKey",
+    "VEC_INJECT_FILE",
+    "KV_ROUTE_FILE",
 ]
