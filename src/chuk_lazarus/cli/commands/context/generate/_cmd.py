@@ -340,7 +340,7 @@ async def context_generate_cmd(args: Namespace) -> None:
     # Dispatch to mode handlers
     if use_vec_inject:
         from ._modes._vec_inject import run_vec_inject
-        run_vec_inject(lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, config, args, mx)
+        await run_vec_inject(lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, config, args, mx)
         return
 
     if use_kv:

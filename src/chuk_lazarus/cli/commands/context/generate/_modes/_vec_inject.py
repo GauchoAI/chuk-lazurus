@@ -19,31 +19,13 @@ gate is mandatory before calling vec_inject_all().
 
 from __future__ import annotations
 
-import asyncio
 import sys
 import time
 
 from ..._types import GenerateConfig, GenerateResult
 
 
-def run_vec_inject(
-    lib, kv_gen, pipeline, tokenizer,
-    prompt_ids: list[int],
-    prompt_text: str,
-    config: GenerateConfig,
-    args,
-    mx,
-) -> None:
-    """Synchronous entry point — runs the async inject pipeline."""
-    asyncio.run(
-        _run_async(
-            lib, kv_gen, pipeline, tokenizer,
-            prompt_ids, prompt_text, config, args, mx,
-        )
-    )
-
-
-async def _run_async(
+async def run_vec_inject(
     lib, kv_gen, pipeline, tokenizer,
     prompt_ids: list[int],
     prompt_text: str,
@@ -54,7 +36,7 @@ async def _run_async(
     from ......inference.context.vec_inject import LocalVecInjectProvider, vec_inject_all
 
     checkpoint_dir = lib.path
-    top_k = getattr(args, "top_k", None) or 1
+    top_k = getattr(args, "top_k", None) or 5  # retrieve top-5, inject best distinctive
     confidence_threshold = float(getattr(args, "confidence_threshold", None) or 0.15)
 
     # ── Load provider ─────────────────────────────────────────────────
@@ -92,54 +74,80 @@ async def _run_async(
         _fallback(lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, config, args, mx)
         return
 
-    # Filter: only distinctive answer tokens are safe for 1D injection
-    matches = [m for m in result.matches if m.distinctive]
-    if not matches:
+    # Filter: only distinctive answer tokens are safe for 1D injection.
+    # Inject the single highest-scoring distinctive match (inject-matched-only).
+    distinctive = [m for m in result.matches if m.distinctive]
+    if not distinctive:
         print(
-            "  Top matches have non-distinctive tokens — falling back to window replay.",
+            f"  No distinctive tokens in top-{top_k} — falling back to window replay.",
             file=sys.stderr,
         )
         _fallback(lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, config, args, mx)
         return
 
+    # Use only the top-1 distinctive fact — wrong injection = catastrophic error
+    matches = [distinctive[0]]
     inject_layer = result.injection_layer
-    for i, m in enumerate(matches):
-        tok = tokenizer.decode([m.token_id], skip_special_tokens=True).strip()
-        print(
-            f"  Inject rank={i + 1}  W{m.window_id}[{m.position}]  "
-            f"score={m.score:.4f}  c={m.coefficient:+.4f}  tok={tok!r}",
-            file=sys.stderr,
-        )
+    m = matches[0]
+    tok = tokenizer.decode([m.token_id], skip_special_tokens=True).strip()
+    print(
+        f"  Injecting: W{m.window_id}[{m.position}]  "
+        f"score={m.score:.4f}  c={m.coefficient:+.4f}  tok={tok!r}  "
+        f"(ranked {result.matches.index(m) + 1} of {len(result.matches)})",
+        file=sys.stderr,
+    )
 
-    # ── Forward pass L0→inject_layer-1 ───────────────────────────────
+    # ── Two-pass strategy: inject for first token, proper KV for the rest ──
+    #
+    # prefill_from_layer(start=30) leaves L0-29 KV empty, causing generation
+    # to degenerate after the first token.  Solution:
+    #   Pass 1: L0→29 → inject → L30→33  →  injected first-token logits
+    #   Pass 2: full prefill(prompt)      →  proper L0-33 KV for continuation
+    # Then extend proper KV with the injected first token and generate normally.
     q_ids = mx.array(prompt_ids)[None]
     t0 = time.monotonic()
-    h = kv_gen.prefill_to_layer(q_ids, target_layer=inject_layer - 1)
-    # h: (1, S, hidden_size)  residuals entering inject_layer
-
-    # ── Inject into last position ─────────────────────────────────────
     embed_matrix = pipeline.model.model.embed_tokens.weight
-    h_last = h[:, -1:, :]                                     # (1, 1, hidden_size)
-    h_injected = vec_inject_all(h_last, matches, embed_matrix) # (1, 1, hidden_size)
-    # Reconstruct full-sequence h with modified last position
-    if h.shape[1] > 1:
-        h = mx.concatenate([h[:, :-1, :], h_injected], axis=1)
-    else:
-        h = h_injected
 
-    # ── Continue L{inject_layer}→end — builds real KV for upper layers ──
-    logits, gen_kv = kv_gen.prefill_from_layer(h, start_layer=inject_layer)
+    # Pass 1 — get injection-biased logits for the first generated token
+    h = kv_gen.prefill_to_layer(q_ids, target_layer=inject_layer - 1)
+    h_last = h[:, -1:, :]
+    h_injected_last = vec_inject_all(h_last, matches, embed_matrix)
+    if h.shape[1] > 1:
+        h_mod = mx.concatenate([h[:, :-1, :], h_injected_last], axis=1)
+    else:
+        h_mod = h_injected_last
+    inject_logits, _ = kv_gen.prefill_from_layer(h_mod, start_layer=inject_layer)
+
+    # Pass 2 — full prefill for proper L0-33 KV (needed for coherent continuation)
+    _, kv_store = kv_gen.prefill(q_ids)
+
     seq_len = q_ids.shape[1]
     inject_ms = (time.monotonic() - t0) * 1000
-    print(f"  Inject + L{inject_layer}→end forward: {inject_ms:.0f} ms", file=sys.stderr)
+    print(f"  Inject (2-pass): {inject_ms:.0f} ms", file=sys.stderr)
 
-    # ── Autoregressive decode ─────────────────────────────────────────
+    # First token comes from the injection-biased logits
+    first_logits = inject_logits[0, -1]
+    if config.temperature == 0.0:
+        first_token = int(mx.argmax(first_logits).item())
+    else:
+        first_token = int(mx.random.categorical((first_logits / config.temperature)[None]).item())
+
+    first_text = tokenizer.decode([first_token], skip_special_tokens=True)
+    print(f"  First token (injected): {first_text!r}", file=sys.stderr)
+    sys.stdout.write(first_text)
+    sys.stdout.flush()
+
+    # Extend proper KV with the first token → subsequent generation is fully coherent
+    logits, gen_kv = kv_gen.extend(mx.array([[first_token]]), kv_store, abs_start=seq_len)
+    seq_len += 1
+
+    # ── Autoregressive decode (first token already generated above) ───
     stop_ids: set[int] = set()
     if tokenizer.eos_token_id is not None:
         stop_ids.add(tokenizer.eos_token_id)
 
-    generated_tokens: list[int] = []
-    for _ in range(config.max_tokens):
+    generated_tokens: list[int] = [first_token]
+    for _ in range(config.max_tokens - 1):
         last_logits = logits[0, -1]
 
         if config.temperature == 0.0:
