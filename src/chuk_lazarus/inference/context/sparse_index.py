@@ -21,67 +21,290 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
-
 
 # -----------------------------------------------------------------------
 # Function words — stripped from keyword entries to save tokens
 # -----------------------------------------------------------------------
 
-FUNCTION_WORDS = frozenset({
-    "the", "a", "an", "is", "was", "are", "were", "be", "been",
-    "being", "have", "has", "had", "do", "does", "did", "will",
-    "would", "could", "should", "may", "might", "shall", "can",
-    "to", "of", "in", "for", "on", "with", "at", "by", "from",
-    "as", "into", "through", "during", "before", "after", "and",
-    "but", "or", "nor", "not", "so", "yet", "both", "either",
-    "neither", "each", "every", "all", "any", "few", "more",
-    "most", "other", "some", "such", "no", "only", "own", "same",
-    "than", "too", "very", "just", "that", "this", "these", "those",
-    "it", "its", "he", "she", "they", "them", "his", "her", "their",
-    "we", "you", "me", "him", "us", "my", "your", "our", "who",
-    "what", "which", "when", "where", "how", "why",
-})
+FUNCTION_WORDS = frozenset(
+    {
+        "the",
+        "a",
+        "an",
+        "is",
+        "was",
+        "are",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "shall",
+        "can",
+        "to",
+        "of",
+        "in",
+        "for",
+        "on",
+        "with",
+        "at",
+        "by",
+        "from",
+        "as",
+        "into",
+        "through",
+        "during",
+        "before",
+        "after",
+        "and",
+        "but",
+        "or",
+        "nor",
+        "not",
+        "so",
+        "yet",
+        "both",
+        "either",
+        "neither",
+        "each",
+        "every",
+        "all",
+        "any",
+        "few",
+        "more",
+        "most",
+        "other",
+        "some",
+        "such",
+        "no",
+        "only",
+        "own",
+        "same",
+        "than",
+        "too",
+        "very",
+        "just",
+        "that",
+        "this",
+        "these",
+        "those",
+        "it",
+        "its",
+        "he",
+        "she",
+        "they",
+        "them",
+        "his",
+        "her",
+        "their",
+        "we",
+        "you",
+        "me",
+        "him",
+        "us",
+        "my",
+        "your",
+        "our",
+        "who",
+        "what",
+        "which",
+        "when",
+        "where",
+        "how",
+        "why",
+    }
+)
 
 # Common abbreviations that appear everywhere and carry no information
-COMMON_ABBREVIATIONS = frozenset({
-    "I", "OK", "AM", "PM", "US", "UK", "TV", "ID", "GO", "CC",
-    "SC", "MS", "AN", "ON", "OR", "AT", "OF", "BY", "IF", "UP",
-    "NO", "SO", "DO",
-})
+COMMON_ABBREVIATIONS = frozenset(
+    {
+        "I",
+        "OK",
+        "AM",
+        "PM",
+        "US",
+        "UK",
+        "TV",
+        "ID",
+        "GO",
+        "CC",
+        "SC",
+        "MS",
+        "AN",
+        "ON",
+        "OR",
+        "AT",
+        "OF",
+        "BY",
+        "IF",
+        "UP",
+        "NO",
+        "SO",
+        "DO",
+    }
+)
 
 # -----------------------------------------------------------------------
 # Stopwords — broader set for content word extraction
 # -----------------------------------------------------------------------
 
-STOPWORDS = frozenset({
-    'the', 'a', 'an', 'this', 'that', 'these', 'those',
-    'in', 'of', 'at', 'to', 'for', 'with', 'by', 'on',
-    'he', 'she', 'it', 'they', 'we', 'you', 'i', 'me',
-    'was', 'were', 'is', 'are', 'have', 'had', 'do', 'did',
-    'and', 'or', 'but', 'so', 'because', 'if', 'when',
-    'very', 'really', 'just', 'also', 'then', 'not', 'no',
-    'be', 'been', 'being', 'has', 'will', 'would', 'could',
-    'should', 'may', 'might', 'can', 'shall', 'must',
-    'about', 'from', 'into', 'through', 'during', 'before',
-    'after', 'above', 'below', 'between', 'under', 'over',
-    'here', 'there', 'where', 'how', 'what', 'which', 'who',
-    'all', 'each', 'every', 'both', 'few', 'more', 'most',
-    'other', 'some', 'such', 'only', 'own', 'same', 'than',
-    'too', 'out', 'up', 'down', 'off', 'over', 'now',
-    'get', 'got', 'go', 'going', 'went', 'come', 'came',
-    'make', 'made', 'take', 'took', 'give', 'gave',
-    'say', 'said', 'tell', 'told', 'ask', 'asked',
-    'think', 'thought', 'know', 'knew', 'see', 'saw',
-    'want', 'need', 'like', 'look', 'looked',
-    'well', 'back', 'way', 'right', 'good', 'new',
-    'roger', 'copy', 'over', 'okay',  # transcript-specific
-})
+STOPWORDS = frozenset(
+    {
+        "the",
+        "a",
+        "an",
+        "this",
+        "that",
+        "these",
+        "those",
+        "in",
+        "of",
+        "at",
+        "to",
+        "for",
+        "with",
+        "by",
+        "on",
+        "he",
+        "she",
+        "it",
+        "they",
+        "we",
+        "you",
+        "i",
+        "me",
+        "was",
+        "were",
+        "is",
+        "are",
+        "have",
+        "had",
+        "do",
+        "did",
+        "and",
+        "or",
+        "but",
+        "so",
+        "because",
+        "if",
+        "when",
+        "very",
+        "really",
+        "just",
+        "also",
+        "then",
+        "not",
+        "no",
+        "be",
+        "been",
+        "being",
+        "has",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "can",
+        "shall",
+        "must",
+        "about",
+        "from",
+        "into",
+        "through",
+        "during",
+        "before",
+        "after",
+        "above",
+        "below",
+        "between",
+        "under",
+        "over",
+        "here",
+        "there",
+        "where",
+        "how",
+        "what",
+        "which",
+        "who",
+        "all",
+        "each",
+        "every",
+        "both",
+        "few",
+        "more",
+        "most",
+        "other",
+        "some",
+        "such",
+        "only",
+        "own",
+        "same",
+        "than",
+        "too",
+        "out",
+        "up",
+        "down",
+        "off",
+        "now",
+        "get",
+        "got",
+        "go",
+        "going",
+        "went",
+        "come",
+        "came",
+        "make",
+        "made",
+        "take",
+        "took",
+        "give",
+        "gave",
+        "say",
+        "said",
+        "tell",
+        "told",
+        "ask",
+        "asked",
+        "think",
+        "thought",
+        "know",
+        "knew",
+        "see",
+        "saw",
+        "want",
+        "need",
+        "like",
+        "look",
+        "looked",
+        "well",
+        "back",
+        "way",
+        "right",
+        "good",
+        "new",
+        "roger",
+        "copy",
+        "okay",  # transcript-specific
+    }
+)
 
 
 # -----------------------------------------------------------------------
 # Content word extraction
 # -----------------------------------------------------------------------
+
 
 def extract_content_words(tokens: list[int], tokenizer) -> list[str]:
     """Extract content words from a window's token IDs.
@@ -96,7 +319,7 @@ def extract_content_words(tokens: list[int], tokenizer) -> list[str]:
     text = tokenizer.decode(tokens, skip_special_tokens=True)
 
     # Split into words: mixed-case words (3+ chars) and all-caps (2+ chars)
-    words = re.findall(r'[A-Za-z][a-z]{2,}|[A-Z]{2,}', text)
+    words = re.findall(r"[A-Za-z][a-z]{2,}|[A-Z]{2,}", text)
 
     content_words: list[str] = []
     seen: set[str] = set()
@@ -117,9 +340,11 @@ def extract_content_words(tokens: list[int], tokenizer) -> list[str]:
 # Data classes
 # -----------------------------------------------------------------------
 
+
 @dataclass
 class TokenClassification:
     """Per-token surprise classification."""
+
     position: int
     token: str
     rank: int
@@ -129,6 +354,7 @@ class TokenClassification:
 @dataclass
 class EntityCandidate:
     """A detected entity/number/abbreviation candidate."""
+
     position: int
     token: str
     entity_type: str  # "named_entity", "numeric", "abbreviation", "high_surprise"
@@ -139,6 +365,7 @@ class EntityCandidate:
 @dataclass
 class FactTriplet:
     """Entity + surrounding context tokens."""
+
     entity: str
     context: list[str]
     entity_type: str
@@ -149,6 +376,7 @@ class FactTriplet:
 @dataclass
 class FactSpan:
     """A fact-bearing token span within a window."""
+
     position: int  # token index of the fact token
     radius: int = 5  # ±N context tokens around the fact
 
@@ -170,6 +398,7 @@ class FactSpan:
 @dataclass
 class SparseEntry:
     """One window's extracted keywords and fact spans."""
+
     window_id: int
     keywords: list[str] = field(default_factory=list)
     content_words: list[str] = field(default_factory=list)
@@ -202,6 +431,7 @@ class SparseEntry:
 # Surprise classifier
 # -----------------------------------------------------------------------
 
+
 class SurpriseClassifier:
     """Classify tokens by prediction rank from logits already computed."""
 
@@ -223,15 +453,21 @@ class SurpriseClassifier:
                 category = "semi_parametric"
             else:
                 category = "novel"
-            classifications.append(TokenClassification(
-                position=i, token=token, rank=rank, category=category,
-            ))
+            classifications.append(
+                TokenClassification(
+                    position=i,
+                    token=token,
+                    rank=rank,
+                    category=category,
+                )
+            )
         return classifications
 
 
 # -----------------------------------------------------------------------
 # Entity extractor — heuristic extraction from text
 # -----------------------------------------------------------------------
+
 
 class EntityExtractor:
     """Extract entities, facts, and terms from window text.
@@ -271,8 +507,6 @@ class EntityExtractor:
         if not words:
             return []
 
-        # Build per-word surprise mask if ranks provided
-        has_surprise = token_ranks is not None and len(token_ranks) > 0
         # Note: token_ranks map to BPE tokens, not words. For word-level
         # extraction we use a simplified heuristic: mark word positions
         # near high-surprise token positions as interesting.
@@ -290,8 +524,7 @@ class EntityExtractor:
 
         # --- Rule 1: Named entities (capitalised, non-sentence-initial) ---
         for m in re.finditer(
-            r'(?<![.!?\n]\s)(?<!\A)\b([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*)\b',
-            text
+            r"(?<![.!?\n]\s)(?<!\A)\b([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*)\b", text
         ):
             entity = m.group(1)
             if entity.lower() in FUNCTION_WORDS:
@@ -301,10 +534,16 @@ class EntityExtractor:
             end_char = m.end()
             before = text[:start_char].rstrip().split()
             after = text[end_char:].lstrip().split()
-            ctx_before = [w for w in before[-self.context_window:]
-                          if w.lower() not in FUNCTION_WORDS and len(w) > 1]
-            ctx_after = [w for w in after[:self.context_window]
-                         if w.lower() not in FUNCTION_WORDS and len(w) > 1]
+            ctx_before = [
+                w
+                for w in before[-self.context_window :]
+                if w.lower() not in FUNCTION_WORDS and len(w) > 1
+            ]
+            ctx_after = [
+                w
+                for w in after[: self.context_window]
+                if w.lower() not in FUNCTION_WORDS and len(w) > 1
+            ]
 
             # Build triplet
             parts = []
@@ -316,11 +555,11 @@ class EntityExtractor:
             _add(" ".join(parts))
 
         # --- Rule 2: Numbers with context ---
-        for m in re.finditer(r'\b(\d+(?:[.,]\d+)*)\b', text):
+        for m in re.finditer(r"\b(\d+(?:[.,]\d+)*)\b", text):
             n = m.group(1)
-            if len(n) < 3 and '.' not in n:
+            if len(n) < 3 and "." not in n:
                 continue
-            before = text[:m.start()].rstrip().split()
+            before = text[: m.start()].rstrip().split()
             ctx = [w for w in before[-2:] if w.lower() not in FUNCTION_WORDS and len(w) > 1]
             if ctx:
                 _add(f"{' '.join(ctx)} {n}")
@@ -330,7 +569,7 @@ class EntityExtractor:
                 break
 
         # --- Rule 3: Domain abbreviations ---
-        for m in re.finditer(r'\b([A-Z]{2,}(?:[-/][A-Z]{2,})*)\b', text):
+        for m in re.finditer(r"\b([A-Z]{2,}(?:[-/][A-Z]{2,})*)\b", text):
             a = m.group(1)
             if a in COMMON_ABBREVIATIONS or len(a) < 2:
                 continue
@@ -338,7 +577,7 @@ class EntityExtractor:
             if len(keywords) >= self.max_keywords:
                 break
 
-        return keywords[:self.max_keywords]
+        return keywords[: self.max_keywords]
 
     def extract_with_surprise(
         self,
@@ -384,8 +623,7 @@ class EntityExtractor:
 
         # Named entities — only if near a novel token
         for m in re.finditer(
-            r'(?<![.!?\n]\s)(?<!\A)\b([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*)\b',
-            text
+            r"(?<![.!?\n]\s)(?<!\A)\b([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*)\b", text
         ):
             entity = m.group(1)
             if entity.lower() in FUNCTION_WORDS:
@@ -395,24 +633,27 @@ class EntityExtractor:
             # Approximate: character position / avg_chars_per_token ≈ token position
             avg_chars = max(1, len(text) / max(1, len(token_ranks)))
             approx_token_pos = int(m.start() / avg_chars)
-            is_near_novel = any(
-                abs(approx_token_pos - np) < 5
-                for np in novel_positions
-            )
+            is_near_novel = any(abs(approx_token_pos - np) < 5 for np in novel_positions)
             if not is_near_novel and novel_positions:
                 continue  # skip parametric entities
 
-            before = text[:m.start()].rstrip().split()
-            after = text[m.end():].lstrip().split()
-            ctx_before = [w for w in before[-self.context_window:]
-                          if w.lower() not in FUNCTION_WORDS and len(w) > 1]
-            ctx_after = [w for w in after[:self.context_window]
-                         if w.lower() not in FUNCTION_WORDS and len(w) > 1]
+            before = text[: m.start()].rstrip().split()
+            after = text[m.end() :].lstrip().split()
+            ctx_before = [
+                w
+                for w in before[-self.context_window :]
+                if w.lower() not in FUNCTION_WORDS and len(w) > 1
+            ]
+            ctx_after = [
+                w
+                for w in after[: self.context_window]
+                if w.lower() not in FUNCTION_WORDS and len(w) > 1
+            ]
             parts = ctx_before + [entity] + ctx_after
             _add(" ".join(parts))
 
         # High-surprise numbers
-        for m in re.finditer(r'\b(\d+(?:[.,]\d+)*)\b', text):
+        for m in re.finditer(r"\b(\d+(?:[.,]\d+)*)\b", text):
             n = m.group(1)
             if len(n) < 3:
                 continue
@@ -420,18 +661,19 @@ class EntityExtractor:
             approx_pos = int(m.start() / avg_chars)
             if not any(abs(approx_pos - np) < 3 for np in novel_positions):
                 continue
-            before = text[:m.start()].rstrip().split()
+            before = text[: m.start()].rstrip().split()
             ctx = [w for w in before[-2:] if w.lower() not in FUNCTION_WORDS]
             _add(f"{' '.join(ctx)} {n}" if ctx else n)
             if len(keywords) >= self.max_keywords:
                 break
 
-        return keywords[:self.max_keywords]
+        return keywords[: self.max_keywords]
 
 
 # -----------------------------------------------------------------------
 # Sparse Semantic Index
 # -----------------------------------------------------------------------
+
 
 class SparseSemanticIndex:
     """Accumulated keyword index across all document windows."""
@@ -492,12 +734,7 @@ class SparseSemanticIndex:
                 f"<start_of_turn>model\n"
             )
         else:
-            return (
-                f"{self.template}\n\n"
-                f"Index:\n{index_text}\n\n"
-                f"Question: {query}\n"
-                f"Answer: "
-            )
+            return f"{self.template}\n\nIndex:\n{index_text}\n\nQuestion: {query}\nAnswer: "
 
     # ------------------------------------------------------------------
     # Persistence
@@ -536,8 +773,7 @@ class SparseSemanticIndex:
             "non_empty": self.non_empty_count,
             "total_keywords": self.total_keywords,
             "avg_keywords": (
-                self.total_keywords / self.non_empty_count
-                if self.non_empty_count > 0 else 0
+                self.total_keywords / self.non_empty_count if self.non_empty_count > 0 else 0
             ),
             "est_tokens_full": self.total_keywords * 3,
             "est_tokens_triplet": min(self.non_empty_count * 3, self.total_keywords) * 3,

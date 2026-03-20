@@ -11,7 +11,6 @@ Usage:
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 from ......inference.context.sparse_index import SparseSemanticIndex
 
@@ -52,8 +51,7 @@ def run_sparse(
     sparse_idx = SparseSemanticIndex.load(index_path)
     stats = sparse_idx.stats()
     print(
-        f"  Sparse index: {stats['num_entries']} entries, "
-        f"{stats['total_keywords']} keywords",
+        f"  Sparse index: {stats['num_entries']} entries, {stats['total_keywords']} keywords",
         file=sys.stderr,
     )
 
@@ -67,8 +65,7 @@ def run_sparse(
     # Tokenize
     prompt_ids = tokenizer.encode(prompt, add_special_tokens=True)
     print(
-        f"  Sparse prompt: {len(prompt_ids)} tokens "
-        f"(index={stats['est_tokens_full']} est + query)",
+        f"  Sparse prompt: {len(prompt_ids)} tokens (index={stats['est_tokens_full']} est + query)",
         file=sys.stderr,
     )
 

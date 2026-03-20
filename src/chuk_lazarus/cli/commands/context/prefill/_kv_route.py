@@ -28,8 +28,8 @@ def extract_kv_route_index(
     output_path: Path,
     num_archived: int,
     config,
-    retrieval_layer: int = 29,
-    query_head: int = 4,
+    retrieval_layer: int | None = None,
+    query_head: int | None = None,
     lib=None,
     kvector_mode: KVectorMode = KVectorMode.SPARSE,
 ) -> None:
@@ -37,8 +37,8 @@ def extract_kv_route_index(
 
     Parameters
     ----------
-    retrieval_layer : Layer for K extraction (default: 29 for Gemma 4B).
-    query_head : Query head that does the fact copying (default: 4).
+    retrieval_layer : Layer for K extraction. If None, resolved from ArchitectureConfig.
+    query_head : Query head that does the fact copying. If None, resolved from ArchitectureConfig.
                  Maps to KV head via query_head // n_rep.
     lib : CheckpointLibrary — if provided, reads tokens from it instead of engine.archive.
 
@@ -49,9 +49,17 @@ def extract_kv_route_index(
     """
     import mlx.core as mx
 
+    from .....inference.context.arch_config import ArchitectureConfig
+
     kv_gen = engine.kv_gen
     backbone = kv_gen.backbone
     num_layers = len(backbone.adapted_layers)
+
+    # Resolve arch config if any param is unspecified
+    if retrieval_layer is None or query_head is None:
+        ac = ArchitectureConfig.from_model_config(config)  # raises if not calibrated
+        retrieval_layer = retrieval_layer if retrieval_layer is not None else ac.retrieval_layer
+        query_head = query_head if query_head is not None else ac.query_head
 
     if retrieval_layer >= num_layers:
         retrieval_layer = num_layers - 1
@@ -87,8 +95,8 @@ def extract_kv_route_index(
         elif kvector_mode == KVectorMode.SPARSE and fact_positions and wid in fact_positions:
             positions = fact_positions[wid]
         else:
-            # Fallback: interval sampling (8 positions)
-            n_samples = min(8, S)
+            # Fallback: interval sampling (32 positions)
+            n_samples = min(32, S)
             positions = [int(i * (S - 1) / max(n_samples - 1, 1)) for i in range(n_samples)]
 
         # Clamp positions to valid range
@@ -129,7 +137,8 @@ def extract_kv_route_index(
         f"  kv_route index [{mode_label}]: {total_facts} positions × {head_dim}D = "
         f"{storage_bytes / 1024:.1f} KB "
         f"(L{retrieval_layer} KV-head-{kv_head_idx})",
-        file=sys.stderr, flush=True,
+        file=sys.stderr,
+        flush=True,
     )
 
 
@@ -140,6 +149,7 @@ def _load_fact_positions(output_path: Path, num_archived: int) -> dict[int, list
         return None
 
     import json
+
     raw = json.loads(sparse_path.read_text())
     entries = raw.get("entries", [])
 

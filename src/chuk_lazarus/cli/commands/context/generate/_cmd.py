@@ -17,8 +17,25 @@ from ..compass_routing import RoutingStrategy, compass_route, two_pass_generate
 from ._iterative import _iterative_generate
 from ._mode7 import _mode7_generate
 from ._probe_driven import _probe_driven_generate
-from ._unified import _unified_generate
 from ._resolve import _resolve_replay
+from ._unified import _unified_generate
+
+
+def _arch_config_for(lib, pipeline):
+    """Return ArchitectureConfig for this library+model combination.
+
+    Priority: library manifest (validated at prefill time) > model config lookup.
+    Raises ArchitectureNotCalibrated if neither source has validated values.
+    """
+    from .....inference.context.arch_config import ArchitectureConfig
+
+    # 1. Library manifest has arch_config stored from prefill time
+    ac = lib.arch_config
+    if ac is not None:
+        return ac
+
+    # 2. Look up by model config
+    return ArchitectureConfig.from_model_config(pipeline.config)
 
 
 def _decode_loop(logits, gen_kv, kv_gen, tokenizer, config, seq_len, mx):
@@ -80,6 +97,7 @@ async def context_generate_cmd(args: Namespace) -> None:
     # ------------------------------------------------------------------
     if config.checkpoint is None:
         from ._plain import _plain_generate
+
         result = _plain_generate(config, args)
         print(result.to_display())
         return
@@ -116,9 +134,7 @@ async def context_generate_cmd(args: Namespace) -> None:
     # ------------------------------------------------------------------
     # 3. Build engine
     # ------------------------------------------------------------------
-    engine = UnlimitedContextEngine(
-        pipeline.model, pipeline.config, window_size=lib.window_size
-    )
+    engine = UnlimitedContextEngine(pipeline.model, pipeline.config, window_size=lib.window_size)
     engine.load_library(lib)
     kv_gen = engine.kv_gen
 
@@ -140,7 +156,9 @@ async def context_generate_cmd(args: Namespace) -> None:
             routing_messages.append({"role": "system", "content": system_prompt})
         routing_messages.append({"role": "user", "content": prompt_text})
         routing_prompt = tokenizer.apply_chat_template(
-            routing_messages, tokenize=False, add_generation_prompt=True,
+            routing_messages,
+            tokenize=False,
+            add_generation_prompt=True,
         )
         prompt_ids = tokenizer.encode(routing_prompt, add_special_tokens=False)
     else:
@@ -163,22 +181,35 @@ async def context_generate_cmd(args: Namespace) -> None:
 
         # Mode 7: unified dark space router — the new default
         if strategy == RoutingStrategy.MODE7:
-            result = _mode7_generate(
-                lib, kv_gen, engine, tokenizer, pipeline.config,
-                prompt_ids, prompt_text, config,
+            result = await _mode7_generate(
+                lib,
+                kv_gen,
+                pipeline.model,
+                engine,
+                tokenizer,
+                pipeline.config,
+                prompt_ids,
+                prompt_text,
+                config,
                 top_k=top_k_override,  # None = let Mode 7 pick per query type
                 no_chat=no_chat,
                 system_prompt=system_prompt,
             )
-            print(result.to_display())
+            print(result.to_stats_only())
             return
 
         # Unified three-probe strategy (legacy default)
         if strategy == RoutingStrategy.UNIFIED:
             top_k = top_k_override if top_k_override is not None else 10
             result = _unified_generate(
-                lib, kv_gen, engine, tokenizer, pipeline.config,
-                prompt_ids, prompt_text, config,
+                lib,
+                kv_gen,
+                engine,
+                tokenizer,
+                pipeline.config,
+                prompt_ids,
+                prompt_text,
+                config,
                 top_k=top_k,
                 no_chat=no_chat,
                 system_prompt=system_prompt,
@@ -190,8 +221,14 @@ async def context_generate_cmd(args: Namespace) -> None:
         if strategy == RoutingStrategy.ITERATIVE:
             max_rounds = getattr(args, "max_rounds", 3) or 3
             result = _iterative_generate(
-                lib, kv_gen, engine, tokenizer, pipeline.config,
-                prompt_ids, prompt_text, config,
+                lib,
+                kv_gen,
+                engine,
+                tokenizer,
+                pipeline.config,
+                prompt_ids,
+                prompt_text,
+                config,
                 top_k=top_k,
                 max_rounds=max_rounds,
                 no_chat=no_chat,
@@ -204,8 +241,14 @@ async def context_generate_cmd(args: Namespace) -> None:
         if strategy == RoutingStrategy.PROBE:
             max_rounds = getattr(args, "max_rounds", 8) or 8
             result = _probe_driven_generate(
-                lib, kv_gen, engine, tokenizer, pipeline.config,
-                prompt_ids, prompt_text, config,
+                lib,
+                kv_gen,
+                engine,
+                tokenizer,
+                pipeline.config,
+                prompt_ids,
+                prompt_text,
+                config,
                 top_k=top_k,
                 max_rounds=max_rounds,
                 no_chat=no_chat,
@@ -218,7 +261,12 @@ async def context_generate_cmd(args: Namespace) -> None:
         if strategy == RoutingStrategy.TWOPASS:
             speculative_tokens = getattr(args, "speculative_tokens", 50) or 50
             result = two_pass_generate(
-                lib, kv_gen, prompt_ids, prompt_text, tokenizer, engine,
+                lib,
+                kv_gen,
+                prompt_ids,
+                prompt_text,
+                tokenizer,
+                engine,
                 max_new_tokens=config.max_tokens,
                 speculative_tokens=speculative_tokens,
                 top_k=top_k,
@@ -233,12 +281,16 @@ async def context_generate_cmd(args: Namespace) -> None:
             return
 
         replay_ids = compass_route(
-            lib, kv_gen, prompt_ids, prompt_text, tokenizer,
+            lib,
+            kv_gen,
+            prompt_ids,
+            prompt_text,
+            tokenizer,
             model_config=pipeline.config,
             strategy=strategy,
             top_k=top_k,
-            routing_layer=getattr(args, "routing_layer", 29),
-            routing_head=getattr(args, "routing_head", 4),
+            routing_layer=getattr(args, "routing_layer", None) or _arch_config_for(lib, pipeline).retrieval_layer,
+            routing_head=getattr(args, "routing_head", None) or _arch_config_for(lib, pipeline).query_head,
         )
 
     print(f"  Replaying windows: {replay_ids}", file=sys.stderr)
@@ -277,9 +329,7 @@ async def context_generate_cmd(args: Namespace) -> None:
         # Preamble: BOS + start of user turn + system instruction + context header
         # We build this manually to keep the turn open for transcript tokens.
         preamble_text = (
-            "<start_of_turn>user\n"
-            f"{sys_content}\n\n"
-            "Here is the relevant transcript:\n\n"
+            f"<start_of_turn>user\n{sys_content}\n\nHere is the relevant transcript:\n\n"
         )
         preamble_ids = tokenizer.encode(preamble_text, add_special_tokens=True)
 
@@ -291,10 +341,12 @@ async def context_generate_cmd(args: Namespace) -> None:
         postamble_ids = tokenizer.encode(postamble_text, add_special_tokens=False)
     else:
         preamble_ids = tokenizer.encode(
-            "Transcript:\n\n", add_special_tokens=False,
+            "Transcript:\n\n",
+            add_special_tokens=False,
         )
         postamble_ids = tokenizer.encode(
-            f"\n\n---\nQuestion: {prompt_text}\nAnswer:", add_special_tokens=False,
+            f"\n\n---\nQuestion: {prompt_text}\nAnswer:",
+            add_special_tokens=False,
         )
 
     # Prefill: preamble → transcript windows → postamble
@@ -302,59 +354,50 @@ async def context_generate_cmd(args: Namespace) -> None:
 
     # Check for special replay modes
     use_accumulated = (
-        isinstance(replay_ids, list)
-        and len(replay_ids) == 1
-        and replay_ids[0] == "accumulated"
+        isinstance(replay_ids, list) and len(replay_ids) == 1 and replay_ids[0] == "accumulated"
     )
     use_compressed = (
-        isinstance(replay_ids, list)
-        and len(replay_ids) == 1
-        and replay_ids[0] == "compressed"
+        isinstance(replay_ids, list) and len(replay_ids) == 1 and replay_ids[0] == "compressed"
     )
     use_explore = (
-        isinstance(replay_ids, list)
-        and len(replay_ids) == 1
-        and replay_ids[0] == "explore"
+        isinstance(replay_ids, list) and len(replay_ids) == 1 and replay_ids[0] == "explore"
     )
-    use_inject = (
-        isinstance(replay_ids, list)
-        and len(replay_ids) == 1
-        and replay_ids[0] == "inject"
-    )
-    use_sparse = (
-        isinstance(replay_ids, list)
-        and len(replay_ids) == 1
-        and replay_ids[0] == "sparse"
-    )
-    use_kv = (
-        isinstance(replay_ids, list)
-        and len(replay_ids) == 1
-        and replay_ids[0] == "kv"
-    )
+    use_inject = isinstance(replay_ids, list) and len(replay_ids) == 1 and replay_ids[0] == "inject"
+    use_sparse = isinstance(replay_ids, list) and len(replay_ids) == 1 and replay_ids[0] == "sparse"
+    use_kv = isinstance(replay_ids, list) and len(replay_ids) == 1 and replay_ids[0] == "kv"
     use_vec_inject = (
-        isinstance(replay_ids, list)
-        and len(replay_ids) == 1
-        and replay_ids[0] == "vec_inject"
+        isinstance(replay_ids, list) and len(replay_ids) == 1 and replay_ids[0] == "vec_inject"
     )
 
     # Dispatch to mode handlers
     if use_vec_inject:
         from ._modes._vec_inject import run_vec_inject
-        await run_vec_inject(lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, config, args, mx)
+
+        await run_vec_inject(
+            lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, config, args, mx
+        )
         return
 
     if use_kv:
         from ._modes._kv_inject import run_kv_inject
+
         run_kv_inject(lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, config, args, mx)
         return
 
     if use_sparse:
-        from ._modes._sparse_twopass import run_sparse_twopass, needs_verbatim, needs_detail
+        from ._modes._sparse_twopass import run_sparse_twopass
+
         max_kw = getattr(args, "max_keywords", None)
 
         # Two-pass: sparse index → optional targeted replay
         result = run_sparse_twopass(
-            lib, kv_gen, engine, tokenizer, prompt_text, config, mx,
+            lib,
+            kv_gen,
+            engine,
+            tokenizer,
+            prompt_text,
+            config,
+            mx,
             max_keywords=max_kw,
         )
         print(result.to_display())
@@ -362,26 +405,38 @@ async def context_generate_cmd(args: Namespace) -> None:
 
     elif use_accumulated:
         from ._modes._accumulated import run_accumulated
+
         context_kv, seq_len = run_accumulated(lib, kv_gen, mx)
 
     elif use_inject:
         from ._modes._inject import run_inject
+
         run_inject(lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, config, args, mx)
         return
 
     elif use_explore:
         from ._modes._explore import run_explore
+
         run_explore(lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, config, args, mx)
         return
 
     elif use_compressed:
         from ._modes._compressed import run_compressed
+
         context_kv, seq_len = run_compressed(
-            lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, args, mx,
+            lib,
+            kv_gen,
+            pipeline,
+            tokenizer,
+            prompt_ids,
+            prompt_text,
+            args,
+            mx,
         )
 
     else:
         from ._modes._standard import run_standard
+
         context_kv, seq_len = run_standard(lib, kv_gen, replay_ids, preamble_ids, mx)
 
     # ------------------------------------------------------------------

@@ -25,19 +25,19 @@ import mlx.core as mx
 from .._types import GenerateConfig, GenerateResult
 from ..compass_routing import RoutingStrategy, compass_route
 
-
 # ── Constants ────────────────────────────────────────────────────────
 _FACTUAL_TOP_K = 3
 _ENGAGEMENT_TOP_K = 5
 _TENSION_TOP_K = 5
 _GLOBAL_TOP_K = 10
 _TONE_TOP_K = 7
-_COARSE_CANDIDATES = 20     # compass pre-filter size before probe re-ranking
+_COARSE_CANDIDATES = 20  # compass pre-filter size before probe re-ranking
 
 
-def _mode7_generate(
+async def _mode7_generate(
     lib,
     kv_gen,
+    model,
     engine,
     tokenizer,
     model_config,
@@ -70,16 +70,30 @@ def _mode7_generate(
 
     # ── Step 1: Load or calibrate probes ──────────────────────────────
     probes = load_or_calibrate(
-        kv_gen, tokenizer, compass_layer, lib,
-        checkpoint_dir, model_name,
+        kv_gen,
+        tokenizer,
+        compass_layer,
+        lib,
+        checkpoint_dir,
+        model_name,
     )
 
     # ── Step 2: Classify query ────────────────────────────────────────
     t0 = time.time()
-    query_type, confidence = classify_query_m7(
-        kv_gen, tokenizer, prompt_text, compass_layer, probes,
-    )
-    classify_ms = (time.time() - t0) * 1000
+    if compass_layer is None:
+        # No compass data — default to FACTUAL (BM25 fallback inside routing)
+        query_type = QueryType.FACTUAL
+        confidence = 0.0
+        classify_ms = 0.0
+    else:
+        query_type, confidence = classify_query_m7(
+            kv_gen,
+            tokenizer,
+            prompt_text,
+            compass_layer,
+            probes,
+        )
+        classify_ms = (time.time() - t0) * 1000
 
     print(
         f"  Query classification: {query_type.value} "
@@ -92,23 +106,56 @@ def _mode7_generate(
 
     if query_type == QueryType.FACTUAL:
         k = top_k or _FACTUAL_TOP_K
+        # Vec inject fast path — try first, fall back to geometric if not confident
+        vec_result = await _try_vec_inject_factual(
+            lib,
+            kv_gen,
+            model,
+            tokenizer,
+            prompt_ids,
+            prompt_text,
+            config,
+        )
+        if vec_result is not None:
+            route_ms = (time.time() - t0) * 1000
+            print(f"  Routing: FACTUAL → vec_inject ({route_ms:.0f}ms)", file=sys.stderr)
+            return vec_result
         replay_wids = _route_factual(
-            lib, kv_gen, prompt_ids, prompt_text, tokenizer,
-            model_config, k,
+            lib,
+            kv_gen,
+            prompt_ids,
+            prompt_text,
+            tokenizer,
+            model_config,
+            k,
         )
 
     elif query_type == QueryType.ENGAGEMENT:
         k = top_k or _ENGAGEMENT_TOP_K
         replay_wids = _route_engagement(
-            lib, kv_gen, prompt_ids, prompt_text, tokenizer,
-            model_config, probes, compass_layer, k,
+            lib,
+            kv_gen,
+            prompt_ids,
+            prompt_text,
+            tokenizer,
+            model_config,
+            probes,
+            compass_layer,
+            k,
         )
 
     elif query_type == QueryType.TENSION:
         k = top_k or _TENSION_TOP_K
         replay_wids = _route_tension(
-            lib, kv_gen, prompt_ids, prompt_text, tokenizer,
-            model_config, probes, compass_layer, k,
+            lib,
+            kv_gen,
+            prompt_ids,
+            prompt_text,
+            tokenizer,
+            model_config,
+            probes,
+            compass_layer,
+            k,
         )
 
     elif query_type == QueryType.GLOBAL:
@@ -118,16 +165,26 @@ def _mode7_generate(
     elif query_type == QueryType.TONE:
         k = top_k or _TONE_TOP_K
         replay_wids = _route_tone(
-            lib, kv_gen, prompt_ids, prompt_text, tokenizer,
-            model_config, k,
+            lib,
+            kv_gen,
+            prompt_ids,
+            prompt_text,
+            tokenizer,
+            model_config,
+            k,
         )
 
     else:
         # Should not happen — defensive fallback
         k = top_k or _FACTUAL_TOP_K
         replay_wids = _route_factual(
-            lib, kv_gen, prompt_ids, prompt_text, tokenizer,
-            model_config, k,
+            lib,
+            kv_gen,
+            prompt_ids,
+            prompt_text,
+            tokenizer,
+            model_config,
+            k,
         )
 
     route_ms = (time.time() - t0) * 1000
@@ -146,24 +203,35 @@ def _mode7_generate(
 
     # ── Step 4: Replay and generate ───────────────────────────────────
     return _replay_and_generate(
-        lib, kv_gen, tokenizer, replay_wids,
-        prompt_text, config, sys_content, no_chat,
+        lib,
+        kv_gen,
+        tokenizer,
+        replay_wids,
+        prompt_text,
+        config,
+        sys_content,
+        no_chat,
         query_type=query_type,
     )
 
 
 # ── Routing functions ────────────────────────────────────────────────
 
-def _route_factual(lib, kv_gen, prompt_ids, prompt_text, tokenizer,
-                   model_config, top_k):
+
+def _route_factual(lib, kv_gen, prompt_ids, prompt_text, tokenizer, model_config, top_k):
     """Geometric RRF — best general-purpose factual router."""
     if not lib.has_compass:
         from ..compass_routing._bm25 import _bm25_score_windows
+
         scores = _bm25_score_windows(lib, tokenizer, prompt_text)
         return [wid for wid, _ in scores[:top_k]]
 
     return compass_route(
-        lib, kv_gen, prompt_ids, prompt_text, tokenizer,
+        lib,
+        kv_gen,
+        prompt_ids,
+        prompt_text,
+        tokenizer,
         model_config=model_config,
         strategy=RoutingStrategy.GEOMETRIC,
         top_k=top_k,
@@ -171,8 +239,15 @@ def _route_factual(lib, kv_gen, prompt_ids, prompt_text, tokenizer,
 
 
 def _route_engagement(
-    lib, kv_gen, prompt_ids, prompt_text, tokenizer,
-    model_config, probes, compass_layer, top_k,
+    lib,
+    kv_gen,
+    prompt_ids,
+    prompt_text,
+    tokenizer,
+    model_config,
+    probes,
+    compass_layer,
+    top_k,
 ):
     """Compass coarse-filter → probe re-rank for engagement content.
 
@@ -184,7 +259,11 @@ def _route_engagement(
     # Compass coarse-filter: top-N windows without keyword bias
     if lib.has_compass:
         coarse_wids = compass_route(
-            lib, kv_gen, prompt_ids, prompt_text, tokenizer,
+            lib,
+            kv_gen,
+            prompt_ids,
+            prompt_text,
+            tokenizer,
             model_config=model_config,
             strategy=RoutingStrategy.GEOMETRIC,
             top_k=_COARSE_CANDIDATES,
@@ -199,6 +278,7 @@ def _route_engagement(
             ENGAGEMENT_INDICATORS,
             _indicator_bm25_score_windows,
         )
+
         bm25_scores = _indicator_bm25_score_windows(lib, tokenizer, ENGAGEMENT_INDICATORS)
         coarse_wids = [wid for wid, s in bm25_scores[:_COARSE_CANDIDATES] if s > 0.0]
         if not coarse_wids:
@@ -211,10 +291,17 @@ def _route_engagement(
     # Probe re-rank if tonal probe is available
     if probes.tonal_available:
         from ._probe_rerank import _probe_rerank_windows
+
         reranked = _probe_rerank_windows(
-            lib, kv_gen, tokenizer, coarse_wids,
-            probes.tonal_direction, probes.tonal_mean,
-            compass_layer, probe_type="engagement", top_k=top_k,
+            lib,
+            kv_gen,
+            tokenizer,
+            coarse_wids,
+            probes.tonal_direction,
+            probes.tonal_mean,
+            compass_layer,
+            probe_type="engagement",
+            top_k=top_k,
         )
         return [wid for wid, _ in reranked]
 
@@ -223,8 +310,15 @@ def _route_engagement(
 
 
 def _route_tension(
-    lib, kv_gen, prompt_ids, prompt_text, tokenizer,
-    model_config, probes, compass_layer, top_k,
+    lib,
+    kv_gen,
+    prompt_ids,
+    prompt_text,
+    tokenizer,
+    model_config,
+    probes,
+    compass_layer,
+    top_k,
 ):
     """Compass coarse-filter + temporal stride → tension probe re-rank.
 
@@ -237,7 +331,11 @@ def _route_tension(
     # Compass coarse-filter
     if lib.has_compass:
         compass_wids = compass_route(
-            lib, kv_gen, prompt_ids, prompt_text, tokenizer,
+            lib,
+            kv_gen,
+            prompt_ids,
+            prompt_text,
+            tokenizer,
             model_config=model_config,
             strategy=RoutingStrategy.GEOMETRIC,
             top_k=_COARSE_CANDIDATES,
@@ -248,6 +346,7 @@ def _route_tension(
             TENSION_INDICATORS,
             _indicator_bm25_score_windows,
         )
+
         bm25_scores = _indicator_bm25_score_windows(lib, tokenizer, TENSION_INDICATORS)
         compass_wids = [wid for wid, s in bm25_scores[:_COARSE_CANDIDATES] if s > 0.0]
 
@@ -269,10 +368,17 @@ def _route_tension(
     # Probe re-rank if tension probe is available
     if probes.tension_available and probes.tension_direction is not None:
         from ._probe_rerank import _probe_rerank_windows
+
         reranked = _probe_rerank_windows(
-            lib, kv_gen, tokenizer, all_candidates,
-            probes.tension_direction, probes.tension_mean,
-            compass_layer, probe_type="tension", top_k=top_k,
+            lib,
+            kv_gen,
+            tokenizer,
+            all_candidates,
+            probes.tension_direction,
+            probes.tension_mean,
+            compass_layer,
+            probe_type="tension",
+            top_k=top_k,
         )
         return [wid for wid, _ in reranked]
 
@@ -283,31 +389,199 @@ def _route_tension(
 def _route_global(lib, top_k):
     """Temporal stride — evenly spaced windows for global/timeline queries."""
     from ..compass_routing._temporal import _temporal_stride_windows
+
     scores = _temporal_stride_windows(lib, k=top_k)
     return [wid for wid, _ in scores]
 
 
-def _route_tone(lib, kv_gen, prompt_ids, prompt_text, tokenizer,
-                model_config, top_k):
+def _route_tone(lib, kv_gen, prompt_ids, prompt_text, tokenizer, model_config, top_k):
     """Geometric routing with more windows — tone needs broader context."""
     if not lib.has_compass:
         from ..compass_routing._bm25 import _bm25_score_windows
+
         scores = _bm25_score_windows(lib, tokenizer, prompt_text)
         return [wid for wid, _ in scores[:top_k]]
 
     return compass_route(
-        lib, kv_gen, prompt_ids, prompt_text, tokenizer,
+        lib,
+        kv_gen,
+        prompt_ids,
+        prompt_text,
+        tokenizer,
         model_config=model_config,
         strategy=RoutingStrategy.GEOMETRIC,
         top_k=top_k,
     )
 
 
+# ── Vec inject fast path (FACTUAL only) ─────────────────────────────
+
+
+async def _try_vec_inject_factual(
+    lib,
+    kv_gen,
+    model,
+    tokenizer,
+    prompt_ids: list[int],
+    prompt_text: str,
+    config: GenerateConfig,
+    top_k: int = 5,
+    confidence_threshold: float = 0.15,
+) -> GenerateResult | None:
+    """Attempt 1D subspace injection at L30 for a FACTUAL query.
+
+    Returns a GenerateResult if injection succeeded, None to signal fallback
+    to geometric window replay.
+
+    Flow
+    ----
+    1. Check that vec_inject.npz exists in the checkpoint.
+    2. Load LocalVecInjectProvider (Metal-resident K matrix).
+    3. Route bare query tokens via Q·K at L29 H4.
+    4. If routing confident (score ≥ threshold) AND a distinctive match exists:
+         a. Two-pass inject: biased first token + proper KV for continuation.
+         b. Autoregressive decode.
+         c. Return GenerateResult.
+    5. Otherwise return None → caller falls back to geometric RRF.
+    """
+    from .....inference.context.vec_inject import LocalVecInjectProvider, vec_inject_all
+
+    # ── Guard: index must exist ───────────────────────────────────────
+    if not (lib.path / "vec_inject.npz").exists():
+        return None
+
+    # ── Load provider ─────────────────────────────────────────────────
+    checkpoint_dir = lib.path
+    t0 = time.time()
+    try:
+        provider = await LocalVecInjectProvider.load(
+            checkpoint_dir,
+            kv_gen,
+            confidence_threshold=confidence_threshold,
+        )
+    except FileNotFoundError:
+        return None
+    load_ms = (time.time() - t0) * 1000
+
+    # ── Route — bare query only (chat wrap adds structural noise) ──────
+    bare_ids = tokenizer.encode(prompt_text, add_special_tokens=False)
+    result = await provider.retrieve(bare_ids, prompt_text, top_k=top_k)
+
+    conf_str = "CONFIDENT" if result.routing_confident else "LOW-CONF"
+    stage_str = {"kspace": "S1:K-space", "h4": "S2:H4", "fallback": "S3:replay"}.get(
+        result.routing_stage, result.routing_stage
+    )
+    print(
+        f"  Vec inject [{conf_str}|{stage_str}]: top_score={result.top_score:.4f} "
+        f"(load={load_ms:.0f}ms, route={result.retrieval_ms:.1f}ms)",
+        file=sys.stderr,
+    )
+
+    if not result.routing_confident or not result.matches:
+        print("  Vec inject below threshold — falling back to geometric.", file=sys.stderr)
+        return None
+
+    distinctive = [m for m in result.matches if m.distinctive]
+    if not distinctive:
+        print(
+            f"  Vec inject: no distinctive tokens in top-{top_k} — falling back.",
+            file=sys.stderr,
+        )
+        return None
+
+    # Top-1 distinctive fact only — wrong injection is catastrophic
+    m = distinctive[0]
+    inject_layer = result.injection_layer
+    tok = tokenizer.decode([m.token_id], skip_special_tokens=True).strip()
+    print(
+        f"  INJECT: W{m.window_id}[{m.position}] "
+        f"score={m.score:.4f} c={m.coefficient:+.4f} tok={tok!r}",
+        file=sys.stderr,
+    )
+
+    # ── Two-pass strategy ─────────────────────────────────────────────
+    q_ids = mx.array(prompt_ids)[None]
+    embed_matrix = kv_gen.backbone.embed_matrix
+    t1 = time.time()
+
+    # Pass 1 — injection-biased logits for first generated token
+    h = kv_gen.prefill_to_layer(q_ids, target_layer=inject_layer - 1)
+    h_last = h[:, -1:, :]
+    h_injected_last = vec_inject_all(h_last, [m], embed_matrix)
+    if h.shape[1] > 1:
+        h_mod = mx.concatenate([h[:, :-1, :], h_injected_last], axis=1)
+    else:
+        h_mod = h_injected_last
+    inject_logits, _ = kv_gen.prefill_from_layer(h_mod, start_layer=inject_layer)
+
+    # Pass 2 — full prefill for proper L0-33 KV (coherent continuation)
+    _, kv_store = kv_gen.prefill(q_ids)
+
+    seq_len = q_ids.shape[1]
+    inject_ms = (time.time() - t1) * 1000
+    print(f"  Inject 2-pass: {inject_ms:.0f}ms", file=sys.stderr)
+
+    # First token from injection-biased logits
+    first_logits = inject_logits[0, -1]
+    if config.temperature == 0.0:
+        first_token = int(mx.argmax(first_logits).item())
+    else:
+        first_token = int(mx.random.categorical((first_logits / config.temperature)[None]).item())
+
+    first_text = tokenizer.decode([first_token], skip_special_tokens=True)
+    print(f"  First token (injected): {first_text!r}", file=sys.stderr)
+    sys.stdout.write(first_text)
+    sys.stdout.flush()
+
+    # Extend proper KV with first token → coherent continuation
+    logits, gen_kv = kv_gen.extend(mx.array([[first_token]]), kv_store, abs_start=seq_len)
+    seq_len += 1
+
+    # ── Autoregressive decode ─────────────────────────────────────────
+    stop_ids: set[int] = set()
+    if tokenizer.eos_token_id is not None:
+        stop_ids.add(tokenizer.eos_token_id)
+
+    generated_tokens: list[int] = [first_token]
+    for _ in range(config.max_tokens - 1):
+        last_logits = logits[0, -1]
+        if config.temperature == 0.0:
+            next_token = int(mx.argmax(last_logits).item())
+        else:
+            next_token = int(mx.random.categorical((last_logits / config.temperature)[None]).item())
+        if next_token in stop_ids:
+            break
+        generated_tokens.append(next_token)
+        sys.stdout.write(tokenizer.decode([next_token], skip_special_tokens=True))
+        sys.stdout.flush()
+        logits, gen_kv = kv_gen.step_uncompiled(
+            mx.array([[next_token]]),
+            gen_kv,
+            seq_len=seq_len,
+        )
+        seq_len += 1
+
+    print()
+    response = tokenizer.decode(generated_tokens, skip_special_tokens=True)
+    return GenerateResult(
+        response=response,
+        tokens_generated=len(generated_tokens),
+        context_tokens=seq_len,
+    )
+
+
 # ── Replay + generate ───────────────────────────────────────────────
 
+
 def _replay_and_generate(
-    lib, kv_gen, tokenizer, replay_wids,
-    prompt_text, config, sys_content, no_chat,
+    lib,
+    kv_gen,
+    tokenizer,
+    replay_wids,
+    prompt_text,
+    config,
+    sys_content,
+    no_chat,
     query_type=None,
 ):
     """Common replay path: preamble → windows → postamble → decode."""
@@ -324,22 +598,13 @@ def _replay_and_generate(
             "Do not spend more than 2 sentences on any single excerpt."
         )
     else:
-        postamble_prompt = (
-            f"\n\n---\nBased on the text above, "
-            f"{prompt_text}"
-        )
+        postamble_prompt = f"\n\n---\nBased on the text above, {prompt_text}"
 
     # Build chat framing
     if not no_chat and hasattr(tokenizer, "apply_chat_template"):
-        preamble_text = (
-            f"<start_of_turn>user\n{sys_content}\n\n"
-            f"Here is the relevant text:\n\n"
-        )
+        preamble_text = f"<start_of_turn>user\n{sys_content}\n\nHere is the relevant text:\n\n"
         preamble_ids = tokenizer.encode(preamble_text, add_special_tokens=True)
-        postamble_text = (
-            f"{postamble_prompt}<end_of_turn>\n"
-            f"<start_of_turn>model\n"
-        )
+        postamble_text = f"{postamble_prompt}<end_of_turn>\n<start_of_turn>model\n"
         postamble_ids = tokenizer.encode(postamble_text, add_special_tokens=False)
     else:
         preamble_ids = tokenizer.encode("Document:\n\n", add_special_tokens=False)
@@ -359,20 +624,23 @@ def _replay_and_generate(
         w_tokens = lib.get_window_tokens(wid)
         t0 = time.time()
         _l, gen_kv = kv_gen.extend(
-            mx.array(w_tokens)[None], gen_kv, abs_start=seq_len,
+            mx.array(w_tokens)[None],
+            gen_kv,
+            abs_start=seq_len,
         )
         mx.eval(*[t for p in gen_kv for t in p])
         ms = (time.time() - t0) * 1000
         seq_len += len(w_tokens)
         print(
-            f"  Replayed W{wid} @ pos {seq_len - len(w_tokens)}-{seq_len} "
-            f"({ms:.0f}ms)",
+            f"  Replayed W{wid} @ pos {seq_len - len(w_tokens)}-{seq_len} ({ms:.0f}ms)",
             file=sys.stderr,
         )
 
     # Postamble
     logits, gen_kv = kv_gen.extend(
-        mx.array(postamble_ids)[None], gen_kv, abs_start=seq_len,
+        mx.array(postamble_ids)[None],
+        gen_kv,
+        abs_start=seq_len,
     )
     seq_len += len(postamble_ids)
 
@@ -392,20 +660,18 @@ def _replay_and_generate(
         if next_token in stop_ids:
             break
         generated_tokens.append(next_token)
+        sys.stdout.write(tokenizer.decode([next_token], skip_special_tokens=True))
+        sys.stdout.flush()
         logits, gen_kv = kv_gen.step_uncompiled(
-            mx.array([[next_token]]), gen_kv, seq_len=seq_len,
+            mx.array([[next_token]]),
+            gen_kv,
+            seq_len=seq_len,
         )
         seq_len += 1
 
+    print()
+
     response = tokenizer.decode(generated_tokens, skip_special_tokens=True)
-    preview = response[:120].replace("\n", " ")
-    print(f"    {preview}...", file=sys.stderr)
-
-    print()
-    sys.stdout.write(response)
-    sys.stdout.flush()
-    print()
-
     return GenerateResult(
         response=response,
         tokens_generated=len(generated_tokens),

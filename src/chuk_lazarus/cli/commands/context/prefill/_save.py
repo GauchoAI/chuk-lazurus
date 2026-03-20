@@ -52,6 +52,7 @@ def save_library(
     run_mode7: bool = False,
     compass_layer: int | None = None,
     kvector_mode: KVectorMode = KVectorMode.SPARSE,
+    export_mode: bool = False,
 ) -> None:
     """Write all library files from the engine's current archived state.
 
@@ -61,6 +62,10 @@ def save_library(
     append_from: when > 0, only serialize windows [append_from, num_archived) into
     checkpoints/residuals by appending to existing zip files.  Windows metadata,
     tokens, and manifest are always fully rewritten (they're small).
+
+    export_mode=True skips KV checkpoint writing entirely.  Produces a portable
+    ~33 MB index (vec_inject + compass + tokens) instead of ~300 MB.  Replay
+    fallback uses fresh per-window prefill at generate time (slightly slower).
     """
     from .....inference.context import (
         LibraryFile,
@@ -76,7 +81,9 @@ def save_library(
 
     output_path.mkdir(parents=True, exist_ok=True)
 
-    skip_checkpoints = residual_mode == ResidualMode.DARKSPACE
+    # Export mode skips KV checkpoints entirely — portable index, no replay extension.
+    # Darkspace mode also skips checkpoints (fresh prefill at generate time).
+    skip_checkpoints = export_mode or residual_mode == ResidualMode.DARKSPACE
 
     # Collect window metadata for ALL windows (small — always rewritten)
     windows: list[WindowMeta] = []
@@ -105,9 +112,11 @@ def save_library(
         save_residuals(engine, output_path, num_archived, append_from)
     else:
         if not quick:
+            reason = "export mode" if export_mode else "darkspace mode"
             print(
-                f"  darkspace mode: skipping checkpoints (fresh prefill at generate time)",
-                file=sys.stderr, flush=True,
+                f"  {reason}: skipping checkpoints (fresh prefill at generate time)",
+                file=sys.stderr,
+                flush=True,
             )
 
     # --- Post-prefill extraction passes (skipped during periodic quick saves) ---
@@ -116,8 +125,12 @@ def save_library(
             from ._darkspace import extract_darkspace
 
             extract_darkspace(
-                engine, output_path, num_archived, config,
-                frame_bank_data, frame_bank_path,
+                engine,
+                output_path,
+                num_archived,
+                config,
+                frame_bank_data,
+                frame_bank_path,
             )
 
         elif residual_mode in (ResidualMode.INTERVAL, ResidualMode.FULL):
@@ -125,7 +138,10 @@ def save_library(
                 from ._interval import extract_interval_residuals
 
                 extract_interval_residuals(
-                    engine, output_path, num_archived, residual_mode,
+                    engine,
+                    output_path,
+                    num_archived,
+                    residual_mode,
                 )
 
         # Compass runs for any residual mode when requested
@@ -134,7 +150,10 @@ def save_library(
 
             compass_n_samples = None if residual_mode == ResidualMode.FULL else 8
             calibrate_compass(
-                engine, output_path, num_archived, config,
+                engine,
+                output_path,
+                num_archived,
+                config,
                 n_samples=compass_n_samples,
                 compass_layer=compass_layer,
             )
@@ -148,15 +167,13 @@ def save_library(
         # Sparse: keyword extraction for Mode 5 sparse semantic index
         if run_sparse:
             # Check if engine is SparseIndexEngine with inline extraction already done
-            if hasattr(engine, 'sparse_index') and len(engine.sparse_index) > 0:
+            if hasattr(engine, "sparse_index") and len(engine.sparse_index) > 0:
                 # Inline extraction — index was built during _close_window()
                 # Just save it. Zero additional compute.
                 engine.sparse_index.save(output_path / "sparse_index.json")
                 stats = engine.sparse_index.stats()
                 size_kb = (output_path / "sparse_index.json").stat().st_size / 1024
-                parametric_count = sum(
-                    1 for e in engine.sparse_index.entries if not e.keywords
-                )
+                parametric_count = sum(1 for e in engine.sparse_index.entries if not e.keywords)
                 print(
                     f"  Sparse index (inline): {stats['non_empty']} novel, "
                     f"{parametric_count} parametric, "
@@ -175,15 +192,21 @@ def save_library(
         if run_kvectors:
             from ._kv_route import extract_kv_route_index
 
-            extract_kv_route_index(engine, output_path, num_archived, config, kvector_mode=kvector_mode)
+            extract_kv_route_index(
+                engine, output_path, num_archived, config, kvector_mode=kvector_mode
+            )
 
         # Vec injection index: K vectors + coefficients c = dot(R_L30, embed(token))
         if run_vec_inject:
             from ._vec_inject import extract_vec_inject_index
 
             extract_vec_inject_index(
-                engine, output_path, num_archived, config,
-                tokenizer=tokenizer, kvector_mode=kvector_mode,
+                engine,
+                output_path,
+                num_archived,
+                config,
+                tokenizer=tokenizer,
+                kvector_mode=kvector_mode,
             )
 
         # Mode 7: calibrate query classifier + engagement/tension probes
@@ -191,8 +214,13 @@ def save_library(
             from ._mode7_calibrate import calibrate_mode7_probes
 
             calibrate_mode7_probes(
-                engine, output_path, num_archived, config,
-                tokenizer, model_id, compass_layer,
+                engine,
+                output_path,
+                num_archived,
+                config,
+                tokenizer,
+                model_id,
+                compass_layer,
             )
 
     # --- Pages ---
@@ -214,6 +242,15 @@ def save_library(
     )
 
     # --- manifest.json (written last — the "committed" marker) ---
+    # Embed arch_config so generate-time code never needs to guess layer/head values
+    arch_config_dict: dict | None = None
+    try:
+        from .....inference.context.arch_config import ArchitectureConfig
+
+        arch_config_dict = ArchitectureConfig.from_model_config(config).to_dict()
+    except Exception:
+        pass  # Unknown model — discover() required; stored as None
+
     manifest = LibraryManifest(
         name=name,
         model_id=model_id,
@@ -222,9 +259,11 @@ def save_library(
         window_size=window_size,
         total_tokens=total_tokens_to_report,
         num_windows=num_archived,
-        checkpoint_bytes=s.checkpoint_bytes,
+        checkpoint_bytes=0 if skip_checkpoints else s.checkpoint_bytes,
         archive_bytes=s.archive_bytes,
         created_at=created_at,
         format_version=LibraryFormatVersion.V1,
+        has_checkpoints=not skip_checkpoints,
+        arch_config=arch_config_dict,
     )
     (output_path / LibraryFile.MANIFEST).write_text(manifest.model_dump_json(indent=2))

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import sys
 
-
 _ATTENTION_SAMPLE_POSITIONS = 32  # tokens per window in routing context
 _PREVIEW_TOKENS = 64  # tokens from each end of the window
 
@@ -76,11 +75,11 @@ def _attention_score_windows(
     # Extend query against the context, capturing attention weights
     q_ids = mx.array(prompt_ids)[None]
     _logits, _ext_kv, attn_weights = kv_gen.extend_with_attention_weights(
-        q_ids, ctx_kv, abs_start=total_context, capture_layers=capture_layers,
+        q_ids,
+        ctx_kv,
+        abs_start=total_context,
+        capture_layers=capture_layers,
     )
-
-    # Aggregate attention: sum attention to each window's positions
-    q_len = len(prompt_ids)
 
     # Accumulate per-window attention across captured layers
     window_scores = [0.0] * num_windows
@@ -150,9 +149,7 @@ def _preview_score_windows(
         _logits, preview_kv = kv_gen.prefill(p_ids)
 
         # Extend with query
-        logits, _ext_kv = kv_gen.extend(
-            q_ids, preview_kv, abs_start=len(preview)
-        )
+        logits, _ext_kv = kv_gen.extend(q_ids, preview_kv, abs_start=len(preview))
         mx.eval(logits)
 
         # Query perplexity: mean log-prob of each query token given
@@ -263,6 +260,7 @@ def _qk_score_windows(
 
     # Aggregate per window
     from collections import defaultdict
+
     per_window_scores: dict[int, list[float]] = defaultdict(list)
     for idx, (wid, _si) in enumerate(wid_map):
         per_window_scores[wid].append(float(scores_np[idx]))
@@ -279,6 +277,6 @@ def _qk_score_windows(
             sl.sort(reverse=True)
             per_window[wid] = sum(sl[:_TOP_K_AGG]) / len(sl[:_TOP_K_AGG])
 
-    result = [(wid, s) for wid, s in per_window.items()]
+    result = list(per_window.items())
     result.sort(key=lambda x: -x[1])
     return result

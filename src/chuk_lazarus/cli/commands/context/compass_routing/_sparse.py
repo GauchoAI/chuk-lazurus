@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import math
-from pathlib import Path
 
 
 def _sparse_score_windows(
@@ -38,6 +37,7 @@ def _sparse_score_windows(
 
     # Build per-window keyword map
     import re as _re
+
     window_keywords: dict[int, list[str]] = {}
     for entry in entries:
         wid = entry.get("window_id", -1)
@@ -47,20 +47,21 @@ def _sparse_score_windows(
         terms: list[str] = []
         for kw in kws:
             for word in kw.lower().split():
-                clean = _re.sub(r'[^\w]', '', word)
+                clean = _re.sub(r"[^\w]", "", word)
                 if len(clean) > 1:
                     terms.append(clean)
         for cw in content:
-            clean = _re.sub(r'[^\w]', '', cw.lower())
+            clean = _re.sub(r"[^\w]", "", cw.lower())
             if len(clean) > 1:
                 terms.append(clean)
         window_keywords[wid] = terms
 
     # Query terms (strip punctuation for matching)
     import re as _re
+
     query_terms = set()
     for word in query_text.lower().split():
-        clean = _re.sub(r'[^\w]', '', word)
+        clean = _re.sub(r"[^\w]", "", word)
         if len(clean) > 1:
             query_terms.add(clean)
 

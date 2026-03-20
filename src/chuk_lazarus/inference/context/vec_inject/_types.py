@@ -28,7 +28,7 @@ class VecInjectMatch(BaseModel):
     score: float
     window_id: int
     position: int
-    distinctive: bool = True   # default True for legacy indexes without the flag
+    distinctive: bool = True  # default True for legacy indexes without the flag
 
 
 class VecInjectResult(BaseModel):
@@ -43,6 +43,9 @@ class VecInjectResult(BaseModel):
                          confidence threshold.  False signals the caller to
                          fall back to window replay rather than inject.
     top_score          : Cosine score of the best match (0.0 if no matches).
+    routing_stage      : Which tier resolved the query: "kspace" (Stage 1,
+                         Q·K adaptive), "h4" (Stage 2, H4 copy-head output),
+                         or "fallback" (no confident match).
     """
 
     matches: list[VecInjectMatch] = Field(default_factory=list)
@@ -50,6 +53,7 @@ class VecInjectResult(BaseModel):
     injection_layer: int = 30
     routing_confident: bool = True
     top_score: float = 0.0
+    routing_stage: str = "kspace"  # "kspace" | "h4" | "fallback"
 
 
 class VecInjectMeta(BaseModel):

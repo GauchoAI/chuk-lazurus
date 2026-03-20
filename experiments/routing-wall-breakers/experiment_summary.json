@@ -1,0 +1,171 @@
+{
+  "baseline": {
+    "Q1_zarkov": 0.9765204765701594,
+    "Q2_nexaris": 0.9838679450909449,
+    "Q11_namath": 1.0073071249682735,
+    "Q12_marchand": 1.005311497919137
+  },
+  "m2": {
+    "accuracy": 4,
+    "ratios": {
+      "Q1_zarkov": 2.4342354242328548,
+      "Q2_nexaris": 5.859274899672586,
+      "Q11_namath": 8.386949623848977,
+      "Q12_marchand": 4.524208046653243
+    },
+    "h4_top5_q1_zarkov": [
+      {
+        "pos": 0,
+        "token": "'<bos>'",
+        "weight": 0.89453125
+      },
+      {
+        "pos": 1,
+        "token": "'<start_of_turn>'",
+        "weight": 0.0269775390625
+      },
+      {
+        "pos": 7,
+        "token": "' Z'",
+        "weight": 0.0269775390625
+      },
+      {
+        "pos": 18,
+        "token": "'\\n'",
+        "weight": 0.015380859375
+      },
+      {
+        "pos": 14,
+        "token": "'<end_of_turn>'",
+        "weight": 0.0087890625
+      }
+    ]
+  },
+  "m3": {
+    "accuracy": 1,
+    "ratios": {
+      "Q1_zarkov": 0.99844366093325,
+      "Q2_nexaris": 0.9936407650002959,
+      "Q11_namath": 0.9995075461259781,
+      "Q12_marchand": 1.002834559497679
+    },
+    "entity_positions": {
+      "fact_F1_zarkov": {
+        "entity": "Zarkov",
+        "position": 95,
+        "seq_len": 105
+      },
+      "fact_F2_nexaris": {
+        "entity": "Nexaris",
+        "position": 87,
+        "seq_len": 97
+      },
+      "fact_F3_helion": {
+        "entity": "Helion",
+        "position": 88,
+        "seq_len": 98
+      },
+      "fact_F4_keltara": {
+        "entity": "Keltara",
+        "position": 73,
+        "seq_len": 83
+      },
+      "fact_F5_vexon": {
+        "entity": "Vexon",
+        "position": 76,
+        "seq_len": 86
+      },
+      "fact_F6_pyraxis": {
+        "entity": "Pyraxis",
+        "position": 78,
+        "seq_len": 88
+      },
+      "fact_F7_stratex": {
+        "entity": "Stratex",
+        "position": 79,
+        "seq_len": 89
+      },
+      "fact_F8_oberon": {
+        "entity": "Oberon",
+        "position": 72,
+        "seq_len": 82
+      },
+      "fact_F11_namath": {
+        "entity": "Namath",
+        "position": 86,
+        "seq_len": 96
+      },
+      "fact_F12_marchand": {
+        "entity": "Marchand",
+        "position": 81,
+        "seq_len": 91
+      },
+      "fact_F13_webb": {
+        "entity": "Webb",
+        "position": 78,
+        "seq_len": 88
+      },
+      "fact_F14_frost": {
+        "entity": "Frost",
+        "position": 86,
+        "seq_len": 96
+      },
+      "query_Q1_zarkov": {
+        "entity": "Zarkov",
+        "position": 9,
+        "seq_len": 19
+      },
+      "query_Q2_nexaris": {
+        "entity": "Nexaris",
+        "position": 8,
+        "seq_len": 18
+      },
+      "query_Q11_namath": {
+        "entity": "Namath",
+        "position": 8,
+        "seq_len": 18
+      },
+      "query_Q12_marchand": {
+        "entity": "Marchand",
+        "position": 8,
+        "seq_len": 18
+      }
+    }
+  },
+  "m4": {
+    "accuracy": 2,
+    "ratios": {
+      "Q1_zarkov": 0.4374368571817626,
+      "Q2_nexaris": 0.9386990019001219,
+      "Q11_namath": 1.1469187911531318,
+      "Q12_marchand": 1.4913720768576306
+    },
+    "query_delta_norms": {
+      "Q1_zarkov": {
+        "norm_with": 57355.5234375,
+        "norm_without": 58240.26171875,
+        "norm_delta": 13042.5849609375,
+        "delta_ratio": 0.22739893198013306
+      },
+      "Q2_nexaris": {
+        "norm_with": 60823.0390625,
+        "norm_without": 58240.26171875,
+        "norm_delta": 14486.3583984375,
+        "delta_ratio": 0.23817221820354462
+      },
+      "Q11_namath": {
+        "norm_with": 64603.37890625,
+        "norm_without": 64000.68359375,
+        "norm_delta": 17883.38671875,
+        "delta_ratio": 0.2768181264400482
+      },
+      "Q12_marchand": {
+        "norm_with": 63198.57421875,
+        "norm_without": 64000.68359375,
+        "norm_delta": 16418.1875,
+        "delta_ratio": 0.25978732109069824
+      }
+    },
+    "inter_entity_cosine_Q1Q2_deltas": 0.802337646484375
+  }
+}

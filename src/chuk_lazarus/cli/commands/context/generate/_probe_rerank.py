@@ -20,15 +20,13 @@ import time
 
 import mlx.core as mx
 
-
 # Max tokens to replay per window for assessment
 _REPLAY_TOKENS = 256
 # Tokens to generate for assessment
 _ASSESS_TOKENS = 20
 
 _ENGAGEMENT_PROMPT = (
-    "\n\nIs there anything amusing, surprising, or notable about this "
-    "excerpt? Rate from 1-5."
+    "\n\nIs there anything amusing, surprising, or notable about this excerpt? Rate from 1-5."
 )
 
 _TENSION_PROMPT = (
@@ -71,7 +69,7 @@ def _probe_rerank_windows(
         n = len(w_tokens)
         if n > _REPLAY_TOKENS:
             start = max(0, n // 2 - _REPLAY_TOKENS // 2)
-            w_tokens = w_tokens[start:start + _REPLAY_TOKENS]
+            w_tokens = w_tokens[start : start + _REPLAY_TOKENS]
 
         # Build assessment context
         pre_text = "<start_of_turn>user\nHere is a text excerpt:\n\n"
@@ -106,7 +104,8 @@ def _probe_rerank_windows(
         # Extract L26 at last generated position
         full_seq = list(pre_ids) + list(w_tokens) + list(post_ids) + gen_tokens
         h = kv_gen.prefill_to_layer(
-            mx.array(full_seq)[None], target_layer=compass_layer,
+            mx.array(full_seq)[None],
+            target_layer=compass_layer,
             sample_positions=[len(full_seq) - 1],
         )
         mx.eval(h)
@@ -119,8 +118,7 @@ def _probe_rerank_windows(
         if (i + 1) % 10 == 0:
             elapsed = (time.time() - t0) * 1000
             print(
-                f"    Re-ranked {i + 1}/{len(candidate_wids)} windows "
-                f"({elapsed:.0f}ms)",
+                f"    Re-ranked {i + 1}/{len(candidate_wids)} windows ({elapsed:.0f}ms)",
                 file=sys.stderr,
             )
 

@@ -60,7 +60,10 @@ class GemmaLayerAdapter:
         return q, k, v
 
     def project_qkv_pre_rope(
-        self, x: mx.array, B: int, S: int,
+        self,
+        x: mx.array,
+        B: int,
+        S: int,
     ) -> tuple[mx.array, mx.array, mx.array]:
         """Project Q, K, V with norms but WITHOUT RoPE.
 
@@ -189,6 +192,11 @@ class GemmaBackboneAdapter:
     @property
     def hidden_size(self) -> int:
         return self._backbone.config.hidden_size
+
+    @property
+    def embed_matrix(self) -> mx.array:
+        """Token embedding weight matrix, shape (vocab_size, hidden_size)."""
+        return self._backbone.embed_tokens.weight
 
 
 __all__ = ["GemmaBackboneAdapter", "GemmaLayerAdapter"]

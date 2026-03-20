@@ -36,9 +36,7 @@ def _deflection_score_windows(
     scores: list[tuple[int, float]] = []
     for wid in wids:
         ckpt_kv = lib.get_checkpoint(wid)
-        _logits, _ext_kv, ext_residual = kv_gen.extend_with_residual(
-            q_ids, ckpt_kv, abs_start=1
-        )
+        _logits, _ext_kv, ext_residual = kv_gen.extend_with_residual(q_ids, ckpt_kv, abs_start=1)
         mx.eval(_logits)
         ext_vec = ext_residual.reshape(-1).astype(mx.float32)
 
@@ -54,7 +52,7 @@ def _compass_score_windows(
     lib,
     kv_gen,
     prompt_ids: list[int],
-    query_vec_np: "np.ndarray | None" = None,
+    query_vec_np=None,
 ) -> list[tuple[int, float]]:
     """Score windows by cosine similarity in the compass subspace.
 
@@ -73,7 +71,6 @@ def _compass_score_windows(
     # Load compass data from library
     mean_vec, basis, pc_start, pc_end = lib.get_compass_basis()
     compass_layer = lib.compass_layer
-    n_dims = pc_end - pc_start
 
     # Convert to numpy for fast linear algebra
     mean_np = np.array(mean_vec.reshape(-1).tolist(), dtype=np.float32)
@@ -108,9 +105,7 @@ def _compass_score_windows(
         # PCA-based modes: structural removal or fixed 16D
         use_structural_removal = lib.has_structural_basis
         if use_structural_removal:
-            structural_np = np.array(
-                lib.get_structural_basis().tolist(), dtype=np.float32
-            )
+            structural_np = np.array(lib.get_structural_basis().tolist(), dtype=np.float32)
 
             def _clean(vec: np.ndarray) -> np.ndarray:
                 v = vec - mean_np
@@ -118,6 +113,7 @@ def _compass_score_windows(
                 v = v - projections @ structural_np
                 return v
         else:
+
             def _clean(vec: np.ndarray) -> np.ndarray:
                 return (vec - mean_np) @ basis_np.T
 
@@ -171,7 +167,7 @@ def _compass_score_windows(
             top_k = score_list[:_TOP_K_AGG]
             per_window[wid] = sum(top_k) / len(top_k)
 
-    scores = [(wid, s) for wid, s in per_window.items()]
+    scores = list(per_window.items())
     scores.sort(key=lambda x: -x[1])
     return scores
 
@@ -206,7 +202,7 @@ def _directed_score_windows(
             wid_map.append((wid, si))
 
     all_stored = np.stack(all_vecs, axis=0)  # (N, 2560)
-    corpus_mean = all_stored.mean(axis=0)    # (2560,)
+    corpus_mean = all_stored.mean(axis=0)  # (2560,)
 
     # Compute structural PCs to remove format/structural dominance.
     # PCA on stored residuals — top K PCs are structural.
@@ -221,13 +217,10 @@ def _directed_score_windows(
     _U, _S, Vt_struct = np.linalg.svd(svd_input, full_matrices=False)
 
     # Auto-detect structural boundary (same algorithm as compass calibration)
-    explained = (_S ** 2) / (np.sum(_S ** 2) + 1e-10)
+    explained = (_S**2) / (np.sum(_S**2) + 1e-10)
     structural_end = 0
     for si in range(min(len(explained) - 3, 50)):
-        ratios = [
-            explained[si + j] / max(explained[si + j + 1], 1e-10)
-            for j in range(3)
-        ]
+        ratios = [explained[si + j] / max(explained[si + j + 1], 1e-10) for j in range(3)]
         if all(r < 1.5 for r in ratios):
             structural_end = si
             break
@@ -281,7 +274,7 @@ def _directed_score_windows(
             top_k = score_list[:_TOP_K_AGG]
             per_window[wid] = sum(top_k) / len(top_k)
 
-    scores = [(wid, s) for wid, s in per_window.items()]
+    scores = list(per_window.items())
     scores.sort(key=lambda x: -x[1])
     return scores
 
@@ -306,7 +299,7 @@ def _contrastive_score_windows(
     prompt_ids: list[int],
     tokenizer,
     n_dims: int = 8,
-    query_vec_np: "np.ndarray | None" = None,
+    query_vec_np=None,
 ) -> list[tuple[int, float]]:
     """Score windows using query-specific contrastive subspace discovery.
 
@@ -362,8 +355,8 @@ def _contrastive_score_windows(
     n_pcs = min(len(_S), Vt.shape[0])
     projections = centered @ Vt[:n_pcs].T  # (9, n_pcs)
 
-    target_proj = projections[:n_target]   # (1, n_pcs)
-    other_proj = projections[n_target:]    # (8, n_pcs)
+    target_proj = projections[:n_target]  # (1, n_pcs)
+    other_proj = projections[n_target:]  # (8, n_pcs)
 
     fisher_scores = []
     for i in range(n_pcs):
@@ -419,6 +412,6 @@ def _contrastive_score_windows(
             sl.sort(reverse=True)
             per_window[wid] = sum(sl[:10]) / len(sl[:10])
 
-    scores = [(wid, s) for wid, s in per_window.items()]
+    scores = list(per_window.items())
     scores.sort(key=lambda x: -x[1])
     return scores

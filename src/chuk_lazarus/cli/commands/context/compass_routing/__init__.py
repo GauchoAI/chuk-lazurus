@@ -34,8 +34,8 @@ Usage in context_generate_cmd:
     )
 """
 
-from ._strategy import RoutingStrategy
 from ._orchestrator import compass_route
+from ._strategy import RoutingStrategy
 from ._twopass import two_pass_generate
 
 __all__ = ["compass_route", "two_pass_generate", "RoutingStrategy"]

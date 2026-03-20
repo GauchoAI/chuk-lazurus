@@ -55,5 +55,6 @@ def extract_pages(
     print(
         f"  pages: {num_archived} windows × {n_pages} pages = "
         f"{num_archived * n_pages} entries ({pages_size:.0f} MB)",
-        file=sys.stderr, flush=True,
+        file=sys.stderr,
+        flush=True,
     )

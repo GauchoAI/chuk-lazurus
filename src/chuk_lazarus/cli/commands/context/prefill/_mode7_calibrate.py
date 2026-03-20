@@ -40,7 +40,7 @@ def calibrate_mode7_probes(
         old_cache.unlink()
 
     # Load the library we just wrote
-    lib = CheckpointLibrary.load(output_path)
+    lib = CheckpointLibrary(output_path)
     if lib.num_windows == 0:
         print("  Mode 7: no windows to calibrate from, skipping", file=sys.stderr)
         return
@@ -51,15 +51,18 @@ def calibrate_mode7_probes(
     from ..generate._probes import load_or_calibrate
 
     _probes = load_or_calibrate(
-        engine.kv_gen, tokenizer, compass_layer, lib,
-        str(output_path), model_id,
+        engine.kv_gen,
+        tokenizer,
+        compass_layer,
+        lib,
+        str(output_path),
+        model_id,
     )
 
     elapsed = time.time() - t0
     m7_ok = "yes" if _probes.m7_available else "no"
     tension_ok = "yes" if _probes.tension_available else "no"
     print(
-        f"  Mode 7: probes calibrated in {elapsed:.1f}s "
-        f"(classifier={m7_ok}, tension={tension_ok})",
+        f"  Mode 7: probes calibrated in {elapsed:.1f}s (classifier={m7_ok}, tension={tension_ok})",
         file=sys.stderr,
     )

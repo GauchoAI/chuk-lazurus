@@ -18,18 +18,19 @@ import hashlib
 import re
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
 import mlx.core as mx
 import numpy as np
 
-
 # ── Data structures ──────────────────────────────────────────────────
+
 
 class QueryType(str, Enum):
     """Mode 7 query classifications."""
+
     FACTUAL = "factual"
     ENGAGEMENT = "engagement"
     TENSION = "tension"
@@ -40,16 +41,17 @@ class QueryType(str, Enum):
 @dataclass
 class ProbeSet:
     """Calibrated probe directions."""
+
     # Query-type: exploration vs factual (legacy 2-class)
-    qt_direction: mx.array    # (hidden_dim,) positive = exploration
-    qt_mean: mx.array         # (hidden_dim,)
+    qt_direction: mx.array  # (hidden_dim,) positive = exploration
+    qt_mean: mx.array  # (hidden_dim,)
     qt_threshold: float
 
     # Tonal: engaging vs routine (generation-mode L26)
     tonal_direction: mx.array  # (hidden_dim,) positive = engaging
-    tonal_mean: mx.array       # (hidden_dim,)
+    tonal_mean: mx.array  # (hidden_dim,)
     tonal_threshold: float
-    tonal_available: bool      # False if calibration had insufficient contrast
+    tonal_available: bool  # False if calibration had insufficient contrast
 
     # Mode 7: 5-class query type classifier
     m7_class_directions: dict[str, mx.array] | None = None  # class_name → direction
@@ -117,6 +119,7 @@ _M7_EXAMPLES: list[tuple[str, str]] = [
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
+
 def _probe_cache_path(checkpoint_dir: str | Path, model_name: str) -> Path:
     h = hashlib.md5(model_name.encode()).hexdigest()[:8]
     return Path(checkpoint_dir) / f".probe_cache_v{_CACHE_VERSION}_{h}.npz"
@@ -153,6 +156,7 @@ def _pca_direction(vecs: list[mx.array], labels: list[bool], positive_label: boo
 
 # ── Structural PC removal ─────────────────────────────────────────────
 
+
 def _get_lib_structural_np(lib) -> tuple[np.ndarray | None, np.ndarray | None]:
     """Extract structural basis from a library as numpy arrays.
 
@@ -188,7 +192,7 @@ def _clean_vecs(
     for v in vecs:
         v_np = np.array(v.tolist(), dtype=np.float32)
         centered = v_np - mean_np
-        proj = centered @ struct_np.T        # (K,)
+        proj = centered @ struct_np.T  # (K,)
         cleaned.append(mx.array(centered - proj @ struct_np))
     return cleaned
 
@@ -209,6 +213,7 @@ def _clean_single_np(
 
 # ── Query-type calibration ───────────────────────────────────────────
 
+
 def _calibrate_query_type(kv_gen, tokenizer, compass_layer: int, lib=None):
     """PCA direction from generic exploration/factual examples.
 
@@ -219,13 +224,11 @@ def _calibrate_query_type(kv_gen, tokenizer, compass_layer: int, lib=None):
     labels: list[bool] = []
 
     for query_text, is_exploration in _QT_EXAMPLES:
-        prompt = (
-            f"<start_of_turn>user\n{query_text}<end_of_turn>\n"
-            f"<start_of_turn>model\n"
-        )
+        prompt = f"<start_of_turn>user\n{query_text}<end_of_turn>\n<start_of_turn>model\n"
         ids = tokenizer.encode(prompt, add_special_tokens=True)
         h = kv_gen.prefill_to_layer(
-            mx.array(ids)[None], target_layer=compass_layer,
+            mx.array(ids)[None],
+            target_layer=compass_layer,
             sample_positions=[len(ids) - 1],
         )
         mx.eval(h)
@@ -236,7 +239,9 @@ def _calibrate_query_type(kv_gen, tokenizer, compass_layer: int, lib=None):
     vecs = _clean_vecs(vecs, struct_np, mean_np)
 
     pc1, mean, thresh, var_pct, pos_m, neg_m = _pca_direction(
-        vecs, labels, positive_label=True,
+        vecs,
+        labels,
+        positive_label=True,
     )
     cleaned_label = " (struct-cleaned)" if struct_np is not None else ""
     print(
@@ -248,6 +253,7 @@ def _calibrate_query_type(kv_gen, tokenizer, compass_layer: int, lib=None):
 
 
 # ── Tonal calibration (generation-mode) ──────────────────────────────
+
 
 def _assess_window(kv_gen, tokenizer, w_tokens, compass_layer: int):
     """Model reads window + assessment prompt, generates 20 tokens.
@@ -295,15 +301,17 @@ def _assess_window(kv_gen, tokenizer, w_tokens, compass_layer: int):
 
     # Parse rating
     judge_text = tokenizer.decode(gen_tokens, skip_special_tokens=True)
-    m = re.search(r'[1-5]', judge_text)
+    m = re.search(r"[1-5]", judge_text)
     rating = int(m.group()) if m else 3
 
     # Extract L26 at last generated token via extend_to_layer — one forward
     # pass of one token with the full KV context, not a full prefill replay.
     if gen_tokens:
         _, _, layer_h = kv_gen.extend_to_layer(
-            mx.array([[gen_tokens[-1]]]), last_tok_kv,
-            abs_start=last_tok_sl, target_layer=compass_layer,
+            mx.array([[gen_tokens[-1]]]),
+            last_tok_kv,
+            abs_start=last_tok_sl,
+            target_layer=compass_layer,
         )
         vec = layer_h[0, 0, :].astype(mx.float32)
         mx.eval(vec)
@@ -311,7 +319,8 @@ def _assess_window(kv_gen, tokenizer, w_tokens, compass_layer: int):
         # Fallback: EOS on first token — extract from postamble end position
         full = list(pre_ids) + list(w_tokens) + list(post_ids)
         h = kv_gen.prefill_to_layer(
-            mx.array(full)[None], target_layer=compass_layer,
+            mx.array(full)[None],
+            target_layer=compass_layer,
             sample_positions=[len(full) - 1],
         )
         mx.eval(h)
@@ -416,6 +425,7 @@ def _calibrate_tonal(kv_gen, tokenizer, compass_layer: int, lib):
 
 # ── Tonal scoring (used at query time) ───────────────────────────────
 
+
 def tonal_score_window(kv_gen, tokenizer, w_tokens, compass_layer, probes):
     """Score a single window with the tonal generation probe.
 
@@ -427,11 +437,13 @@ def tonal_score_window(kv_gen, tokenizer, w_tokens, compass_layer, probes):
     # Apply structural cleaning if available
     struct_np = (
         np.array(probes.struct_basis.tolist(), dtype=np.float32)
-        if probes.struct_basis is not None else None
+        if probes.struct_basis is not None
+        else None
     )
     mean_np = (
         np.array(probes.struct_mean.reshape(-1).tolist(), dtype=np.float32)
-        if probes.struct_mean is not None else None
+        if probes.struct_mean is not None
+        else None
     )
     vec = _clean_single_np(vec, struct_np, mean_np)
     proj = mx.sum((vec - probes.tonal_mean) * probes.tonal_direction)
@@ -440,6 +452,7 @@ def tonal_score_window(kv_gen, tokenizer, w_tokens, compass_layer, probes):
 
 
 # ── Mode 7: 5-class query classifier ──────────────────────────────────
+
 
 def _calibrate_m7_classifier(kv_gen, tokenizer, compass_layer: int, lib=None):
     """Train a 1-vs-rest linear classifier for 5 query types.
@@ -452,18 +465,16 @@ def _calibrate_m7_classifier(kv_gen, tokenizer, compass_layer: int, lib=None):
 
     Returns (class_directions, class_means) dicts keyed by class name.
     """
-    classes = sorted(set(label for _, label in _M7_EXAMPLES))
+    classes = sorted({label for _, label in _M7_EXAMPLES})
     vecs_by_class: dict[str, list[mx.array]] = {c: [] for c in classes}
     all_vecs: list[mx.array] = []
 
     for query_text, label in _M7_EXAMPLES:
-        prompt = (
-            f"<start_of_turn>user\n{query_text}<end_of_turn>\n"
-            f"<start_of_turn>model\n"
-        )
+        prompt = f"<start_of_turn>user\n{query_text}<end_of_turn>\n<start_of_turn>model\n"
         ids = tokenizer.encode(prompt, add_special_tokens=True)
         h = kv_gen.prefill_to_layer(
-            mx.array(ids)[None], target_layer=compass_layer,
+            mx.array(ids)[None],
+            target_layer=compass_layer,
             sample_positions=[len(ids) - 1],
         )
         mx.eval(h)
@@ -563,20 +574,23 @@ def _tension_assess_window(kv_gen, tokenizer, w_tokens, compass_layer: int):
 
     # Parse rating
     judge_text = tokenizer.decode(gen_tokens, skip_special_tokens=True)
-    m = re.search(r'[1-5]', judge_text)
+    m = re.search(r"[1-5]", judge_text)
     rating = int(m.group()) if m else 3
 
     if gen_tokens:
         _, _, layer_h = kv_gen.extend_to_layer(
-            mx.array([[gen_tokens[-1]]]), last_tok_kv,
-            abs_start=last_tok_sl, target_layer=compass_layer,
+            mx.array([[gen_tokens[-1]]]),
+            last_tok_kv,
+            abs_start=last_tok_sl,
+            target_layer=compass_layer,
         )
         vec = layer_h[0, 0, :].astype(mx.float32)
         mx.eval(vec)
     else:
         full = list(pre_ids) + list(w_tokens) + list(post_ids)
         h = kv_gen.prefill_to_layer(
-            mx.array(full)[None], target_layer=compass_layer,
+            mx.array(full)[None],
+            target_layer=compass_layer,
             sample_positions=[len(full) - 1],
         )
         mx.eval(h)
@@ -604,8 +618,11 @@ def _calibrate_tension(kv_gen, tokenizer, compass_layer: int, lib):
             TENSION_INDICATORS,
             _indicator_bm25_score_windows,
         )
+
         bm25_scores = _indicator_bm25_score_windows(
-            lib, tokenizer, TENSION_INDICATORS,
+            lib,
+            tokenizer,
+            TENSION_INDICATORS,
         )
     except Exception:
         bm25_scores = []
@@ -616,8 +633,7 @@ def _calibrate_tension(kv_gen, tokenizer, compass_layer: int, lib):
 
     if len(tense_wids) < 3:
         print(
-            f"    Tension: only {len(tense_wids)} keyword windows, "
-            "falling back to synthetic-only",
+            f"    Tension: only {len(tense_wids)} keyword windows, falling back to synthetic-only",
             file=sys.stderr,
         )
         tense_wids = []
@@ -663,10 +679,16 @@ def _calibrate_tension(kv_gen, tokenizer, compass_layer: int, lib):
         add_special_tokens=False,
     )
     _, tense_synth = _tension_assess_window(
-        kv_gen, tokenizer, tense_tokens, compass_layer,
+        kv_gen,
+        tokenizer,
+        tense_tokens,
+        compass_layer,
     )
     _, calm_synth = _tension_assess_window(
-        kv_gen, tokenizer, calm_tokens, compass_layer,
+        kv_gen,
+        tokenizer,
+        calm_tokens,
+        compass_layer,
     )
     tense_vecs.append(tense_synth)
     calm_vecs.append(calm_synth)
@@ -721,13 +743,11 @@ def classify_query_m7(
     Returns (query_type, confidence) where confidence is the margin
     between the best and second-best class projections.
     """
-    prompt = (
-        f"<start_of_turn>user\n{prompt_text}<end_of_turn>\n"
-        f"<start_of_turn>model\n"
-    )
+    prompt = f"<start_of_turn>user\n{prompt_text}<end_of_turn>\n<start_of_turn>model\n"
     ids = tokenizer.encode(prompt, add_special_tokens=True)
     h = kv_gen.prefill_to_layer(
-        mx.array(ids)[None], target_layer=compass_layer,
+        mx.array(ids)[None],
+        target_layer=compass_layer,
         sample_positions=[len(ids) - 1],
     )
     mx.eval(h)
@@ -736,11 +756,13 @@ def classify_query_m7(
     # Apply structural cleaning — same basis used during calibration
     struct_np = (
         np.array(probes.struct_basis.tolist(), dtype=np.float32)
-        if probes.struct_basis is not None else None
+        if probes.struct_basis is not None
+        else None
     )
     mean_np = (
         np.array(probes.struct_mean.reshape(-1).tolist(), dtype=np.float32)
-        if probes.struct_mean is not None else None
+        if probes.struct_mean is not None
+        else None
     )
     vec = _clean_single_np(vec, struct_np, mean_np)
 
@@ -771,11 +793,38 @@ def classify_query_m7(
 
 # ── Public API ───────────────────────────────────────────────────────
 
+
 def load_or_calibrate(
-    kv_gen, tokenizer, compass_layer: int, lib,
-    checkpoint_dir: str | Path, model_name: str,
+    kv_gen,
+    tokenizer,
+    compass_layer: int | None,
+    lib,
+    checkpoint_dir: str | Path,
+    model_name: str,
 ) -> ProbeSet:
     """Load cached probes or calibrate from scratch."""
+    # Guard: probes require compass data. Return a stub ProbeSet if unavailable.
+    if compass_layer is None:
+        print(
+            "  Warning: checkpoint has no compass data — probe calibration skipped.",
+            file=sys.stderr,
+        )
+        print(
+            "  Re-run prefill with --phases compass to enable probe routing.",
+            file=sys.stderr,
+        )
+        _zero = mx.zeros((1,))
+        return ProbeSet(
+            qt_direction=_zero,
+            qt_mean=_zero,
+            qt_threshold=0.0,
+            tonal_direction=_zero,
+            tonal_mean=_zero,
+            tonal_threshold=0.0,
+            tonal_available=False,
+            m7_available=False,
+        )
+
     cache_path = _probe_cache_path(checkpoint_dir, model_name)
 
     if cache_path.exists():
@@ -788,7 +837,7 @@ def load_or_calibrate(
             m7_avail = False
             if f"m7_dir_{m7_classes[0]}" in data:
                 m7_dirs = {c: data[f"m7_dir_{c}"] for c in m7_classes}
-                m7_means = {c: data["m7_global_mean"] for c in m7_classes}
+                m7_means = dict.fromkeys(m7_classes, data["m7_global_mean"])
                 m7_avail = True
 
             # Load tension probe if present
@@ -821,8 +870,7 @@ def load_or_calibrate(
             tension_label = " + tension" if tension_avail else ""
             struct_label = " + struct-clean" if struct_basis is not None else ""
             print(
-                f"  Loaded cached probes: {cache_path.name}"
-                f"{m7_label}{tension_label}{struct_label}",
+                f"  Loaded cached probes: {cache_path.name}{m7_label}{tension_label}{struct_label}",
                 file=sys.stderr,
             )
             return probes
@@ -847,7 +895,10 @@ def load_or_calibrate(
 
     # Tonal (engagement probe)
     tonal_pc1, tonal_mean, tonal_thresh = _calibrate_tonal(
-        kv_gen, tokenizer, compass_layer, lib,
+        kv_gen,
+        tokenizer,
+        compass_layer,
+        lib,
     )
     tonal_available = tonal_pc1 is not None
     if not tonal_available:
@@ -858,12 +909,18 @@ def load_or_calibrate(
 
     # Mode 7: 5-class query classifier
     m7_class_directions, m7_class_means = _calibrate_m7_classifier(
-        kv_gen, tokenizer, compass_layer, lib,
+        kv_gen,
+        tokenizer,
+        compass_layer,
+        lib,
     )
 
     # Mode 7: tension probe
     tension_pc1, tension_mean, tension_thresh = _calibrate_tension(
-        kv_gen, tokenizer, compass_layer, lib,
+        kv_gen,
+        tokenizer,
+        compass_layer,
+        lib,
     )
     tension_available = tension_pc1 is not None
     if not tension_available:
@@ -872,9 +929,13 @@ def load_or_calibrate(
         tension_mean = mx.zeros((dim,))
 
     probes = ProbeSet(
-        qt_direction=qt_pc1, qt_mean=qt_mean, qt_threshold=qt_thresh,
-        tonal_direction=tonal_pc1, tonal_mean=tonal_mean,
-        tonal_threshold=tonal_thresh, tonal_available=tonal_available,
+        qt_direction=qt_pc1,
+        qt_mean=qt_mean,
+        qt_threshold=qt_thresh,
+        tonal_direction=tonal_pc1,
+        tonal_mean=tonal_mean,
+        tonal_threshold=tonal_thresh,
+        tonal_available=tonal_available,
         m7_class_directions=m7_class_directions,
         m7_class_means=m7_class_means,
         m7_available=bool(m7_class_directions),
@@ -886,14 +947,17 @@ def load_or_calibrate(
     )
 
     # Save everything to cache
-    save_kwargs = dict(
-        qt_direction=qt_pc1, qt_mean=qt_mean,
-        qt_threshold=mx.array(qt_thresh),
-        tonal_direction=tonal_pc1, tonal_mean=tonal_mean,
-        tonal_threshold=mx.array(tonal_thresh),
-        tonal_available=mx.array(1 if tonal_available else 0),
-        tension_direction=tension_pc1, tension_mean=tension_mean,
-    )
+    save_kwargs = {
+        "qt_direction": qt_pc1,
+        "qt_mean": qt_mean,
+        "qt_threshold": mx.array(qt_thresh),
+        "tonal_direction": tonal_pc1,
+        "tonal_mean": tonal_mean,
+        "tonal_threshold": mx.array(tonal_thresh),
+        "tonal_available": mx.array(1 if tonal_available else 0),
+        "tension_direction": tension_pc1,
+        "tension_mean": tension_mean,
+    }
 
     # Save structural basis for runtime cleaning
     if struct_basis_mx is not None:

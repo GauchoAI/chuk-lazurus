@@ -65,11 +65,13 @@ def calibrate_compass(
             positions = [int(i * (S - 1) / max(w_n_samples - 1, 1)) for i in range(w_n_samples)]
 
         h = engine.kv_gen.prefill_to_layer(
-            w_ids, target_layer=compass_layer, sample_positions=positions,
+            w_ids,
+            target_layer=compass_layer,
+            sample_positions=positions,
         )
         # h shape: (1, w_n_samples, hidden_size)
         for si in range(w_n_samples):
-            vec = h[0, si:si+1, :]  # (1, hidden_size)
+            vec = h[0, si : si + 1, :]  # (1, hidden_size)
             compass_dict[f"w{wid}_s{si}"] = vec
             _flat = vec.reshape(-1)
             mx.eval(_flat)
@@ -85,19 +87,17 @@ def calibrate_compass(
     X_centered = X - mean
 
     from sklearn.utils.extmath import randomized_svd
+
     # Max PCs needed: structural_end (up to 50) + 16 content PCs + 16 buffer
     n_components = min(82, min(X_centered.shape) - 1)
     _U, S_vals, Vt = randomized_svd(X_centered, n_components=n_components, random_state=42)
-    explained = (S_vals ** 2) / np.sum(S_vals ** 2)
+    explained = (S_vals**2) / np.sum(S_vals**2)
 
     # Auto-detect structural/content boundary:
     # Find where the spectrum flattens — 3 consecutive PCs with ratio < 1.5.
     structural_end = 0
     for i in range(min(len(explained) - 3, 50)):
-        ratios = [
-            explained[i + j] / max(explained[i + j + 1], 1e-10)
-            for j in range(3)
-        ]
+        ratios = [explained[i + j] / max(explained[i + j + 1], 1e-10) for j in range(3)]
         if all(r < 1.5 for r in ratios):
             structural_end = i
             break
@@ -113,9 +113,10 @@ def calibrate_compass(
     content_var = sum(explained[pc_start:pc_end]) * 100
     print(
         f"  compass calibrated: layer={compass_layer}, "
-        f"structural=PC 0-{pc_start-1} ({structural_var:.1f}%), "
-        f"content=PC {pc_start}-{pc_end-1} ({content_var:.1f}%)",
-        file=sys.stderr, flush=True,
+        f"structural=PC 0-{pc_start - 1} ({structural_var:.1f}%), "
+        f"content=PC {pc_start}-{pc_end - 1} ({content_var:.1f}%)",
+        file=sys.stderr,
+        flush=True,
     )
 
     # Save basis: mean vector + projection matrix + metadata

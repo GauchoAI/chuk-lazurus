@@ -401,6 +401,7 @@ class UnlimitedContextEngine:
         kv_gen.inject_pre_rope_kv().
         """
         import os
+
         kv_dir = os.path.join(output_dir, "kv_pre_rope")
         os.makedirs(kv_dir, exist_ok=True)
         self._kv_full_dir = kv_dir
@@ -818,12 +819,12 @@ class UnlimitedContextEngine:
                         self.kv_gen.prefill_pre_rope(ids)
                     )
                 else:
-                    logits, self.kv_store, self._last_residual = self.kv_gen.prefill_with_residual(ids)
+                    logits, self.kv_store, self._last_residual = self.kv_gen.prefill_with_residual(
+                        ids
+                    )
             else:
                 # Chain from prior window's checkpoint — cumulative Markov state
-                prior_kv, _prior_abs = self.checkpoints.load(
-                    self.current_window_id - 1
-                )
+                prior_kv, _prior_abs = self.checkpoints.load(self.current_window_id - 1)
                 logits, self.kv_store, self._last_residual = self.kv_gen.extend_with_residual(
                     ids, prior_kv, abs_start=self.abs_offset
                 )
@@ -862,14 +863,17 @@ class UnlimitedContextEngine:
         self.checkpoints.save(self.current_window_id, last_kv, abs_last)
 
         # Save residual (Markov state) at window boundary
-        if hasattr(self, '_last_residual') and self._last_residual is not None:
+        if hasattr(self, "_last_residual") and self._last_residual is not None:
             self.residuals.save(self.current_window_id, self._last_residual)
 
         # Save fact-position pre-RoPE KV to disk (Mode 6)
         if self._kv_full_dir is not None and self._pre_rope_kv is not None:
             import os
+
             fact_positions = self._compute_fact_positions(
-                self.current_window_tokens, self._last_logits, self._kv_n_facts,
+                self.current_window_tokens,
+                self._last_logits,
+                self._kv_n_facts,
             )
             kv_data: dict[str, mx.array] = {}
             pos_idx = mx.array(fact_positions)
@@ -930,17 +934,14 @@ class UnlimitedContextEngine:
         if n_score <= n_facts:
             return list(range(n_tokens))[:n_facts]
 
-        actual_ids = mx.array(token_ids[skip + 1:])
-        logits_slice = logits_f32[skip:skip + n_score]
+        actual_ids = mx.array(token_ids[skip + 1 :])
+        logits_slice = logits_f32[skip : skip + n_score]
         actual_logits = logits_slice[mx.arange(n_score), actual_ids]
         ranks = mx.sum(logits_slice > actual_logits[:, None], axis=1)
         mx.eval(ranks)
 
         # Map ranks back to token positions (rank[i] corresponds to token[skip+1+i])
-        ranked_positions = [
-            (int(ranks[i].item()), skip + 1 + i)
-            for i in range(n_score)
-        ]
+        ranked_positions = [(int(ranks[i].item()), skip + 1 + i) for i in range(n_score)]
         # Sort by rank descending (most surprising first)
         ranked_positions.sort(key=lambda x: -x[0])
 

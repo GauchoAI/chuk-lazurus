@@ -12,9 +12,9 @@ from enum import StrEnum
 class VecInjectMetaKey(StrEnum):
     """Top-level scalar keys stored in every index file."""
 
-    LAYER        = "layer"
-    KV_HEAD      = "kv_head"
-    QUERY_HEAD   = "query_head"
+    LAYER = "layer"
+    KV_HEAD = "kv_head"
+    QUERY_HEAD = "query_head"
     INJECT_LAYER = "inject_layer"
 
 
@@ -47,6 +47,15 @@ class VecInjectWindowKey:
         return f"w{wid}/distinctive"
 
     @staticmethod
+    def h4_vecs(wid: int) -> str:
+        """H4 attention output vectors (2560D) for Stage-2 routing.
+
+        Stored as float16 (5 KB/fact).  Absent in legacy indexes built before
+        routing-wall-breakers experiment (2026-03-19) — callers must check.
+        """
+        return f"w{wid}/h4_vecs"
+
+    @staticmethod
     def flat(wid: int) -> str:
         """Legacy flat key used by kv_route_index.npz (no sub-paths)."""
         return f"w{wid}"
@@ -63,4 +72,4 @@ class VecInjectWindowKey:
 # ── Canonical file names ──────────────────────────────────────────────
 
 VEC_INJECT_FILE = "vec_inject.npz"
-KV_ROUTE_FILE   = "kv_route_index.npz"   # legacy routing-only index
+KV_ROUTE_FILE = "kv_route_index.npz"  # legacy routing-only index

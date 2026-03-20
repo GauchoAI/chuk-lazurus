@@ -32,7 +32,6 @@ import time
 from argparse import Namespace
 from pathlib import Path
 
-
 # ---------------------------------------------------------------------------
 # Diverse probe prompts — used by both methods
 # ---------------------------------------------------------------------------
@@ -198,7 +197,6 @@ async def context_calibrate_frames_cmd(args: Namespace) -> None:
     )
 
     X = np.stack(all_residuals, axis=0)  # (N, hidden_dim)
-    hidden_dim = X.shape[1]
 
     # ------------------------------------------------------------------
     # 3. Build frame bank
@@ -250,16 +248,13 @@ def _build_whitening_bank(X, n_dims: int):
     mean = X.mean(axis=0)
     centered = X - mean
     _U, S_vals, Vt = np.linalg.svd(centered, full_matrices=False)
-    eigenvalues = (S_vals ** 2) / (X.shape[0] - 1)
+    eigenvalues = (S_vals**2) / (X.shape[0] - 1)
     explained = eigenvalues / eigenvalues.sum()
 
     # Auto-detect structural boundary (same algorithm as compass calibration)
     structural_end = 0
     for i in range(min(len(explained) - 3, 50)):
-        ratios = [
-            explained[i + j] / max(explained[i + j + 1], 1e-10)
-            for j in range(3)
-        ]
+        ratios = [explained[i + j] / max(explained[i + j + 1], 1e-10) for j in range(3)]
         if all(r < 1.5 for r in ratios):
             structural_end = i
             break
@@ -282,7 +277,7 @@ def _build_whitening_bank(X, n_dims: int):
     content_var = explained[pc_start:pc_end].sum() * 100
     tail_var = explained[pc_end:].sum() * 100
 
-    print(f"\n  Whitening frame bank:", file=sys.stderr)
+    print("\n  Whitening frame bank:", file=sys.stderr)
     print(
         f"    Structural PCs 0-{pc_start - 1}: {structural_var:.1f}% variance (removed)",
         file=sys.stderr,
@@ -319,7 +314,7 @@ def _build_category_bank(X, n_dims: int):
     unique_pc_indices: list[int] = []
     seen_pcs: set[int] = set()
 
-    print(f"\n  Discovering coordinate frames:", file=sys.stderr)
+    print("\n  Discovering coordinate frames:", file=sys.stderr)
 
     for cat_name in category_names:
         target_idx = PROBE_CATEGORIES[cat_name]
@@ -348,8 +343,7 @@ def _build_category_bank(X, n_dims: int):
 
         pcs_used = [idx for idx, _ in top_pcs]
         print(
-            f"    {cat_name:12s}: PCs {pcs_used}  "
-            f"Fisher {top_pcs[0][1]:.2f}→{top_pcs[-1][1]:.2f}",
+            f"    {cat_name:12s}: PCs {pcs_used}  Fisher {top_pcs[0][1]:.2f}→{top_pcs[-1][1]:.2f}",
             file=sys.stderr,
         )
 

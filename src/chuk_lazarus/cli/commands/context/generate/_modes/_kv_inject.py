@@ -22,8 +22,8 @@ import sys
 import time
 
 # BM25 score thresholds for auto mode selection
-_THRESHOLD_HIGH = 8.0   # Strong keyword match → Mode 6 (fact)
-_THRESHOLD_LOW = 5.0    # Below this → Mode 7 (broad reasoning)
+_THRESHOLD_HIGH = 8.0  # Strong keyword match → Mode 6 (fact)
+_THRESHOLD_LOW = 5.0  # Below this → Mode 7 (broad reasoning)
 
 
 def run_kv_inject(
@@ -48,6 +48,7 @@ def run_kv_inject(
     bm25_scores = None
     if lib.has_sparse_index:
         from ...compass_routing._sparse import _sparse_score_windows
+
         bm25_scores = _sparse_score_windows(lib, prompt_text)
 
     max_bm25 = bm25_scores[0][1] if bm25_scores else 0.0
@@ -59,9 +60,18 @@ def run_kv_inject(
             file=sys.stderr,
         )
         from ._broad import run_broad
+
         return run_broad(
-            lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text,
-            config, args, mx, bm25_scores=bm25_scores,
+            lib,
+            kv_gen,
+            pipeline,
+            tokenizer,
+            prompt_ids,
+            prompt_text,
+            config,
+            args,
+            mx,
+            bm25_scores=bm25_scores,
         )
 
     if max_bm25 < _THRESHOLD_HIGH:
@@ -85,7 +95,11 @@ def run_kv_inject(
     if strategy_arg:
         strategy = RoutingStrategy(strategy_arg)
         inject_wids = compass_route(
-            lib, kv_gen, prompt_ids, prompt_text, tokenizer,
+            lib,
+            kv_gen,
+            prompt_ids,
+            prompt_text,
+            tokenizer,
             model_config=pipeline.config,
             strategy=strategy,
             top_k=top_k,
@@ -97,9 +111,8 @@ def run_kv_inject(
         if last_wid not in inject_wids:
             inject_wids.append(last_wid)
         # Print routing table
-        elapsed_ms = 0  # already computed during mode selection
-        print(f"  Compass routing (sparse keyword BM25, auto):", file=sys.stderr)
-        for i, (wid, score) in enumerate(bm25_scores[:top_k + 2]):
+        print("  Compass routing (sparse keyword BM25, auto):", file=sys.stderr)
+        for i, (wid, score) in enumerate(bm25_scores[: top_k + 2]):
             marker = " *" if wid in inject_wids else ""
             w = lib.windows[wid]
             print(
@@ -113,14 +126,23 @@ def run_kv_inject(
         sparse_path = lib._path / "sparse_index.json"
         if sparse_path.exists():
             inject_wids = _route_l26_attention(
-                lib, kv_gen, tokenizer, prompt_text, top_k, mx,
+                lib,
+                kv_gen,
+                tokenizer,
+                prompt_text,
+                top_k,
+                mx,
             )
 
         # Compass fallback
         if inject_wids is None:
             t0 = time.time()
             routed = compass_route(
-                lib, kv_gen, prompt_ids, prompt_text, tokenizer,
+                lib,
+                kv_gen,
+                prompt_ids,
+                prompt_text,
+                tokenizer,
                 model_config=pipeline.config,
                 strategy=RoutingStrategy.COMPASS,
                 top_k=top_k,
@@ -151,10 +173,7 @@ def run_kv_inject(
         # No preamble. No postamble. No instructions.
         preamble_ids = []
         if not no_chat and hasattr(tokenizer, "apply_chat_template"):
-            query_text = (
-                f"<start_of_turn>user\n{prompt_text}<end_of_turn>\n"
-                f"<start_of_turn>model\n"
-            )
+            query_text = f"<start_of_turn>user\n{prompt_text}<end_of_turn>\n<start_of_turn>model\n"
             postamble_ids = tokenizer.encode(query_text, add_special_tokens=True)
         else:
             postamble_ids = tokenizer.encode(
@@ -167,15 +186,10 @@ def run_kv_inject(
             "Answer using only information from the document. "
             "Quote exact text when possible."
         )
-        preamble_text = (
-            f"<start_of_turn>user\n{sys_content}\n\n"
-            f"Here is the relevant text:\n\n"
-        )
+        preamble_text = f"<start_of_turn>user\n{sys_content}\n\nHere is the relevant text:\n\n"
         preamble_ids = tokenizer.encode(preamble_text, add_special_tokens=True)
         postamble_text = (
-            f"\n\n---\nBased on the text above, "
-            f"{prompt_text}<end_of_turn>\n"
-            f"<start_of_turn>model\n"
+            f"\n\n---\nBased on the text above, {prompt_text}<end_of_turn>\n<start_of_turn>model\n"
         )
         postamble_ids = tokenizer.encode(postamble_text, add_special_tokens=False)
     else:
@@ -188,7 +202,9 @@ def run_kv_inject(
     # ── Single prefill: preamble + fact spans + postamble ─────────────
     t0 = time.time()
     span_tokens, n_spans = _collect_span_tokens(
-        lib, inject_wids, radius_override=span_radius,
+        lib,
+        inject_wids,
+        radius_override=span_radius,
     )
     combined = preamble_ids + span_tokens + postamble_ids
     logits, gen_kv = kv_gen.prefill(mx.array(combined)[None])
@@ -228,7 +244,9 @@ def run_kv_inject(
         sys.stdout.flush()
 
         logits, gen_kv = kv_gen.step_uncompiled(
-            mx.array([[next_token]]), gen_kv, seq_len=seq_len,
+            mx.array([[next_token]]),
+            gen_kv,
+            seq_len=seq_len,
         )
         seq_len += 1
 
@@ -280,9 +298,9 @@ def _route_l26_attention(lib, kv_gen, tokenizer, prompt_text, top_k, mx):
     # Map each token position to its window ID (or -1 for framing)
     # Re-tokenize each line to find boundaries
     header = (
-        f"<start_of_turn>user\n"
-        f"Below is a keyword index. Which entry answers the question?\n\n"
-        f"Index:\n"
+        "<start_of_turn>user\n"
+        "Below is a keyword index. Which entry answers the question?\n\n"
+        "Index:\n"
     )
     header_ids = tokenizer.encode(header, add_special_tokens=True)
     header_len = len(header_ids)
@@ -365,8 +383,8 @@ def _collect_span_tokens(lib, inject_wids, radius_override=None):
             spans = spans_by_window[wid]
             if radius_override is not None:
                 from chuk_lazarus.inference.context.sparse_index import FactSpan
-                spans = [FactSpan(position=s.position, radius=radius_override)
-                         for s in spans]
+
+                spans = [FactSpan(position=s.position, radius=radius_override) for s in spans]
             all_tokens.extend(_extract_span_tokens(w_tokens, spans))
             total_spans += len(spans)
         else:
@@ -382,6 +400,7 @@ def _load_fact_spans(lib, wids):
         return None
 
     from chuk_lazarus.inference.context.sparse_index import SparseSemanticIndex
+
     index = SparseSemanticIndex.load(sparse_path)
 
     spans = {}

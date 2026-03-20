@@ -17,10 +17,9 @@ from __future__ import annotations
 import sys
 import time
 
-from .._types import GenerateConfig, GenerateResult
+from .._types import GenerateResult
 from ..compass_routing import RoutingStrategy, compass_route
 from ._grounding import _calibrate_grounding
-
 
 # How often (in tokens) to probe grounding during generation.
 _PROBE_INTERVAL = 40
@@ -30,8 +29,15 @@ _REPLAY_COUNT = 3
 
 
 def _probe_score(
-    kv_gen, preamble_ids, w_tokens, postamble_ids, compass_layer,
-    pc1, cal_mean, temperature, mx,
+    kv_gen,
+    preamble_ids,
+    w_tokens,
+    postamble_ids,
+    compass_layer,
+    pc1,
+    cal_mean,
+    temperature,
+    mx,
 ):
     """Score a single window: prefill, generate first token, probe L26.
 
@@ -62,7 +68,8 @@ def _probe_score(
     # Probe L26 at first generated token position
     full_ids = list(preamble_ids) + list(w_tokens) + list(postamble_ids) + [first_tok]
     h = kv_gen.prefill_to_layer(
-        mx.array(full_ids)[None], target_layer=compass_layer,
+        mx.array(full_ids)[None],
+        target_layer=compass_layer,
         sample_positions=[len(full_ids) - 1],
     )
     mx.eval(h)
@@ -76,8 +83,7 @@ def _build_frame(tokenizer, sys_content, w_tokens, prompt_text, no_chat):
     """Build preamble + postamble token sequences for a window."""
     if not no_chat and hasattr(tokenizer, "apply_chat_template"):
         preamble_text = (
-            f"<start_of_turn>user\n{sys_content}\n\n"
-            f"Here is the relevant transcript:\n\n"
+            f"<start_of_turn>user\n{sys_content}\n\nHere is the relevant transcript:\n\n"
         )
         preamble_ids = tokenizer.encode(preamble_text, add_special_tokens=True)
         postamble_text = (
@@ -130,28 +136,33 @@ def _probe_driven_generate(
 
     # -- Calibrate grounding direction (PC1 only, no threshold used for gating) --
     pc1, cal_mean, ground_thresh, partial_thresh = _calibrate_grounding(
-        kv_gen, lib, tokenizer, compass_layer, sys_content,
+        kv_gen,
+        lib,
+        tokenizer,
+        compass_layer,
+        sys_content,
     )
 
     replay_count = min(_REPLAY_COUNT, top_k)
 
     print(
-        f"  Probe-ranked navigation: top-{top_k} compass → "
-        f"probe rank → replay best {replay_count}",
+        f"  Probe-ranked navigation: top-{top_k} compass → probe rank → replay best {replay_count}",
         file=sys.stderr,
     )
 
     # ── Phase 1: Compass candidates ──────────────────────────────────
-    t0 = time.time()
     routed = compass_route(
-        lib, kv_gen, prompt_ids, prompt_text, tokenizer,
+        lib,
+        kv_gen,
+        prompt_ids,
+        prompt_text,
+        tokenizer,
         model_config=model_config,
         strategy=RoutingStrategy.GEOMETRIC,
         top_k=top_k,
         exclude=visited,
         query_residual=gen_residual,
     )
-    route_ms = (time.time() - t0) * 1000
 
     if not routed:
         print("  No compass candidates", file=sys.stderr)
@@ -168,7 +179,11 @@ def _probe_driven_generate(
     # Build frame once (preamble/postamble are the same for all windows)
     sample_w_tokens = lib.get_window_tokens(routed[0])
     preamble_ids, postamble_ids = _build_frame(
-        tokenizer, sys_content, sample_w_tokens, prompt_text, no_chat,
+        tokenizer,
+        sys_content,
+        sample_w_tokens,
+        prompt_text,
+        no_chat,
     )
 
     for wid in reversed(routed):  # best compass score first
@@ -176,16 +191,24 @@ def _probe_driven_generate(
         w_tokens = lib.get_window_tokens(wid)
 
         proj, first_tok = _probe_score(
-            kv_gen, preamble_ids, w_tokens, postamble_ids,
-            compass_layer, pc1, cal_mean, config.temperature, mx,
+            kv_gen,
+            preamble_ids,
+            w_tokens,
+            postamble_ids,
+            compass_layer,
+            pc1,
+            cal_mean,
+            config.temperature,
+            mx,
         )
 
         first_text = tokenizer.decode([first_tok], skip_special_tokens=True)
         w_preview = tokenizer.decode(
-            list(w_tokens)[:20], skip_special_tokens=True,
-        ).replace('\n', ' ')[:60]
+            list(w_tokens)[:20],
+            skip_special_tokens=True,
+        ).replace("\n", " ")[:60]
         print(
-            f"    W{wid:>3} probe={proj:+.0f}  first=\"{first_text}\"  {w_preview}...",
+            f'    W{wid:>3} probe={proj:+.0f}  first="{first_text}"  {w_preview}...',
             file=sys.stderr,
         )
         scored.append((wid, proj))
@@ -220,8 +243,7 @@ def _probe_driven_generate(
         replay_ms = (time.time() - t0) * 1000
         seq_len += len(w_tokens)
         print(
-            f"  Replayed W{wid} @ pos {seq_len - len(w_tokens)}–{seq_len} "
-            f"({replay_ms:.0f}ms)",
+            f"  Replayed W{wid} @ pos {seq_len - len(w_tokens)}–{seq_len} ({replay_ms:.0f}ms)",
             file=sys.stderr,
         )
 
@@ -250,7 +272,9 @@ def _probe_driven_generate(
         generated_tokens.append(next_token)
 
         logits, gen_kv = kv_gen.step_uncompiled(
-            mx.array([[next_token]]), gen_kv, seq_len=seq_len,
+            mx.array([[next_token]]),
+            gen_kv,
+            seq_len=seq_len,
         )
         seq_len += 1
         tokens_since_probe += 1
@@ -258,12 +282,10 @@ def _probe_driven_generate(
         # Mid-generation probe (informational — log but don't interrupt)
         if tokens_since_probe >= _PROBE_INTERVAL and len(generated_tokens) > 10:
             tokens_since_probe = 0
-            mid_ids = (
-                list(preamble_ids) + all_w_tokens +
-                list(postamble_ids) + generated_tokens
-            )
+            mid_ids = list(preamble_ids) + all_w_tokens + list(postamble_ids) + generated_tokens
             h = kv_gen.prefill_to_layer(
-                mx.array(mid_ids)[None], target_layer=compass_layer,
+                mx.array(mid_ids)[None],
+                target_layer=compass_layer,
                 sample_positions=[len(mid_ids) - 1],
             )
             mx.eval(h)
@@ -277,13 +299,12 @@ def _probe_driven_generate(
             else:
                 label = "REACHING"
             print(
-                f"    ✓ token {len(generated_tokens)}: {label} "
-                f"(proj={mid_proj:+.0f})",
+                f"    ✓ token {len(generated_tokens)}: {label} (proj={mid_proj:+.0f})",
                 file=sys.stderr,
             )
 
     response = tokenizer.decode(generated_tokens, skip_special_tokens=True)
-    preview = response[:120].replace('\n', ' ')
+    preview = response[:120].replace("\n", " ")
     print(f"    {preview}...", file=sys.stderr)
 
     print()

@@ -53,7 +53,11 @@ def run_broad(
 
     if lib.has_compass:
         window_ids = compass_route(
-            lib, kv_gen, prompt_ids, prompt_text, tokenizer,
+            lib,
+            kv_gen,
+            prompt_ids,
+            prompt_text,
+            tokenizer,
             model_config=pipeline.config,
             strategy=strategy,
             top_k=top_k,
@@ -86,15 +90,9 @@ def run_broad(
             "The following are excerpts from a document. "
             "Read them carefully and answer the question."
         )
-        preamble_text = (
-            f"<start_of_turn>user\n{sys_content}\n\n"
-            f"Excerpts:\n"
-        )
+        preamble_text = f"<start_of_turn>user\n{sys_content}\n\nExcerpts:\n"
         preamble_ids = tokenizer.encode(preamble_text, add_special_tokens=True)
-        postamble_text = (
-            f"\n\nQuestion: {prompt_text}<end_of_turn>\n"
-            f"<start_of_turn>model\n"
-        )
+        postamble_text = f"\n\nQuestion: {prompt_text}<end_of_turn>\n<start_of_turn>model\n"
         postamble_ids = tokenizer.encode(postamble_text, add_special_tokens=False)
     else:
         preamble_ids = tokenizer.encode("Document excerpts:\n\n", add_special_tokens=False)
@@ -140,7 +138,9 @@ def run_broad(
         sys.stdout.flush()
 
         logits, gen_kv = kv_gen.step_uncompiled(
-            mx.array([[next_token]]), gen_kv, seq_len=seq_len,
+            mx.array([[next_token]]),
+            gen_kv,
+            seq_len=seq_len,
         )
         seq_len += 1
 

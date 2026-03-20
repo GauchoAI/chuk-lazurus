@@ -95,7 +95,7 @@ def _darkspace_score_windows(
             sl.sort(reverse=True)
             per_window[wid] = sum(sl[:_TOP_K_AGG]) / len(sl[:_TOP_K_AGG])
 
-    scores = [(wid, s) for wid, s in per_window.items()]
+    scores = list(per_window.items())
     scores.sort(key=lambda x: -x[1])
     return scores
 
@@ -120,7 +120,7 @@ def _guided_score_windows(
     """
     # Get compass scores
     compass_scores = _compass_score_windows(lib, kv_gen, prompt_ids)
-    compass_map = {wid: s for wid, s in compass_scores}
+    compass_map = dict(compass_scores)
 
     # Token overlap: which windows contain query token IDs?
     # Skip special/common tokens — only match content tokens
@@ -134,8 +134,7 @@ def _guided_score_windows(
                 if t in w_tokens:
                     token_doc_freq[t] = token_doc_freq.get(t, 0) + 1
         threshold = lib.num_windows * 0.5
-        content_tokens = {t for t in query_set
-                          if token_doc_freq.get(t, 0) < threshold}
+        content_tokens = {t for t in query_set if token_doc_freq.get(t, 0) < threshold}
     else:
         content_tokens = query_set
 

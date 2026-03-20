@@ -40,10 +40,11 @@ def extract_interval_residuals(
         w_ids = mx.array(w_tokens)[None]
         n_samples = len(w_tokens) if residual_mode == ResidualMode.FULL else n_samples_per_window
         _logits, _kv, interval_res = engine.kv_gen.prefill_interval_residuals(
-            w_ids, n_samples=n_samples,
+            w_ids,
+            n_samples=n_samples,
         )
         for si in range(n_samples):
-            interval_dict[f"w{wid}_s{si}"] = interval_res[0, si:si+1, :]
+            interval_dict[f"w{wid}_s{si}"] = interval_res[0, si : si + 1, :]
         phase_progress(phase_label, wid + 1, num_archived, t_ir)
     print(file=sys.stderr)
     savez_chunked(str(output_path / "interval_residuals.npz"), interval_dict)

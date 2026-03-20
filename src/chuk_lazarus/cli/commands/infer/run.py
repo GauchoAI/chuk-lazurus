@@ -32,7 +32,9 @@ async def run_inference_cmd(args: Namespace) -> None:
     pipeline_config = UnifiedPipelineConfig(engine=EngineMode(config.engine))
 
     # Load the model (quiet by default for CLI)
-    pipeline = UnifiedPipeline.from_pretrained(config.model, pipeline_config=pipeline_config, verbose=False)
+    pipeline = UnifiedPipeline.from_pretrained(
+        config.model, pipeline_config=pipeline_config, verbose=False
+    )
 
     # Collect prompts based on input mode
     prompts: list[str] = []

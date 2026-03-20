@@ -65,8 +65,8 @@ def extract_sparse(
             idx.add(SparseEntry(window_id=wid, keywords=[]))
             continue
 
-        actual_ids = mx.array(w_tokens[skip + 1:])
-        logits_slice = logits_f32[skip:skip + n_score]
+        actual_ids = mx.array(w_tokens[skip + 1 :])
+        logits_slice = logits_f32[skip : skip + n_score]
         actual_logits = logits_slice[mx.arange(n_score), actual_ids]
         ranks = mx.sum(logits_slice > actual_logits[:, None], axis=1)
         mx.eval(ranks)
@@ -81,8 +81,7 @@ def extract_sparse(
         text = tokenizer.decode(w_tokens, skip_special_tokens=True)
         text = " ".join(text.split())
         words = text.split()
-        token_texts = [tokenizer.decode([tid], skip_special_tokens=True)
-                       for tid in w_tokens]
+        token_texts = [tokenizer.decode([tid], skip_special_tokens=True) for tid in w_tokens]
 
         # Surprise-first extraction: highest rank tokens get priority
         ranked = []
@@ -106,7 +105,7 @@ def extract_sparse(
                 break
             if tok.lower() in FUNCTION_WORDS:
                 continue
-            clean = tok.strip('.,;:!?()[]{}"\'-_*/\\')
+            clean = tok.strip(".,;:!?()[]{}\"'-_*/\\")
             if not clean or (clean.isdigit() and len(clean) < 3):
                 continue
 
@@ -123,9 +122,11 @@ def extract_sparse(
             # Capture ±context
             start = max(0, word_idx - ctx_w)
             end = min(len(words), word_idx + ctx_w + 1)
-            filtered = [w for w in words[start:end]
-                        if (w.lower() not in FUNCTION_WORDS and len(w) > 1)
-                        or w == words[word_idx]]
+            filtered = [
+                w
+                for w in words[start:end]
+                if (w.lower() not in FUNCTION_WORDS and len(w) > 1) or w == words[word_idx]
+            ]
 
             if filtered:
                 triplet = " ".join(filtered)
@@ -153,13 +154,15 @@ def extract_sparse(
         # Content word extraction (stopword-filtered, merged subwords)
         content_words = extract_content_words(w_tokens, tokenizer)
 
-        idx.add(SparseEntry(
-            window_id=wid,
-            keywords=keywords[:max_keywords],
-            content_words=content_words,
-            surprise_rank=max_rank,
-            fact_spans=fact_spans,
-        ))
+        idx.add(
+            SparseEntry(
+                window_id=wid,
+                keywords=keywords[:max_keywords],
+                content_words=content_words,
+                surprise_rank=max_rank,
+                fact_spans=fact_spans,
+            )
+        )
 
         if (wid + 1) % 50 == 0:
             elapsed = time.time() - t0
@@ -170,7 +173,9 @@ def extract_sparse(
                 f"\r  Sparse index: {wid + 1}/{num_archived} windows "
                 f"({novel_count} with novel content, "
                 f"{elapsed:.0f}s, ~{remaining:.0f}s left)  ",
-                end="", file=sys.stderr, flush=True,
+                end="",
+                file=sys.stderr,
+                flush=True,
             )
 
     elapsed = time.time() - t0
@@ -185,6 +190,7 @@ def extract_sparse(
         f"{stats['non_empty']} novel, {parametric_count} parametric, "
         f"{stats['total_keywords']} keywords ({stats['avg_keywords']:.1f}/window), "
         f"{size_kb:.0f} KB          ",
-        file=sys.stderr, flush=True,
+        file=sys.stderr,
+        flush=True,
     )
     print(file=sys.stderr)

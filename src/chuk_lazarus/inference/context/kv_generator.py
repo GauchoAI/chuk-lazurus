@@ -258,8 +258,8 @@ class KVDirectGenerator:
             # Extract pre-RoPE K and V at page positions
             layer_pages = []
             for pi in positions:
-                k_page = k_pre[:, :, pi:pi+1, :]   # (1, nkv, 1, dh) pre-RoPE
-                v_page = v_all[:, :, pi:pi+1, :]    # (1, nkv, 1, dh)
+                k_page = k_pre[:, :, pi : pi + 1, :]  # (1, nkv, 1, dh) pre-RoPE
+                v_page = v_all[:, :, pi : pi + 1, :]  # (1, nkv, 1, dh)
                 layer_pages.append((k_page, v_page))
             pages_per_layer.append(layer_pages)
 
@@ -295,7 +295,6 @@ class KVDirectGenerator:
             KVStore with N positions, RoPE applied at target_offsets.
         """
         backbone = self.backbone
-        num_layers = len(backbone.adapted_layers)
         kv_store: KVStore = []
 
         for li, layer in enumerate(backbone.adapted_layers):
@@ -458,7 +457,7 @@ class KVDirectGenerator:
                     scores = scores + mask.astype(mx.float32)
                 weights = mx.softmax(scores, axis=-1)
                 captured_weights[i] = weights
-                attn_out = (weights.astype(v_rpt.dtype) @ v_rpt)
+                attn_out = weights.astype(v_rpt.dtype) @ v_rpt
                 attn_out = attn_out.transpose(0, 2, 1, 3).reshape(B, S, -1)
             else:
                 attn_out = mx.fast.scaled_dot_product_attention(
@@ -560,7 +559,6 @@ class KVDirectGenerator:
             KVStore with all windows concatenated, RoPE at contiguous positions.
         """
         backbone = self.backbone
-        num_layers = len(backbone.adapted_layers)
         kv_store: KVStore = []
 
         # Compute position offsets for each window
@@ -620,9 +618,7 @@ class KVDirectGenerator:
         Returns (logits, extended_kv_store, residual_last) where residual_last
         is the pre-final-norm hidden state at the last new token: (1, 1, hidden_size).
         """
-        logits, kv_store, residual_last, _ = self._extend_core(
-            new_token_ids, kv_store, abs_start
-        )
+        logits, kv_store, residual_last, _ = self._extend_core(new_token_ids, kv_store, abs_start)
         return logits, kv_store, residual_last
 
     def extend_to_layer(
@@ -655,7 +651,7 @@ class KVDirectGenerator:
         kv_store: KVStore,
         abs_start: int,
         capture_layer: int | None = None,
-    ) -> tuple[mx.array, KVStore, mx.array, "mx.array | None"]:
+    ) -> tuple[mx.array, KVStore, mx.array, mx.array | None]:
         """Core extend returning (logits, extended_kv_store, residual_last, layer_h).
 
         layer_h is the hidden state at capture_layer (last new-token position),
@@ -691,7 +687,7 @@ class KVDirectGenerator:
         sw_mask = mx.concatenate([sw_stored, causal_new], axis=-1)[None, None]
 
         new_kv_store: KVStore = []
-        layer_h_captured: "mx.array | None" = None
+        layer_h_captured: mx.array | None = None
 
         for i, layer in enumerate(backbone.adapted_layers):
             k_old, v_old = kv_store[i]
@@ -738,7 +734,7 @@ class KVDirectGenerator:
     def extend_with_attention_weights(
         self,
         new_token_ids: mx.array,  # (1, N)
-        kv_store: KVStore,        # list[L] of (K, V) each (1, nkv, S, dh)
+        kv_store: KVStore,  # list[L] of (K, V) each (1, nkv, S, dh)
         abs_start: int,
         capture_layers: set[int] | None = None,
     ) -> tuple[mx.array, KVStore, dict[int, mx.array]]:
@@ -767,9 +763,9 @@ class KVDirectGenerator:
         sw = backbone.sliding_window
 
         # Global mask: all S stored positions visible
-        global_mask = mx.concatenate(
-            [mx.zeros((N, S), dtype=_MASK_DTYPE), causal_new], axis=-1
-        )[None, None]
+        global_mask = mx.concatenate([mx.zeros((N, S), dtype=_MASK_DTYPE), causal_new], axis=-1)[
+            None, None
+        ]
 
         # Sliding-window mask
         if sw is not None and S > sw:
@@ -787,8 +783,7 @@ class KVDirectGenerator:
         # Default: capture all global layers
         if capture_layers is None:
             capture_layers = {
-                i for i in range(len(backbone.adapted_layers))
-                if backbone.is_global_layer(i)
+                i for i in range(len(backbone.adapted_layers)) if backbone.is_global_layer(i)
             }
 
         new_kv_store: KVStore = []
@@ -817,7 +812,7 @@ class KVDirectGenerator:
                 weights = mx.softmax(scores, axis=-1)  # (B, num_heads, N, S+N)
                 captured_weights[i] = weights
 
-                attn_out = (weights.astype(v_rpt.dtype) @ v_rpt)
+                attn_out = weights.astype(v_rpt.dtype) @ v_rpt
                 attn_out = attn_out.transpose(0, 2, 1, 3).reshape(B, N, -1)
             else:
                 # Fused path — no weight capture

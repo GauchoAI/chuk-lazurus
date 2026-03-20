@@ -7,7 +7,11 @@ import time
 
 
 def progress_line(
-    tokens_done: int, total: int, windows_done: int, total_windows: int, elapsed: float,
+    tokens_done: int,
+    total: int,
+    windows_done: int,
+    total_windows: int,
+    elapsed: float,
 ) -> str:
     """Return an in-place progress line (fits 80 columns)."""
     pct = tokens_done / total if total else 0.0
@@ -25,7 +29,8 @@ def phase_progress(phase: str, done: int, total: int, t0: float) -> None:
     rate = done / elapsed if elapsed > 0 else 0
     eta = (total - done) / rate if rate > 0 else 0
     print(
-        f"\r  {phase}: {done}/{total} windows  "
-        f"{rate:.1f} w/s  ETA {eta:.0f}s\033[K",
-        end="", file=sys.stderr, flush=True,
+        f"\r  {phase}: {done}/{total} windows  {rate:.1f} w/s  ETA {eta:.0f}s\033[K",
+        end="",
+        file=sys.stderr,
+        flush=True,
     )

@@ -12,7 +12,7 @@ class TestPrefillConfig:
             "model": "test-model",
             "input": "input.txt",
             "checkpoint": "./ckpt",
-            "chunk_size": 512,
+            "window_size": 512,
             "max_tokens": None,
             "no_resume": False,
         }
@@ -23,7 +23,7 @@ class TestPrefillConfig:
         cfg = PrefillConfig.from_args(self._args())
         assert cfg.model == "test-model"
         assert cfg.input_file == Path("input.txt")
-        assert cfg.chunk_size == 512
+        assert cfg.window_size == 512
         assert cfg.resume is True
 
     def test_no_resume_flag(self):

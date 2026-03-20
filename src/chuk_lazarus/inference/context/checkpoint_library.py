@@ -105,6 +105,21 @@ class LibraryManifest(BaseModel):
     format_version: LibraryFormatVersion = Field(
         LibraryFormatVersion.V1, description="Library format version"
     )
+    has_checkpoints: bool = Field(
+        True,
+        description=(
+            "False for export-mode libraries: KV checkpoints not stored. "
+            "Replay fallback uses fresh per-window prefill from tokens.bin instead of "
+            "checkpoint extension (~1s slower per replay, affects ~15% of queries)."
+        ),
+    )
+    arch_config: dict | None = Field(
+        None,
+        description=(
+            "Serialised ArchitectureConfig: retrieval_layer, query_head, injection_layer. "
+            "None for libraries built before ArchitectureConfig was introduced."
+        ),
+    )
 
     @property
     def total_bytes(self) -> int:
@@ -147,7 +162,9 @@ class CheckpointLibrary:
         self._checkpoints: dict[int, list[tuple[mx.array, mx.array]]] = self._load_checkpoints()
         self._residuals: dict[int, mx.array] = self._load_residuals()
         self._interval_residuals: dict[int, list[mx.array]] = self._load_interval_residuals()
-        self._l26_interval_residuals: dict[int, list[mx.array]] = self._load_l26_interval_residuals()
+        self._l26_interval_residuals: dict[int, list[mx.array]] = (
+            self._load_l26_interval_residuals()
+        )
         self._compass_basis: dict[str, mx.array] | None = self._load_compass_basis()
         self._kv_route_index: dict[str, mx.array] | None = self._load_kv_route_index()
 
@@ -174,6 +191,23 @@ class CheckpointLibrary:
     @property
     def total_tokens(self) -> int:
         return self.manifest.total_tokens
+
+    @property
+    def has_checkpoints(self) -> bool:
+        return self.manifest.has_checkpoints
+
+    @property
+    def arch_config(self):
+        """Return ArchitectureConfig for this library, or None if not stored.
+
+        Returns an ArchitectureConfig instance if the manifest has arch_config data,
+        otherwise None (caller should use ArchitectureConfig.from_model_config() or
+        ArchitectureConfig.discover() to obtain one).
+        """
+        if self.manifest.arch_config is None:
+            return None
+        from .arch_config import ArchitectureConfig
+        return ArchitectureConfig.from_dict(self.manifest.arch_config)
 
     # ------------------------------------------------------------------
     # Validation
@@ -218,7 +252,7 @@ class CheckpointLibrary:
         # mx.load returns a lazy dict — arrays materialised only on access.
         raw = mx.load(str(ckpt_path))
         # Check if checkpoint data actually exists (darkspace may write empty file)
-        if f"w0_l0_k" not in raw:
+        if "w0_l0_k" not in raw:
             return {}
         result: dict[int, list[tuple[mx.array, mx.array]]] = {}
         for wid in range(self.manifest.num_windows):

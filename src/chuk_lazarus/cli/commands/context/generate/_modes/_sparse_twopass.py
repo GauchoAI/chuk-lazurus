@@ -17,21 +17,33 @@ import sys
 
 from ......inference.context.sparse_index import SparseSemanticIndex
 
-
 # -----------------------------------------------------------------------
 # Verbatim detection
 # -----------------------------------------------------------------------
 
 VERBATIM_TRIGGERS = [
-    "quote", "exact words", "exactly what", "word for word",
-    "verbatim", "actual words", "precise wording", "transcript says",
-    "read from the transcript", "what did they actually say",
-    "what were the words", "tell me what was said",
+    "quote",
+    "exact words",
+    "exactly what",
+    "word for word",
+    "verbatim",
+    "actual words",
+    "precise wording",
+    "transcript says",
+    "read from the transcript",
+    "what did they actually say",
+    "what were the words",
+    "tell me what was said",
 ]
 
 DETAIL_TRIGGERS = [
-    "describe", "detail", "explain", "tell me more",
-    "what happened", "full story", "elaborate",
+    "describe",
+    "detail",
+    "explain",
+    "tell me more",
+    "what happened",
+    "full story",
+    "elaborate",
 ]
 
 
@@ -54,7 +66,7 @@ def should_auto_replay(query: str, response: str) -> bool:
     if needs_detail(query):
         return True
     # Response references a window but is very short
-    if re.search(r'W\d+', response) and len(response.split()) < 20:
+    if re.search(r"W\d+", response) and len(response.split()) < 20:
         return True
     return False
 
@@ -63,13 +75,14 @@ def should_auto_replay(query: str, response: str) -> bool:
 # Window ID extraction
 # -----------------------------------------------------------------------
 
+
 def extract_window_ids(response: str) -> list[int]:
     """Extract window IDs from the model's response."""
     patterns = [
-        r'W(\d+)',
-        r'[Ww]indow\s*(\d+)',
-        r'\(W(\d+)\)',
-        r'\[W(\d+)\]',
+        r"W(\d+)",
+        r"[Ww]indow\s*(\d+)",
+        r"\(W(\d+)\)",
+        r"\[W(\d+)\]",
     ]
     ids: set[int] = set()
     for pattern in patterns:
@@ -96,10 +109,20 @@ def find_windows_for_entity(
 def extract_entities_from_query(query: str) -> list[str]:
     """Extract capitalised entity names from the query."""
     entities: list[str] = []
-    for m in re.finditer(r'\b([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*)\b', query):
+    for m in re.finditer(r"\b([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*)\b", query):
         w = m.group(1)
-        if w.lower() not in {"what", "where", "when", "who", "how", "the",
-                               "quote", "find", "tell", "describe"}:
+        if w.lower() not in {
+            "what",
+            "where",
+            "when",
+            "who",
+            "how",
+            "the",
+            "quote",
+            "find",
+            "tell",
+            "describe",
+        }:
             entities.append(w)
     return entities
 
@@ -107,6 +130,7 @@ def extract_entities_from_query(query: str) -> list[str]:
 # -----------------------------------------------------------------------
 # Two-pass engine
 # -----------------------------------------------------------------------
+
 
 def run_sparse_twopass(
     lib,
@@ -167,7 +191,9 @@ def run_sparse_twopass(
             break
         pass1_tokens.append(next_token)
         logits, kv = kv_gen.step_uncompiled(
-            mx.array([[next_token]]), kv, seq_len=seq_len,
+            mx.array([[next_token]]),
+            kv,
+            seq_len=seq_len,
         )
         seq_len += 1
 
@@ -178,7 +204,7 @@ def run_sparse_twopass(
     # Check if Pass 2 needed
     # ------------------------------------------------------------------
     if not should_auto_replay(prompt_text, pass1_response):
-        print(f"  Pass 2: not needed (factual answer sufficient)", file=sys.stderr)
+        print("  Pass 2: not needed (factual answer sufficient)", file=sys.stderr)
         sys.stdout.write(pass1_response)
         sys.stdout.write("\n")
         return GenerateResult(
@@ -190,7 +216,7 @@ def run_sparse_twopass(
     # ------------------------------------------------------------------
     # Pass 2: Targeted replay
     # ------------------------------------------------------------------
-    print(f"  Pass 2: targeted replay (verbatim requested)", file=sys.stderr)
+    print("  Pass 2: targeted replay (verbatim requested)", file=sys.stderr)
 
     # Extract window IDs from Pass 1 response
     window_ids = extract_window_ids(pass1_response)
@@ -206,6 +232,7 @@ def run_sparse_twopass(
     if not window_ids:
         # Last fallback: use sparse BM25 routing
         from ...compass_routing._sparse import _sparse_score_windows
+
         scores = _sparse_score_windows(lib, prompt_text)
         window_ids = [wid for wid, _ in scores[:max_replay_windows]]
         print(f"    BM25 fallback → windows {window_ids}", file=sys.stderr)
@@ -237,6 +264,7 @@ def run_sparse_twopass(
 
     # Replay each window using library tokens (same as standard mode)
     import time as _time
+
     for wid in sorted(window_ids):
         w_tokens = lib.get_window_tokens(wid)
         w_ids = mx.array(w_tokens)[None]
@@ -245,7 +273,10 @@ def run_sparse_twopass(
         mx.eval(*[t for pair in kv2 for t in pair])
         elapsed_ms = (_time.time() - t0) * 1000
         seq_len2 += len(w_tokens)
-        print(f"    Replayed W{wid} @ pos {seq_len2 - len(w_tokens)}–{seq_len2} ({elapsed_ms:.0f}ms)", file=sys.stderr)
+        print(
+            f"    Replayed W{wid} @ pos {seq_len2 - len(w_tokens)}–{seq_len2} ({elapsed_ms:.0f}ms)",
+            file=sys.stderr,
+        )
 
     # Extend with postamble
     post_ids = mx.array(postamble_ids)[None]
@@ -268,7 +299,9 @@ def run_sparse_twopass(
         sys.stdout.write(token_text)
         sys.stdout.flush()
         logits2, kv2 = kv_gen.step_uncompiled(
-            mx.array([[next_token]]), kv2, seq_len=seq_len2,
+            mx.array([[next_token]]),
+            kv2,
+            seq_len=seq_len2,
         )
         seq_len2 += 1
 

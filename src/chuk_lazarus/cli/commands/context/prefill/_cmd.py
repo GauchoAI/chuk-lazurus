@@ -27,8 +27,8 @@ async def context_prefill_cmd(args: Namespace) -> None:
     from .....inference.context import (
         LibraryFile,
     )
-    from .....inference.context.unlimited_engine import UnlimitedContextEngine
     from .....inference.context.sparse_engine import SparseIndexEngine
+    from .....inference.context.unlimited_engine import UnlimitedContextEngine
 
     config = PrefillConfig.from_args(args)
 
@@ -88,9 +88,7 @@ async def context_prefill_cmd(args: Namespace) -> None:
     # 4. Build engine
     # ------------------------------------------------------------------
     if config.run_sparse:
-        engine = SparseIndexEngine(
-            pipeline.model, pipeline.config, window_size=config.window_size
-        )
+        engine = SparseIndexEngine(pipeline.model, pipeline.config, window_size=config.window_size)
         engine.set_tokenizer(tokenizer)
     else:
         engine = UnlimitedContextEngine(
@@ -142,10 +140,18 @@ async def context_prefill_cmd(args: Namespace) -> None:
         )
         start_wall = time.monotonic()
         save_library(
-            engine, output_path, token_ids, lib_name,
-            config.model, pipeline.config, config.window_size,
-            tokenizer, created_at, is_complete=True,
-            quick=False, residual_mode=config.residual_mode,
+            engine,
+            output_path,
+            token_ids,
+            lib_name,
+            config.model,
+            pipeline.config,
+            config.window_size,
+            tokenizer,
+            created_at,
+            is_complete=True,
+            quick=False,
+            residual_mode=config.residual_mode,
             frame_bank_data=frame_bank_data,
             frame_bank_path=config.frame_bank,
             store_pages=config.store_pages,
@@ -161,6 +167,7 @@ async def context_prefill_cmd(args: Namespace) -> None:
             run_mode7=config.run_mode7,
             compass_layer=config.compass_layer,
             kvector_mode=config.kvector_mode,
+            export_mode=config.export_mode,
         )
         elapsed = time.monotonic() - start_wall
         s = engine.stats()
@@ -189,10 +196,18 @@ async def context_prefill_cmd(args: Namespace) -> None:
         if config.store_pages and not (output_path / "pages.npz").exists():
             print("Already prefilled. Extracting pages...", file=sys.stderr)
             save_library(
-                engine, output_path, token_ids, lib_name,
-                config.model, pipeline.config, config.window_size,
-                tokenizer, created_at, is_complete=True,
-                quick=True, residual_mode=config.residual_mode,
+                engine,
+                output_path,
+                token_ids,
+                lib_name,
+                config.model,
+                pipeline.config,
+                config.window_size,
+                tokenizer,
+                created_at,
+                is_complete=True,
+                quick=True,
+                residual_mode=config.residual_mode,
                 frame_bank_data=frame_bank_data,
                 frame_bank_path=config.frame_bank,
                 store_pages=True,
@@ -236,10 +251,18 @@ async def context_prefill_cmd(args: Namespace) -> None:
         nonlocal _last_saved_window
         current_archived = engine.stats().archived_windows
         save_library(
-            engine, output_path, token_ids, lib_name,
-            config.model, pipeline.config, config.window_size,
-            tokenizer, created_at, is_complete=is_complete,
-            quick=quick, residual_mode=config.residual_mode,
+            engine,
+            output_path,
+            token_ids,
+            lib_name,
+            config.model,
+            pipeline.config,
+            config.window_size,
+            tokenizer,
+            created_at,
+            is_complete=is_complete,
+            quick=quick,
+            residual_mode=config.residual_mode,
             frame_bank_data=frame_bank_data,
             frame_bank_path=config.frame_bank,
             store_pages=config.store_pages,
@@ -255,6 +278,7 @@ async def context_prefill_cmd(args: Namespace) -> None:
             run_mode7=config.run_mode7,
             compass_layer=config.compass_layer,
             kvector_mode=config.kvector_mode,
+            export_mode=config.export_mode,
         )
         if quick and current_archived > 1:
             evict_ids = list(range(_last_saved_window, current_archived - 1))
@@ -297,7 +321,7 @@ async def context_prefill_cmd(args: Namespace) -> None:
 
         if not interrupted:
             print(
-                f"\n  flushing final window...",
+                "\n  flushing final window...",
                 file=sys.stderr,
                 flush=True,
             )

@@ -83,8 +83,8 @@ def extract_surprise(
 
         # For each position, count how many vocab tokens have higher logit
         # than the actual next token. rank=0 → top prediction, rank=50000 → very surprising.
-        actual_ids = mx.array(w_tokens[skip + 1:])  # next tokens after skip
-        logits_slice = logits_f32[skip:skip + n_score]  # (n_score, vocab)
+        actual_ids = mx.array(w_tokens[skip + 1 :])  # next tokens after skip
+        logits_slice = logits_f32[skip : skip + n_score]  # (n_score, vocab)
         actual_logits = logits_slice[mx.arange(n_score), actual_ids]  # (n_score,)
         # Count tokens with higher logit per position (vectorized)
         ranks = mx.sum(logits_slice > actual_logits[:, None], axis=1)
@@ -106,14 +106,17 @@ def extract_surprise(
             print(
                 f"\r  Surprise: {wid + 1}/{num_archived} windows "
                 f"({elapsed:.0f}s, ~{remaining:.0f}s remaining)  ",
-                end="", file=sys.stderr, flush=True,
+                end="",
+                file=sys.stderr,
+                flush=True,
             )
 
     elapsed = time.time() - t0
     print(
         f"\r  Surprise: {num_archived} windows in {elapsed:.1f}s"
         f" ({num_archived / elapsed:.0f} win/s)          ",
-        file=sys.stderr, flush=True,
+        file=sys.stderr,
+        flush=True,
     )
     print(file=sys.stderr)
 

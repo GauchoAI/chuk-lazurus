@@ -6,7 +6,7 @@ import tempfile
 import zipfile
 
 
-def savez_chunked(path: str, arrays: dict[str, "mx.array"], chunk_size: int = 512) -> None:
+def savez_chunked(path: str, arrays: dict, chunk_size: int = 512) -> None:
     """Save arrays to npz, chunking to stay under mx.savez's 1024 kwarg limit."""
     import mlx.core as mx
 

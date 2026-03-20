@@ -35,8 +35,14 @@ def two_pass_generate(
     use_interval = lib.has_interval_residuals
     if not use_interval and not lib.has_residuals:
         print("  Error: library has no residuals for twopass routing", file=sys.stderr)
-        return {"tokens": [], "speculative_text": "", "selected_windows": [],
-                "residual_scores": [], "source": "error", "context_tokens": 0}
+        return {
+            "tokens": [],
+            "speculative_text": "",
+            "selected_windows": [],
+            "residual_scores": [],
+            "source": "error",
+            "context_tokens": 0,
+        }
 
     # ── Load residuals (from npz, instant) ───────────────────
     if use_interval:
@@ -71,7 +77,7 @@ def two_pass_generate(
                 # Take MAX across samples within a window — the best-matching interior point
                 if wid not in per_window_max or cos > per_window_max[wid]:
                     per_window_max[wid] = cos
-            scores = [(wid, s) for wid, s in per_window_max.items()]
+            scores = list(per_window_max.items())
             scores.sort(key=lambda x: -x[1])
             return scores
     else:
@@ -105,7 +111,10 @@ def two_pass_generate(
 
     # Show query residual ranking
     q_scores = _rank_residual(query_residual)
-    print(f"  Step 0 (query residual): top-3 = [{q_scores[0][0]}, {q_scores[1][0]}, {q_scores[2][0]}]", file=sys.stderr)
+    print(
+        f"  Step 0 (query residual): top-3 = [{q_scores[0][0]}, {q_scores[1][0]}, {q_scores[2][0]}]",
+        file=sys.stderr,
+    )
 
     spec_tokens = []
     seq_len = len(prompt_ids)
@@ -135,8 +144,7 @@ def two_pass_generate(
         tok_text = tokenizer.decode([next_tok], skip_special_tokens=True)
         top3 = [(wid, f"{s:+.4f}") for wid, s in step_scores[:3]]
         print(
-            f"  Step {step+1:>2} tok={next_tok:>6} '{tok_text}': "
-            f"top-3 = {top3}",
+            f"  Step {step + 1:>2} tok={next_tok:>6} '{tok_text}': top-3 = {top3}",
             file=sys.stderr,
         )
 

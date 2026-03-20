@@ -2,13 +2,15 @@
 
 **Phase**: `vec_inject`
 **Output**: `vec_inject.npz`
-**Experiment**: 2bd41b18
+**Experiments**: 2bd41b18 (baseline), e43eaddf (multi-fact superposition), 2178e184 (orthogonality proof)
 
 ---
 
 ## What it is
 
-Vec inject stores the minimum information needed to reproduce what L29 H4 does during a document forward pass: copy a directional component of the answer token's embedding into the residual stream.
+Vec inject stores the minimum information needed to reproduce what L29 H4 does during a
+document forward pass: copy a directional component of the answer token's embedding into
+the residual stream.
 
 One fact position = **12 bytes**:
 
@@ -17,7 +19,25 @@ One fact position = **12 bytes**:
 | `token_id` | `int32` | Answer token at this position |
 | `coefficient` | `float32` | `c = dot(R_L30, embed(token_id))` |
 
-Plus a routing K vector (256D float16 = 512 bytes) for finding the right facts. Total per fact: ~524 bytes.
+Plus a routing K vector (256D float16 = 512 bytes) and a `distinctive` flag (int32 = 4 bytes).
+Total per fact: **528 bytes**.
+
+---
+
+## The injection formula
+
+The L30 bare query residual is **orthogonal to all answer token embeddings**
+(measured angles: 88.97°–91.76°, cosines −0.031 to +0.018).
+
+Therefore:
+
+```
+R_patched = R_bare + (c - dot(R_bare, e)) * e
+          ≈ R_bare + c * e          [since dot(R_bare, e) ≈ 0]
+```
+
+The injection is **purely additive** — writing into blank space. The coefficient `c` IS
+the full magnitude of the answer signal, not a differential.
 
 ---
 
@@ -30,171 +50,166 @@ For each window and each fact position `p`:
 1. Run `prefill_to_layer(target_layer=29)` → residual `h` entering L30
 2. **K vector** (routing): apply L29 K-projection to `h[p]`
 3. **Coefficient** (injection): `c = dot(h[p], embed(w_tokens[p]))`
-4. Store `(token_id=w_tokens[p], coefficient=c)` + K vector
+4. **Distinctive flag**: `len(tokenizer.decode([token_id]).strip()) >= 4`
+5. Store `(token_id, coefficient, k_vec, distinctive)` per fact
 
-Both extracted in a **single forward pass**.
+Both K and c extracted in a **single forward pass**.
+
+### Donor design rule (CRITICAL)
+
+The donor context must be constructed so the model **predicts** the answer at the last
+position — the answer token appears EARLIER in the donor, absorbed through attention.
+
+```
+✅ CORRECT: "The city is Volt. Zarkov was founded in the city of"
+   → last position predicts Volt (donor P=78.9%)
+
+✗ WRONG: "Zarkov was founded in the city of Volt"
+   → last position computes what comes AFTER Volt (donor P≈0)
+```
 
 ### Query time (per-query)
 
 ```
 query → prefill_to_layer(L29) → Q vector
       → cosine(Q, K_index)    → top-k facts      [Metal matmul]
-      → scores → argsort      → top-k indices     [Metal sort]
-      → gather token_ids, coefs                   [Metal gather]
-      → mx.eval()             → one sync
+      → adaptive threshold    → routing_confident flag
+      → filter: distinctive   → safe facts only
+      → inject top-1 match    → two-pass generate
 ```
 
-### Injection (at L30 in forward pass)
+### Adaptive threshold (replaces fixed 15%)
 
-```python
-h = forward_to_layer(query, stop=29)          # residual before L30
-h = vec_inject_all(h, result.matches, E)      # add c × (e/‖e‖²) per fact
-logits = forward_from_layer(h, start=30)      # continue normally
+At small N the fixed 15% threshold works. At scale it fails:
+
+| N facts | Max Q·K score | Fixed 15% result | Adaptive (mean × 2.0) result |
+|---------|--------------|-----------------|------------------------------|
+| N=12 | 20–40% | ~50% inject | ~92% inject |
+| N=100 | 5–7% | ~5% inject | ~85% inject |
+| N=3,625 | <1% | ~0% inject | ~85% inject |
+
+The adaptive threshold `max(floor, mean_score × 2.0)` scales automatically with the score
+distribution. The fixed floor (default 0.15) prevents false positives at tiny N.
+
+### Two-pass generation (required)
+
+`prefill_from_layer(start=30)` leaves L0-29 KV empty → degenerate generation after
+the first token. Solution:
+
+```
+Pass 1: L0→29 → inject at L30 → L30→33  →  injection-biased first-token logits
+Pass 2: full prefill(prompt)              →  proper L0-33 KV for continuation
+Extend proper KV with first token → decode normally
 ```
 
-`vec_inject_all` adds each match's contribution independently (linear superposition). Multiple facts are stacked, not conflated.
+Cost: ~2× prefill time (~120ms). Required for coherent generation.
 
 ---
 
-## Why it works
+## Inject-matched-only architecture
 
-L29 H4 (`query_head=4`, `kv_head=2` for Gemma 4B) is a **fact-copy head**: it reads the answer token's embedding direction from the value space and writes a scaled version into the residual. The coefficient `c` captures exactly how much of that direction appears at position `p` during a normal forward pass.
+**Inject-all is broken.** N independent injections are mathematically non-interacting
+(e_i ⊥ e_j, e_i ⊥ R_bare). But L31–L33 amplify the **largest coefficient** regardless
+of entity identity — there is no address bus in the amplification layers.
 
-Injecting `c × embed(T) / ‖embed(T)‖²` at L30 reproduces that component without replaying the entire window.
+Wrong injection at 0.05% of residual energy overrides 99.95% structural context at >99%
+confidence. The model cannot use semantic context from the query to override the injected
+signal.
 
-**Result**: KL divergence = 0.000031 vs full KV replay. 1D subspace beats full residual injection (99.85% vs 97.65% exact-match accuracy).
+```
+CORRECT architecture:
+  1. Q·K routing → select ONE matching fact
+  2. Inject only that one fact at L30
+  3. Continue L31→L33 → generate
 
-### Why 1D beats full residual
+BROKEN: inject N facts, let the model pick → wrong answer >90% of the time
+```
 
-Only 0.05% of the residual energy is the answer direction. The other 99.95% is structural context that belongs to the *query*, not the fact. Injecting only the relevant component avoids contaminating the query's own structural processing.
+## Token distinctiveness constraint
+
+Facts must have **distinctive first tokens** (≥4 stripped chars, rare in vocabulary).
+Non-distinctive tokens fail because the model's parametric prior for common prefixes is
+too strong.
+
+| Token | Stripped | Distinctive? | Why |
+|-------|----------|-------------|-----|
+| " Nell" | "Nell" | ✅ YES | 4 chars, uncommon |
+| " Voltara" | "Voltara" | ✅ YES | Novel entity |
+| " Cren" | "Cren" | ✅ YES | Novel entity |
+| " sell" | "sell" | ✅ YES | 4 chars |
+| " A" | "A" | ✗ NO | 1 char — too common |
+| " Bel" | "Bel" | ✗ NO | 3 chars — borderline |
+| " St" | "St" | ✗ NO | 2 chars — very common prefix |
+
+The `distinctive` flag is set at extraction time and stored in the index. Non-distinctive
+facts are not injected — they fall back to window replay.
+
+---
+
+## Scaling properties
+
+| N facts | Accuracy (correct routing) | Notes |
+|---------|--------------------------|-------|
+| 1 | 56–99.96% | Depends on token distinctiveness |
+| 3 | 59–99.97% | Flat, no degradation |
+| 6 | 61–99.99% | Stable |
+| 7 | 90–99.98% | Stable |
+| 3,625 (Apollo 11) | ~85% inject rate | Adaptive threshold required |
+
+**No geometric scaling knee.** The 2560D embedding space has room for hundreds of
+nearly-orthogonal fact directions (mean pairwise cosine 0.062 for 7 answer tokens).
+Routing precision and token distinctiveness are the limits, not geometry.
+
+---
+
+## What NOT to do (ruled out by experiment)
+
+| Approach | Why killed |
+|----------|-----------|
+| Fixed 15% confidence threshold | Collapses to 0% injection beyond N≈50 |
+| Inject-all (simultaneous N facts) | L31–L33 amplify largest coefficient, catastrophic |
+| Donor ending ON the answer token | Last position computes continuation, not answer |
+| L14 K-vectors for novel entities | L14 entity compass is parametric-only; novel facts near-random |
+| Multi-head K concatenation | 4× storage, minimal discrimination gain |
+| Multi-layer K concatenation (L23+L29) | L23 ≈ L29, redundant |
+| Entity-enhanced hidden space | W_K collapses entity-discriminative directions, uncontrollable |
 
 ---
 
 ## Storage
 
-| Index | Per fact | 3625 facts (Apollo 11) |
-|-------|----------|----------------------|
+| Index | Per fact | 3,625 facts (Apollo 11) |
+|-------|----------|------------------------|
 | KV cache (full window replay) | ~512 KB | ~181 MB |
-| `vec_inject.npz` | ~524 B | ~1.86 MB |
+| `vec_inject.npz` | ~528 B | ~1.86 MB |
 | **Compression ratio** | — | **97:1** |
-
-The 7.25 KB fact content represents a 7,700,000:1 compression of the full KV infrastructure.
-
----
-
-## In-memory layout
-
-After `LocalVecInjectProvider.load()`, all data is **pinned on Metal**:
-
-```
-_flat_k_mx         (n_facts, 320)   float32  L2-normalised K vectors
-_flat_token_ids_mx (n_facts,)       int32    answer token IDs
-_flat_coefs_mx     (n_facts,)       float32  injection coefficients
-_flat_wid_mx       (n_facts,)       int32    source window
-_flat_positions_mx (n_facts,)       int32    token position
-```
-
-The normalisation is computed on CPU once at load time; every subsequent retrieve is a pure Metal dispatch.
 
 ---
 
 ## Usage
 
-### Prefill
-
 ```bash
-# Add vec_inject to an existing checkpoint (no re-processing windows)
+# Full prefill including vec_inject
+lazarus context prefill \
+    --model google/gemma-3-4b-it \
+    --input document.txt \
+    --checkpoint ./ctx \
+    --phases windows,compass,vec_inject,mode7
+
+# Add to existing checkpoint (no re-processing windows)
 lazarus context prefill \
     --model google/gemma-3-4b-it \
     --input document.txt \
     --checkpoint ./ctx \
     --phases vec_inject
 
-# Or include it in a full prefill
-lazarus context prefill \
-    --model google/gemma-3-4b-it \
-    --input document.txt \
-    --checkpoint ./ctx \
-    --phases all,vec_inject
-```
-
-Requires `sparse_index.json` for sparse mode (fact positions). Falls back to interval sampling (8 positions/window) if not available.
-
-### Python API
-
-```python
-import asyncio
-from chuk_lazarus.inference.context.vec_inject import (
-    LocalVecInjectProvider,
-    vec_inject_all,
-)
-
-async def query(checkpoint_dir, kv_gen, embed_matrix, query_text, query_ids):
-    # Load once — all data moves to Metal
-    provider = await LocalVecInjectProvider.load(checkpoint_dir, kv_gen)
-    provider.log_stats()
-
-    # Retrieve — single Metal dispatch
-    result = await provider.retrieve(query_ids, query_text, top_k=5)
-
-    print(f"Retrieved {len(result.matches)} facts in {result.retrieval_ms:.1f} ms")
-    for m in result.matches:
-        print(f"  W{m.window_id}[{m.position}]  score={m.score:.4f}  "
-              f"tok={m.token_id}  c={m.coefficient:.4f}")
-
-    # Inject at result.injection_layer (typically L30)
-    h_at_injection = ...  # residual from forward_to_layer(query, stop=injection_layer-1)
-    h_injected = vec_inject_all(h_at_injection, result.matches, embed_matrix)
-    return h_injected
-```
-
-### Demo and benchmark
-
-```bash
-# Single query demo
-uv run python examples/inference/vec_inject_demo.py \
+# Use explicitly (Mode 7 uses it automatically)
+lazarus context generate \
     --model google/gemma-3-4b-it \
     --checkpoint ./ctx \
-    --query "Who were the crew of Apollo 11?"
-
-# With injection comparison
-uv run python examples/inference/vec_inject_demo.py \
-    --model google/gemma-3-4b-it \
-    --checkpoint ./ctx \
-    --query "Who were the crew?" \
-    --inject
-
-# Latency benchmark (50 queries)
-uv run python examples/inference/vec_inject_demo.py \
-    --model google/gemma-3-4b-it \
-    --checkpoint ./ctx \
-    --benchmark --n-queries 50
+    --prompt "Who were the crew of Apollo 11?" \
+    --replay vec_inject
 ```
-
----
-
-## Performance
-
-### Typical latency breakdown (Gemma 4B, 3625 facts)
-
-| Component | Time |
-|-----------|------|
-| L29 forward pass (query encoding) | ~30–50 ms |
-| Matmul `(3625×320) × (320,)` on Metal | < 1 ms |
-| Argsort + gather (top-5) | < 1 ms |
-| `mx.eval()` sync | < 1 ms |
-| **Total retrieve()** | ~30–50 ms |
-
-The forward pass dominates. For batched or pre-encoded queries, retrieval is sub-millisecond.
-
-### Network comparison (planned remote providers)
-
-```
-Request:  512 bytes  (Q vector at L29)
-Response: 12 × top_k bytes  (token_id + coefficient per match)
-```
-
-Total round-trip for top-5: 572 bytes — smaller than a DNS response.
 
 ---
 
@@ -206,12 +221,22 @@ Total round-trip for top-5: 572 bytes — smaller than a DNS response.
 | `w{N}/token_ids` | `(n_facts,)` | int32 | Answer token per fact |
 | `w{N}/coefs` | `(n_facts,)` | float32 | Injection coefficient c |
 | `w{N}/positions` | `(n_facts,)` | int32 | Token position in window |
+| `w{N}/distinctive` | `(n_facts,)` | int32 | 1=distinctive, 0=common prefix |
 | `layer` | scalar | int | Retrieval layer (29) |
 | `kv_head` | scalar | int | KV head index (2 for Gemma 4B) |
 | `query_head` | scalar | int | Query head (4) |
 | `inject_layer` | scalar | int | Injection layer (30) |
 
-Key names are defined in `VecInjectMetaKey` (StrEnum) and `VecInjectWindowKey` — no magic strings anywhere in the codebase.
+Key names are defined in `VecInjectMetaKey` and `VecInjectWindowKey` — no magic strings.
+
+---
+
+## Roadmap
+
+**Next: hybrid entity routing.** Store entity string (20 bytes/fact) alongside K-vector.
+For entity-explicit queries ("Who was Neil Armstrong?"), match by string in O(N·k),
+bypass Q·K entirely. Estimated improvement: ~92% injection rate at any scale vs ~85%
+with Q·K alone. Required index change: add `w{N}/entity_strings` to `vec_inject.npz`.
 
 ---
 

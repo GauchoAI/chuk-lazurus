@@ -10,7 +10,15 @@ from ...compass_routing import RoutingStrategy, compass_route
 
 
 def run_inject(
-    lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, config, args, mx,
+    lib,
+    kv_gen,
+    pipeline,
+    tokenizer,
+    prompt_ids,
+    prompt_text,
+    config,
+    args,
+    mx,
 ):
     """Dark space injection — the model reads its own L26 residuals.
 
@@ -36,7 +44,11 @@ def run_inject(
         strategy = RoutingStrategy(strategy_arg)
         top_k = top_k_override if top_k_override is not None else 3
         inject_wids = compass_route(
-            lib, kv_gen, prompt_ids, prompt_text, tokenizer,
+            lib,
+            kv_gen,
+            prompt_ids,
+            prompt_text,
+            tokenizer,
             model_config=pipeline.config,
             strategy=strategy,
             top_k=top_k,
@@ -76,7 +88,8 @@ def run_inject(
     # Run layers 27-34 on the combined sequence
     t0 = time.time()
     logits, context_kv = kv_gen.prefill_from_layer(
-        combined_h, start_layer=compass_layer,
+        combined_h,
+        start_layer=compass_layer,
     )
     elapsed_ms = (time.time() - t0) * 1000
     seq_len = total_seq
@@ -112,7 +125,9 @@ def run_inject(
         sys.stdout.flush()
 
         logits, gen_kv = kv_gen.step_uncompiled(
-            mx.array([[next_token]]), gen_kv, seq_len=seq_len,
+            mx.array([[next_token]]),
+            gen_kv,
+            seq_len=seq_len,
         )
         seq_len += 1
 

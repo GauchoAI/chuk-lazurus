@@ -42,7 +42,6 @@ from ._index_format import (
     VecInjectWindowKey,
 )
 
-
 # ── Internal window summary (diagnostics only — not on the hot path) ──
 
 
@@ -86,16 +85,17 @@ class LocalVecInjectProvider:
         meta: VecInjectMeta,
         *,
         # Device-resident arrays (pinned at construction via mx.eval)
-        flat_k_mx: mx.array,              # (n_facts, head_dim) float32 L2-normalised
-        flat_token_ids_mx: mx.array,      # (n_facts,) int32
-        flat_coefs_mx: mx.array,          # (n_facts,) float32
-        flat_wid_mx: mx.array,            # (n_facts,) int32
-        flat_positions_mx: mx.array,      # (n_facts,) int32
-        flat_distinctive_mx: mx.array,    # (n_facts,) int32  1=distinctive, 0=common prefix
+        flat_k_mx: mx.array,  # (n_facts, head_dim) float32 L2-normalised
+        flat_token_ids_mx: mx.array,  # (n_facts,) int32
+        flat_coefs_mx: mx.array,  # (n_facts,) float32
+        flat_wid_mx: mx.array,  # (n_facts,) int32
+        flat_positions_mx: mx.array,  # (n_facts,) int32
+        flat_distinctive_mx: mx.array,  # (n_facts,) int32  1=distinctive, 0=common prefix
         window_summaries: list[_WindowSummary],
         kv_gen,
         has_injection: bool,
         confidence_threshold: float = 0.15,
+        flat_h4_mx: mx.array | None = None,  # (n_facts, hidden_size) float32 L2-normalised
     ) -> None:
         self.meta = meta
         self.has_injection = has_injection
@@ -103,12 +103,13 @@ class LocalVecInjectProvider:
         self._kv_gen = kv_gen
         self._summaries = window_summaries
 
-        self._flat_k_mx           = flat_k_mx
-        self._flat_token_ids_mx   = flat_token_ids_mx
-        self._flat_coefs_mx       = flat_coefs_mx
-        self._flat_wid_mx         = flat_wid_mx
-        self._flat_positions_mx   = flat_positions_mx
+        self._flat_k_mx = flat_k_mx
+        self._flat_token_ids_mx = flat_token_ids_mx
+        self._flat_coefs_mx = flat_coefs_mx
+        self._flat_wid_mx = flat_wid_mx
+        self._flat_positions_mx = flat_positions_mx
         self._flat_distinctive_mx = flat_distinctive_mx
+        self._flat_h4_mx = flat_h4_mx  # None → Stage 2 not available
 
     @property
     def n_facts(self) -> int:
@@ -152,28 +153,63 @@ class LocalVecInjectProvider:
 
         # Q vector — lazy mx.array, stays on device, joins the graph
         q_vec = self._query_vec(query_ids)
-        q_nrm = q_vec / mx.maximum(
-            mx.sqrt(mx.sum(q_vec * q_vec)), mx.array(1e-9)
-        )
+        q_nrm = q_vec / mx.maximum(mx.sqrt(mx.sum(q_vec * q_vec)), mx.array(1e-9))
 
         # Cosine scores — Metal matmul
-        scores = self._flat_k_mx @ q_nrm        # (n_facts,) lazy
+        scores = self._flat_k_mx @ q_nrm  # (n_facts,) lazy
 
-        # Top-k — Metal sort
+        # Top-k overall — Metal sort (for diagnostics / fallback matches)
         k = min(top_k, self.n_facts)
-        top_idx = mx.argsort(-scores)[:k]       # (k,) lazy
+        top_idx = mx.argsort(-scores)[:k]  # (k,) lazy
 
-        # Batch gather — Metal indexed reads, all still lazy
-        top_scores      = scores[top_idx]
-        top_token_ids   = self._flat_token_ids_mx[top_idx]
-        top_coefs       = self._flat_coefs_mx[top_idx]
-        top_wids        = self._flat_wid_mx[top_idx]
-        top_positions   = self._flat_positions_mx[top_idx]
+        # Best distinctive match — mask non-distinctive positions to -inf so
+        # they are never selected.  Non-distinctive tokens (< 4 chars) cause
+        # wrong injections because the model's prior for common prefixes
+        # overwhelms the small injected coefficient.
+        dist_mask = self._flat_distinctive_mx.astype(mx.float32)  # 1.0 or 0.0
+        scores_dist = scores * dist_mask + (dist_mask - 1.0) * 1e9  # non-dist → -inf
+        best_dist_idx_arr = mx.argmax(scores_dist)  # scalar
+
+        # Batch gather — all still lazy
+        top_scores = scores[top_idx]
+        top_token_ids = self._flat_token_ids_mx[top_idx]
+        top_coefs = self._flat_coefs_mx[top_idx]
+        top_wids = self._flat_wid_mx[top_idx]
+        top_positions = self._flat_positions_mx[top_idx]
         top_distinctive = self._flat_distinctive_mx[top_idx]
 
+        best_dist_score_arr = scores[best_dist_idx_arr]
+        best_dist_tok_arr = self._flat_token_ids_mx[best_dist_idx_arr]
+        best_dist_coef_arr = self._flat_coefs_mx[best_dist_idx_arr]
+        best_dist_wid_arr = self._flat_wid_mx[best_dist_idx_arr]
+        best_dist_pos_arr = self._flat_positions_mx[best_dist_idx_arr]
+
+        # Adaptive threshold — mean × 2.0 scales with score distribution.
+        # Fixed threshold (e.g. 0.15) becomes useless beyond N≈50: at N=3,625
+        # max Q·K scores drop below 1%, killing all injections. The adaptive
+        # threshold is relative to the score distribution, not absolute.
+        # self.confidence_threshold serves as a minimum floor.
+        mean_score_arr = mx.mean(scores)
+
         # Single sync — everything materialises in one Metal dispatch
-        mx.eval(top_scores, top_token_ids, top_coefs, top_wids, top_positions, top_distinctive)
+        mx.eval(
+            top_scores,
+            top_token_ids,
+            top_coefs,
+            top_wids,
+            top_positions,
+            top_distinctive,
+            best_dist_score_arr,
+            best_dist_tok_arr,
+            best_dist_coef_arr,
+            best_dist_wid_arr,
+            best_dist_pos_arr,
+            mean_score_arr,
+        )
         elapsed_ms = (time.monotonic() - t0) * 1000
+
+        mean_score = float(mean_score_arr.item())
+        adaptive_threshold = max(self.confidence_threshold, mean_score * 2.0)
 
         matches = [
             VecInjectMatch(
@@ -187,13 +223,45 @@ class LocalVecInjectProvider:
             for i in range(k)
         ]
 
-        best_score = matches[0].score if matches else 0.0
+        best_dist_score = float(best_dist_score_arr.item())
+        stage1_confident = best_dist_score >= adaptive_threshold
+
+        # ── Stage 1 succeeded — best distinctive K-space match above threshold ──
+        if stage1_confident:
+            best_dist_match = VecInjectMatch(
+                token_id=int(best_dist_tok_arr.item()),
+                coefficient=float(best_dist_coef_arr.item()),
+                score=best_dist_score,
+                window_id=int(best_dist_wid_arr.item()),
+                position=int(best_dist_pos_arr.item()),
+                distinctive=True,
+            )
+            return VecInjectResult(
+                matches=[best_dist_match] + matches,
+                retrieval_ms=elapsed_ms,
+                injection_layer=self.meta.injection_layer,
+                routing_confident=True,
+                top_score=best_dist_score,
+                routing_stage="kspace",
+            )
+
+        # ── Stage 2: H4 output cosine (same-template entity discrimination) ──
+        # Runs when Stage 1 fails the score threshold OR has no distinctive matches.
+        # Requires h4_vecs in the index.
+        if self._flat_h4_mx is not None and self.meta.retrieval_layer > 0:
+            h4_result = self._route_h4(query_ids, k, elapsed_ms)
+            if h4_result is not None:
+                return h4_result
+
+        # ── Stage 3: fallback ────────────────────────────────────────
+        top_score = float(top_scores[0].item()) if len(top_scores) > 0 else 0.0
         return VecInjectResult(
             matches=matches,
             retrieval_ms=elapsed_ms,
             injection_layer=self.meta.injection_layer,
-            routing_confident=best_score >= self.confidence_threshold,
-            top_score=best_score,
+            routing_confident=False,
+            top_score=top_score,
+            routing_stage="fallback",
         )
 
     # ── Factory ──────────────────────────────────────────────────────
@@ -206,7 +274,7 @@ class LocalVecInjectProvider:
         *,
         prefer_vec_inject: bool = True,
         confidence_threshold: float = 0.15,
-    ) -> "LocalVecInjectProvider":
+    ) -> LocalVecInjectProvider:
         """Load from a checkpoint directory and pin all data on Metal.
 
         Prefers vec_inject.npz (full routing + injection) over the legacy
@@ -221,17 +289,21 @@ class LocalVecInjectProvider:
             (more fallbacks), decrease for higher recall (more injections).
         """
         path = Path(checkpoint_dir)
-        vec_path   = path / VEC_INJECT_FILE
+        vec_path = path / VEC_INJECT_FILE
         route_path = path / KV_ROUTE_FILE
 
         if prefer_vec_inject and vec_path.exists():
             return cls._from_npz(
-                vec_path, kv_gen, has_injection=True,
+                vec_path,
+                kv_gen,
+                has_injection=True,
                 confidence_threshold=confidence_threshold,
             )
         if route_path.exists():
             return cls._from_npz(
-                route_path, kv_gen, has_injection=False,
+                route_path,
+                kv_gen,
+                has_injection=False,
                 confidence_threshold=confidence_threshold,
             )
 
@@ -248,7 +320,7 @@ class LocalVecInjectProvider:
         *,
         has_injection: bool,
         confidence_threshold: float = 0.15,
-    ) -> "LocalVecInjectProvider":
+    ) -> LocalVecInjectProvider:
         """NPZ → numpy (normalise) → MLX device arrays.
 
         Uses mx.load() so bfloat16 arrays saved by mx.savez() are decoded
@@ -282,27 +354,30 @@ class LocalVecInjectProvider:
             ),
         )
 
-        wids = sorted(set(
-            wid
-            for key in all_keys
-            if (wid := VecInjectWindowKey.window_id_from_key(key)) is not None
-        ))
+        wids = sorted(
+            {
+                wid
+                for key in all_keys
+                if (wid := VecInjectWindowKey.window_id_from_key(key)) is not None
+            }
+        )
 
         # Accumulate per-window numpy arrays before device upload
-        k_rows:    list[np.ndarray] = []
-        tok_rows:  list[np.ndarray] = []
+        k_rows: list[np.ndarray] = []
+        tok_rows: list[np.ndarray] = []
         coef_rows: list[np.ndarray] = []
-        wid_rows:  list[np.ndarray] = []
-        pos_rows:  list[np.ndarray] = []
+        wid_rows: list[np.ndarray] = []
+        pos_rows: list[np.ndarray] = []
         dist_rows: list[np.ndarray] = []
+        h4_rows: list[np.ndarray] = []  # Stage-2 routing vectors (may be empty)
         summaries: list[_WindowSummary] = []
 
         for wid in wids:
             if has_injection and VecInjectWindowKey.k_vecs(wid) in all_keys:
-                k    = _to_np_f32(VecInjectWindowKey.k_vecs(wid))
-                tok  = _to_np_i32(VecInjectWindowKey.token_ids(wid))
+                k = _to_np_f32(VecInjectWindowKey.k_vecs(wid))
+                tok = _to_np_i32(VecInjectWindowKey.token_ids(wid))
                 coef = _to_np_f32(VecInjectWindowKey.coefs(wid))
-                pos  = _to_np_i32(VecInjectWindowKey.positions(wid))
+                pos = _to_np_i32(VecInjectWindowKey.positions(wid))
                 # distinctive flag: 1=safe for 1D injection, 0=needs fallback
                 # Legacy indexes without this key: assume all distinctive
                 dist_key = VecInjectWindowKey.distinctive(wid)
@@ -313,11 +388,11 @@ class LocalVecInjectProvider:
                 )
             else:
                 # Legacy kv_route_index.npz: flat "wN" key, no coefficients
-                k    = _to_np_f32(VecInjectWindowKey.flat(wid))
-                n    = len(k)
-                tok  = np.zeros(n, dtype=np.int32)
+                k = _to_np_f32(VecInjectWindowKey.flat(wid))
+                n = len(k)
+                tok = np.zeros(n, dtype=np.int32)
                 coef = np.zeros(n, dtype=np.float32)
-                pos  = np.arange(n, dtype=np.int32)
+                pos = np.arange(n, dtype=np.int32)
                 dist = np.ones(n, dtype=np.int32)
 
             n_facts = len(k)
@@ -327,20 +402,32 @@ class LocalVecInjectProvider:
             wid_rows.append(np.full(n_facts, wid, dtype=np.int32))
             pos_rows.append(pos)
             dist_rows.append(dist)
+
+            # H4 Stage-2 routing vectors — optional, absent in legacy indexes
+            h4_key = VecInjectWindowKey.h4_vecs(wid)
+            if h4_key in all_keys:
+                h4_rows.append(_to_np_f32(h4_key))
+
             summaries.append(_WindowSummary(window_id=wid, n_facts=n_facts))
 
         if not k_rows:
             empty = np.zeros((0, 1), dtype=np.float32)
             empty_i = np.zeros(0, dtype=np.int32)
             empty_f = np.zeros(0, dtype=np.float32)
-            flat_k_mx          = mx.array(empty)
-            flat_token_ids_mx  = mx.array(empty_i)
-            flat_coefs_mx      = mx.array(empty_f)
-            flat_wid_mx        = mx.array(empty_i)
-            flat_positions_mx  = mx.array(empty_i)
+            flat_k_mx = mx.array(empty)
+            flat_token_ids_mx = mx.array(empty_i)
+            flat_coefs_mx = mx.array(empty_f)
+            flat_wid_mx = mx.array(empty_i)
+            flat_positions_mx = mx.array(empty_i)
             flat_distinctive_mx = mx.array(empty_i)
-            mx.eval(flat_k_mx, flat_token_ids_mx, flat_coefs_mx,
-                    flat_wid_mx, flat_positions_mx, flat_distinctive_mx)
+            mx.eval(
+                flat_k_mx,
+                flat_token_ids_mx,
+                flat_coefs_mx,
+                flat_wid_mx,
+                flat_positions_mx,
+                flat_distinctive_mx,
+            )
             return cls(
                 meta=meta,
                 flat_k_mx=flat_k_mx,
@@ -353,6 +440,7 @@ class LocalVecInjectProvider:
                 kv_gen=kv_gen,
                 has_injection=has_injection,
                 confidence_threshold=confidence_threshold,
+                flat_h4_mx=None,
             )
 
         # L2-normalise rows on CPU once so Metal only sees unit vectors
@@ -361,16 +449,35 @@ class LocalVecInjectProvider:
         np.clip(norms, 1e-9, None, out=norms)
         flat_k_normed = flat_k / norms
 
-        # Upload to Metal and pin — single mx.eval() before first retrieve()
-        flat_k_mx           = mx.array(flat_k_normed,                dtype=mx.float32)
-        flat_token_ids_mx   = mx.array(np.concatenate(tok_rows),     dtype=mx.int32)
-        flat_coefs_mx       = mx.array(np.concatenate(coef_rows),    dtype=mx.float32)
-        flat_wid_mx         = mx.array(np.concatenate(wid_rows),     dtype=mx.int32)
-        flat_positions_mx   = mx.array(np.concatenate(pos_rows),     dtype=mx.int32)
-        flat_distinctive_mx = mx.array(np.concatenate(dist_rows),    dtype=mx.int32)
+        # H4 Stage-2 routing — only present in indexes built after 2026-03-19
+        flat_h4_mx: mx.array | None = None
+        if h4_rows and len(h4_rows) == len(k_rows):
+            # All windows have h4_vecs — safe to concatenate
+            flat_h4 = np.concatenate(h4_rows, axis=0)
+            norms_h4 = np.linalg.norm(flat_h4, axis=1, keepdims=True)
+            np.clip(norms_h4, 1e-9, None, out=norms_h4)
+            flat_h4_normed = flat_h4 / norms_h4
+            flat_h4_mx = mx.array(flat_h4_normed, dtype=mx.float32)
 
-        mx.eval(flat_k_mx, flat_token_ids_mx, flat_coefs_mx,
-                flat_wid_mx, flat_positions_mx, flat_distinctive_mx)
+        # Upload to Metal and pin — single mx.eval() before first retrieve()
+        flat_k_mx = mx.array(flat_k_normed, dtype=mx.float32)
+        flat_token_ids_mx = mx.array(np.concatenate(tok_rows), dtype=mx.int32)
+        flat_coefs_mx = mx.array(np.concatenate(coef_rows), dtype=mx.float32)
+        flat_wid_mx = mx.array(np.concatenate(wid_rows), dtype=mx.int32)
+        flat_positions_mx = mx.array(np.concatenate(pos_rows), dtype=mx.int32)
+        flat_distinctive_mx = mx.array(np.concatenate(dist_rows), dtype=mx.int32)
+
+        arrays_to_pin = [
+            flat_k_mx,
+            flat_token_ids_mx,
+            flat_coefs_mx,
+            flat_wid_mx,
+            flat_positions_mx,
+            flat_distinctive_mx,
+        ]
+        if flat_h4_mx is not None:
+            arrays_to_pin.append(flat_h4_mx)
+        mx.eval(*arrays_to_pin)
 
         return cls(
             meta=meta,
@@ -384,6 +491,7 @@ class LocalVecInjectProvider:
             kv_gen=kv_gen,
             has_injection=has_injection,
             confidence_threshold=confidence_threshold,
+            flat_h4_mx=flat_h4_mx,
         )
 
     # ── Internal ─────────────────────────────────────────────────────
@@ -397,29 +505,161 @@ class LocalVecInjectProvider:
         backbone = self._kv_gen.backbone
         layer_adapter = backbone.adapted_layers[self.meta.retrieval_layer]
 
-        ids = mx.array(query_ids)[None]   # (1, S)
+        ids = mx.array(query_ids)[None]  # (1, S)
         B, S = ids.shape
 
         # Forward to retrieval layer — already on Metal
         h = self._kv_gen.prefill_to_layer(ids, target_layer=self.meta.retrieval_layer)
 
         # project_qkv applies pre_attn_norm output → q_norm + RoPE in one call
-        x     = layer_adapter.pre_attn_norm(h[:, -1:, :])   # (1, 1, hidden)
+        x = layer_adapter.pre_attn_norm(h[:, -1:, :])  # (1, 1, hidden)
         q, _, _ = layer_adapter.project_qkv(x, B, 1, offset=S - 1)
         # q: (1, nq, 1, head_dim)
 
         # Lazy — no eval — joins the downstream scoring graph
         return q[0, self.meta.query_head, 0, :].astype(mx.float32)  # (head_dim,)
 
+    def _query_h4_vec(self, query_ids: list[int]) -> mx.array:
+        """Compute H4's attention output at the last query position.
+
+        Uses h entering L{retrieval_layer} (= output of L{retrieval_layer-1})
+        so this reflects the ACTUAL L{retrieval_layer} forward computation,
+        not the re-projected state used by _query_vec (K-space Stage 1).
+
+        Returns lazy (hidden_size,) float32 — join into the h4_scores matmul.
+        """
+        backbone = self._kv_gen.backbone
+        rl = self.meta.retrieval_layer
+        layer_adapter = backbone.adapted_layers[rl]
+
+        ids = mx.array(query_ids)[None]  # (1, S)
+        B, S = ids.shape
+
+        # Run to L{rl-1} — input to L{rl}
+        h_pre = self._kv_gen.prefill_to_layer(ids, target_layer=rl - 1)
+
+        x = layer_adapter.pre_attn_norm(h_pre)  # (1, S, D)
+        q, k, v = layer_adapter.project_qkv(x, B, S, offset=0)
+
+        H4 = self.meta.query_head
+        kv_h = H4 // layer_adapter.n_rep
+        dh = layer_adapter.head_dim
+
+        # Last query position attending over all positions
+        q_last = q[:, H4, -1:, :]   # (1, 1, dh)
+        k_kv   = k[:, kv_h, :, :]   # (1, S, dh)
+        v_kv   = v[:, kv_h, :, :]   # (1, S, dh)
+
+        scores = mx.matmul(q_last, k_kv.transpose(0, 2, 1)) * layer_adapter.attn_scale
+        attn_w = mx.softmax(scores, axis=-1)                  # (1, 1, S)
+        h4_out = mx.matmul(attn_w, v_kv)[:, 0, :]            # (1, dh)
+
+        # Project through H4's O_proj columns → hidden space
+        o_weight = layer_adapter._block.self_attn.o_proj.weight  # (D, nq*dh)
+        h4_contrib = mx.matmul(h4_out, o_weight[:, H4 * dh:(H4 + 1) * dh].T)  # (1, D)
+
+        return h4_contrib[0].astype(mx.float32)  # (D,) — lazy
+
+    def _route_h4(
+        self,
+        query_ids: list[int],
+        top_k: int,
+        stage1_ms: float,
+    ) -> "VecInjectResult | None":
+        """Stage 2: H4 output cosine routing.
+
+        Returns a VecInjectResult with routing_stage="h4" if confident,
+        None if the H4 score distribution doesn't clear the adaptive threshold.
+        """
+        t1 = time.monotonic()
+
+        q_h4 = self._query_h4_vec(query_ids)
+        q_h4_nrm = q_h4 / mx.maximum(mx.sqrt(mx.sum(q_h4 * q_h4)), mx.array(1e-9))
+
+        # H4 cosine scores against all stored fact H4 vectors (Metal matmul)
+        h4_scores = self._flat_h4_mx @ q_h4_nrm  # (n_facts,) lazy
+
+        k = min(top_k, self.n_facts)
+        top_idx = mx.argsort(-h4_scores)[:k]
+
+        # Best distinctive H4 match — same mask trick as Stage 1
+        dist_mask = self._flat_distinctive_mx.astype(mx.float32)
+        h4_scores_dist = h4_scores * dist_mask + (dist_mask - 1.0) * 1e9
+        best_dist_idx_arr = mx.argmax(h4_scores_dist)
+
+        top_h4_scores  = h4_scores[top_idx]
+        top_token_ids  = self._flat_token_ids_mx[top_idx]
+        top_coefs      = self._flat_coefs_mx[top_idx]
+        top_wids       = self._flat_wid_mx[top_idx]
+        top_positions  = self._flat_positions_mx[top_idx]
+        top_distinctive = self._flat_distinctive_mx[top_idx]
+
+        best_dist_h4_score_arr = h4_scores[best_dist_idx_arr]
+        best_dist_tok_arr   = self._flat_token_ids_mx[best_dist_idx_arr]
+        best_dist_coef_arr  = self._flat_coefs_mx[best_dist_idx_arr]
+        best_dist_wid_arr   = self._flat_wid_mx[best_dist_idx_arr]
+        best_dist_pos_arr   = self._flat_positions_mx[best_dist_idx_arr]
+
+        mean_h4_arr = mx.mean(h4_scores)
+
+        mx.eval(
+            top_h4_scores, top_token_ids, top_coefs,
+            top_wids, top_positions, top_distinctive,
+            best_dist_h4_score_arr, best_dist_tok_arr,
+            best_dist_coef_arr, best_dist_wid_arr, best_dist_pos_arr,
+            mean_h4_arr,
+        )
+        elapsed_ms = stage1_ms + (time.monotonic() - t1) * 1000
+
+        mean_h4 = float(mean_h4_arr.item())
+        h4_threshold = max(self.confidence_threshold, mean_h4 * 2.0)
+        best_dist_h4 = float(best_dist_h4_score_arr.item())
+
+        if best_dist_h4 < h4_threshold:
+            return None
+
+        best_dist_match = VecInjectMatch(
+            token_id=int(best_dist_tok_arr.item()),
+            coefficient=float(best_dist_coef_arr.item()),
+            score=best_dist_h4,
+            window_id=int(best_dist_wid_arr.item()),
+            position=int(best_dist_pos_arr.item()),
+            distinctive=True,
+        )
+        top_matches = [
+            VecInjectMatch(
+                token_id=int(top_token_ids[i].item()),
+                coefficient=float(top_coefs[i].item()),
+                score=float(top_h4_scores[i].item()),
+                window_id=int(top_wids[i].item()),
+                position=int(top_positions[i].item()),
+                distinctive=bool(top_distinctive[i].item()),
+            )
+            for i in range(k)
+        ]
+        return VecInjectResult(
+            matches=[best_dist_match] + top_matches,
+            retrieval_ms=elapsed_ms,
+            injection_layer=self.meta.injection_layer,
+            routing_confident=True,
+            top_score=best_dist_h4,
+            routing_stage="h4",
+        )
+
     # ── Diagnostics ──────────────────────────────────────────────────
 
     def log_stats(self, file=sys.stderr) -> None:
+        h4_note = (
+            f"h4={'yes (' + str(self._flat_h4_mx.shape[1]) + 'D)' if self._flat_h4_mx is not None else 'no'}"
+        )
+        routing = "S1+S2+S3" if self._flat_h4_mx is not None else "S1+S3"
         print(
             f"  LocalVecInjectProvider: {self.n_facts} facts × {self.head_dim}D "
             f"across {len(self._summaries)} windows "
             f"(L{self.meta.retrieval_layer} KV-H{self.meta.kv_head}, "
             f"inject L{self.meta.injection_layer}, "
             f"coefs={'yes' if self.has_injection else 'no'}, "
+            f"{h4_note}, routing={routing}, "
             f"conf_threshold={self.confidence_threshold:.2f}, "
             f"device=metal)",
             file=file,

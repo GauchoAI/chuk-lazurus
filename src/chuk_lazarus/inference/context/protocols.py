@@ -155,5 +155,14 @@ class ModelBackboneProtocol(Protocol):
         """Hidden state dimension (used for memory accounting)."""
         ...
 
+    @property
+    def embed_matrix(self) -> mx.array:
+        """Token embedding weight matrix, shape (vocab_size, hidden_size).
+
+        Used for 1D subspace injection: the answer token's embedding direction
+        is projected from this matrix at injection time.
+        """
+        ...
+
 
 __all__ = ["ModelBackboneProtocol", "TransformerLayerProtocol"]

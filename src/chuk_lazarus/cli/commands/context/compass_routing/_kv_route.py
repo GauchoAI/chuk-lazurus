@@ -32,8 +32,8 @@ def _kv_route_score_windows(
     lib,
     kv_gen,
     prompt_ids: list[int],
-    retrieval_layer: int = 29,
-    query_head: int = 4,
+    retrieval_layer: int | None = None,
+    query_head: int | None = None,
 ) -> list[tuple[int, float]]:
     """Score windows by Q.K at the retrieval head — the model's own addressing.
 
@@ -42,8 +42,21 @@ def _kv_route_score_windows(
     """
     import mlx.core as mx
 
+    from .....inference.context.arch_config import ArchitectureConfig, ArchitectureNotCalibrated
+
     backbone = kv_gen.backbone
     num_layers = len(backbone.adapted_layers)
+
+    # Resolve retrieval_layer and query_head from library manifest if not specified
+    if retrieval_layer is None or query_head is None:
+        ac = lib.arch_config
+        if ac is None:
+            raise ArchitectureNotCalibrated(
+                "unknown (no arch_config in library manifest — re-run prefill)",
+                num_layers,
+            )
+        retrieval_layer = retrieval_layer if retrieval_layer is not None else ac.retrieval_layer
+        query_head = query_head if query_head is not None else ac.query_head
 
     if retrieval_layer >= num_layers:
         retrieval_layer = num_layers - 1
@@ -54,7 +67,9 @@ def _kv_route_score_windows(
         if offset <= retrieval_layer and backbone.is_global_layer(retrieval_layer - offset):
             routing_layer_idx = retrieval_layer - offset
             break
-        if retrieval_layer + offset < num_layers and backbone.is_global_layer(retrieval_layer + offset):
+        if retrieval_layer + offset < num_layers and backbone.is_global_layer(
+            retrieval_layer + offset
+        ):
             routing_layer_idx = retrieval_layer + offset
             break
 
@@ -77,7 +92,11 @@ def _kv_route_score_windows(
 
         # Compute Q for query
         q_retrieval = _extract_query_q(
-            kv_gen, prompt_ids, routing_layer_idx, layer, query_head,
+            kv_gen,
+            prompt_ids,
+            routing_layer_idx,
+            layer,
+            query_head,
         )
 
         # Q . K^T scoring
@@ -91,8 +110,10 @@ def _kv_route_score_windows(
 
     # ── Mode 2/3: Compute K from compass residuals ─────────────
     if not lib.has_compass:
-        print("  Warning: no compass data or kv_route_index, falling back to empty scores",
-              file=sys.stderr)
+        print(
+            "  Warning: no compass data or kv_route_index, falling back to empty scores",
+            file=sys.stderr,
+        )
         return [(wid, 0.0) for wid in range(lib.num_windows)]
 
     compass_layer = lib.compass_layer
@@ -125,7 +146,11 @@ def _kv_route_score_windows(
 
     # Compute Q for query
     q_retrieval = _extract_query_q(
-        kv_gen, prompt_ids, routing_layer_idx, layer, query_head,
+        kv_gen,
+        prompt_ids,
+        routing_layer_idx,
+        layer,
+        query_head,
     )
 
     # Q . K^T scoring
@@ -163,18 +188,15 @@ def _aggregate_scores(scores_list, wid_map, num_windows, method):
     if not per_window_scores:
         return [(wid, 0.0) for wid in range(num_windows)]
 
-    samples_per_window = len(per_window_scores[next(iter(per_window_scores))])
-
+    _TOP_K_AGG = 10
     per_window: dict[int, float] = {}
-    if samples_per_window <= 16:
-        for wid, sl in per_window_scores.items():
+    for wid, sl in per_window_scores.items():
+        if len(sl) <= 16:
             per_window[wid] = max(sl)
-    else:
-        _TOP_K_AGG = 10
-        for wid, sl in per_window_scores.items():
+        else:
             sl.sort(reverse=True)
-            per_window[wid] = sum(sl[:_TOP_K_AGG]) / len(sl[:_TOP_K_AGG])
+            per_window[wid] = sum(sl[:_TOP_K_AGG]) / _TOP_K_AGG
 
-    result = [(wid, s) for wid, s in per_window.items()]
+    result = list(per_window.items())
     result.sort(key=lambda x: -x[1])
     return result

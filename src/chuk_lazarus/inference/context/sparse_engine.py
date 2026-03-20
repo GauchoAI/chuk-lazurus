@@ -31,16 +31,13 @@ Usage:
 
 from __future__ import annotations
 
-import re
 import sys
 import time
 from pathlib import Path
 
 import mlx.core as mx
-import numpy as np
 
 from .sparse_index import (
-    COMMON_ABBREVIATIONS,
     FUNCTION_WORDS,
     EntityExtractor,
     FactSpan,
@@ -71,7 +68,8 @@ class SparseIndexEngine(UnlimitedContextEngine):
         context_window: int = 2,
     ):
         super().__init__(
-            rs_model, config,
+            rs_model,
+            config,
             window_size=window_size,
             model_id=model_id,
             config_hash=config_hash,
@@ -133,9 +131,7 @@ class SparseIndexEngine(UnlimitedContextEngine):
             if self.current_window_id == 0:
                 logits, self.kv_store, self._last_residual = self.kv_gen.prefill_with_residual(ids)
             else:
-                prior_kv, _prior_abs = self.checkpoints.load(
-                    self.current_window_id - 1
-                )
+                prior_kv, _prior_abs = self.checkpoints.load(self.current_window_id - 1)
                 logits, self.kv_store, self._last_residual = self.kv_gen.extend_with_residual(
                     ids, prior_kv, abs_start=self.abs_offset
                 )
@@ -212,8 +208,8 @@ class SparseIndexEngine(UnlimitedContextEngine):
             self.sparse_index.add(SparseEntry(window_id=window_id, keywords=[]))
             return
 
-        actual_ids = mx.array(token_ids[skip + 1:])
-        logits_slice = logits_f32[skip:skip + n_score]
+        actual_ids = mx.array(token_ids[skip + 1 :])
+        logits_slice = logits_f32[skip : skip + n_score]
         actual_logits = logits_slice[mx.arange(n_score), actual_ids]
         ranks = mx.sum(logits_slice > actual_logits[:, None], axis=1)
         mx.eval(ranks)
@@ -228,8 +224,7 @@ class SparseIndexEngine(UnlimitedContextEngine):
 
         # Step 2: decode tokens to text
         text = self._tokenizer.decode(token_ids, skip_special_tokens=True)
-        token_texts = [self._tokenizer.decode([tid], skip_special_tokens=True)
-                       for tid in token_ids]
+        token_texts = [self._tokenizer.decode([tid], skip_special_tokens=True) for tid in token_ids]
 
         # Step 3: extract keywords near novel positions
         keywords = self._extract_novel_keywords(text, token_texts, full_ranks)
@@ -331,7 +326,7 @@ class SparseIndexEngine(UnlimitedContextEngine):
             if tok.lower() in FUNCTION_WORDS:
                 continue
             # Skip bare punctuation/numbers-only
-            clean = tok.strip('.,;:!?()[]{}"\'-_*/\\')
+            clean = tok.strip(".,;:!?()[]{}\"'-_*/\\")
             if not clean or (clean.isdigit() and len(clean) < 3):
                 continue
 
@@ -357,9 +352,11 @@ class SparseIndexEngine(UnlimitedContextEngine):
             context_words = words[start:end]
 
             # Strip function words from context but keep content words
-            filtered = [w for w in context_words
-                        if (w.lower() not in FUNCTION_WORDS and len(w) > 1)
-                        or w == words[word_idx]]  # always keep the anchor
+            filtered = [
+                w
+                for w in context_words
+                if (w.lower() not in FUNCTION_WORDS and len(w) > 1) or w == words[word_idx]
+            ]  # always keep the anchor
 
             if filtered:
                 triplet = " ".join(filtered)
@@ -408,7 +405,9 @@ class SparseIndexEngine(UnlimitedContextEngine):
                 print(
                     f"\r  Sparse extraction: {wid + 1}/{num_archived} "
                     f"({elapsed:.0f}s, ~{remaining:.0f}s left)  ",
-                    end="", file=sys.stderr, flush=True,
+                    end="",
+                    file=sys.stderr,
+                    flush=True,
                 )
 
         elapsed = time.time() - t0
@@ -417,7 +416,8 @@ class SparseIndexEngine(UnlimitedContextEngine):
             f"\r  Sparse extraction: {num_archived} windows in {elapsed:.1f}s — "
             f"{stats['non_empty']}/{num_archived} with keywords, "
             f"{stats['total_keywords']} total    ",
-            file=sys.stderr, flush=True,
+            file=sys.stderr,
+            flush=True,
         )
         print(file=sys.stderr)
 
@@ -509,9 +509,7 @@ class SparseIndexEngine(UnlimitedContextEngine):
             if next_token in stop_ids:
                 break
             generated.append(next_token)
-            logits, kv = self.kv_gen.step_uncompiled(
-                mx.array([[next_token]]), kv, seq_len=seq_len
-            )
+            logits, kv = self.kv_gen.step_uncompiled(mx.array([[next_token]]), kv, seq_len=seq_len)
             seq_len += 1
 
         return self._tokenizer.decode(generated, skip_special_tokens=True)

@@ -18,14 +18,13 @@ import time
 
 import mlx.core as mx
 
-from .._types import GenerateConfig, GenerateResult
+from .._types import GenerateResult
 from ..compass_routing import RoutingStrategy, compass_route
 
-
 # ── Constants ────────────────────────────────────────────────────────
-_COMPASS_TOP_K = 10          # compass candidates for factual (direct replay)
-_ITER_ROUNDS = 3             # exploration rounds (matches --strategy iterative default)
-_ITER_TOP_K = 1              # windows per compass call in iterative
+_COMPASS_TOP_K = 10  # compass candidates for factual (direct replay)
+_ITER_ROUNDS = 3  # exploration rounds (matches --strategy iterative default)
+_ITER_TOP_K = 1  # windows per compass call in iterative
 
 
 # ── Unified Generate ─────────────────────────────────────────────────
@@ -50,8 +49,8 @@ def _unified_generate(
 
     The query-type probe at L26 decides. No flags. No domain-specific probes.
     """
-    from ._probes import load_or_calibrate
     from ._iterative import _iterative_generate
+    from ._probes import load_or_calibrate
 
     compass_layer = lib.compass_layer
 
@@ -62,37 +61,43 @@ def _unified_generate(
     )
 
     # ── Load or calibrate probes ──────────────────────────────────────
-    checkpoint_dir = str(lib._path) if hasattr(lib, '_path') else "."
+    checkpoint_dir = str(lib._path) if hasattr(lib, "_path") else "."
     model_name = lib.manifest.model_id
     probes = load_or_calibrate(
-        kv_gen, tokenizer, compass_layer, lib,
-        checkpoint_dir, model_name,
+        kv_gen,
+        tokenizer,
+        compass_layer,
+        lib,
+        checkpoint_dir,
+        model_name,
     )
 
     # ── Classify query ────────────────────────────────────────────────
-    query_prompt = (
-        f"<start_of_turn>user\n{prompt_text}<end_of_turn>\n"
-        f"<start_of_turn>model\n"
-    )
-    q_ids = tokenizer.encode(query_prompt, add_special_tokens=True)
-    q_h = kv_gen.prefill_to_layer(
-        mx.array(q_ids)[None], target_layer=compass_layer,
-        sample_positions=[len(q_ids) - 1],
-    )
-    mx.eval(q_h)
-    query_vec = q_h[0, 0, :].astype(mx.float32)
+    if compass_layer is None:
+        is_exploration = False
+        query_type = "FACTUAL"
+        print("  Query type: FACTUAL (no compass data — BM25 fallback)", file=sys.stderr)
+    else:
+        query_prompt = f"<start_of_turn>user\n{prompt_text}<end_of_turn>\n<start_of_turn>model\n"
+        q_ids = tokenizer.encode(query_prompt, add_special_tokens=True)
+        q_h = kv_gen.prefill_to_layer(
+            mx.array(q_ids)[None],
+            target_layer=compass_layer,
+            sample_positions=[len(q_ids) - 1],
+        )
+        mx.eval(q_h)
+        query_vec = q_h[0, 0, :].astype(mx.float32)
 
-    qt_proj = mx.sum((query_vec - probes.qt_mean) * probes.qt_direction)
-    mx.eval(qt_proj)
-    qt_proj_val = float(qt_proj.item())
-    is_exploration = qt_proj_val > probes.qt_threshold
-    query_type = "EXPLORATION" if is_exploration else "FACTUAL"
+        qt_proj = mx.sum((query_vec - probes.qt_mean) * probes.qt_direction)
+        mx.eval(qt_proj)
+        qt_proj_val = float(qt_proj.item())
+        is_exploration = qt_proj_val > probes.qt_threshold
+        query_type = "EXPLORATION" if is_exploration else "FACTUAL"
 
-    print(
-        f"  Query type: {query_type} (proj={qt_proj_val:+.0f}, "
-        f"thresh={probes.qt_threshold:+.0f})",
-        file=sys.stderr,
-    )
+        print(
+            f"  Query type: {query_type} (proj={qt_proj_val:+.0f}, thresh={probes.qt_threshold:+.0f})",
+            file=sys.stderr,
+        )
 
     # ── EXPLORATION: iterative compass shifting with note-taking ──────
     if is_exploration:
@@ -116,7 +121,11 @@ def _unified_generate(
     # discovers query-specific directions. Together: robust for any corpus.
     t0 = time.time()
     routed_compass = compass_route(
-        lib, kv_gen, prompt_ids, prompt_text, tokenizer,
+        lib,
+        kv_gen,
+        prompt_ids,
+        prompt_text,
+        tokenizer,
         model_config=model_config,
         strategy=RoutingStrategy.COMPASS,
         top_k=_COMPASS_TOP_K,
@@ -125,7 +134,11 @@ def _unified_generate(
 
     t0 = time.time()
     routed_geometric = compass_route(
-        lib, kv_gen, prompt_ids, prompt_text, tokenizer,
+        lib,
+        kv_gen,
+        prompt_ids,
+        prompt_text,
+        tokenizer,
         model_config=model_config,
         strategy=RoutingStrategy.GEOMETRIC,
         top_k=_COMPASS_TOP_K,
@@ -161,15 +174,10 @@ def _unified_generate(
 
     # ── Replay and generate ───────────────────────────────────────────
     if not no_chat and hasattr(tokenizer, "apply_chat_template"):
-        preamble_text = (
-            f"<start_of_turn>user\n{sys_content}\n\n"
-            f"Here is the relevant text:\n\n"
-        )
+        preamble_text = f"<start_of_turn>user\n{sys_content}\n\nHere is the relevant text:\n\n"
         preamble_ids = tokenizer.encode(preamble_text, add_special_tokens=True)
         postamble_text = (
-            f"\n\n---\nBased on the text above, "
-            f"{prompt_text}<end_of_turn>\n"
-            f"<start_of_turn>model\n"
+            f"\n\n---\nBased on the text above, {prompt_text}<end_of_turn>\n<start_of_turn>model\n"
         )
         postamble_ids = tokenizer.encode(postamble_text, add_special_tokens=False)
     else:
@@ -189,19 +197,22 @@ def _unified_generate(
         w_tokens = lib.get_window_tokens(wid)
         t0 = time.time()
         _l, gen_kv = kv_gen.extend(
-            mx.array(w_tokens)[None], gen_kv, abs_start=seq_len,
+            mx.array(w_tokens)[None],
+            gen_kv,
+            abs_start=seq_len,
         )
         mx.eval(*[t for p in gen_kv for t in p])
         ms = (time.time() - t0) * 1000
         seq_len += len(w_tokens)
         print(
-            f"  Replayed W{wid} @ pos {seq_len - len(w_tokens)}-{seq_len} "
-            f"({ms:.0f}ms)",
+            f"  Replayed W{wid} @ pos {seq_len - len(w_tokens)}-{seq_len} ({ms:.0f}ms)",
             file=sys.stderr,
         )
 
     logits, gen_kv = kv_gen.extend(
-        mx.array(postamble_ids)[None], gen_kv, abs_start=seq_len,
+        mx.array(postamble_ids)[None],
+        gen_kv,
+        abs_start=seq_len,
     )
     seq_len += len(postamble_ids)
 
@@ -221,12 +232,14 @@ def _unified_generate(
             break
         generated_tokens.append(next_token)
         logits, gen_kv = kv_gen.step_uncompiled(
-            mx.array([[next_token]]), gen_kv, seq_len=seq_len,
+            mx.array([[next_token]]),
+            gen_kv,
+            seq_len=seq_len,
         )
         seq_len += 1
 
     response = tokenizer.decode(generated_tokens, skip_special_tokens=True)
-    preview = response[:120].replace('\n', ' ')
+    preview = response[:120].replace("\n", " ")
     print(f"    {preview}...", file=sys.stderr)
 
     print()

@@ -43,8 +43,8 @@ def vec_inject(
     dot(R, e / ‖e‖).  The denominator ‖e‖² cancels the scale so we
     reproduce R's component along e exactly.
     """
-    e = embed_matrix[token_id]       # (hidden_size,)
-    direction = e / mx.sum(e * e)    # (hidden_size,)
+    e = embed_matrix[token_id]  # (hidden_size,)
+    direction = e / mx.sum(e * e)  # (hidden_size,)
     return h + (coefficient * direction)[None, None, :]
 
 

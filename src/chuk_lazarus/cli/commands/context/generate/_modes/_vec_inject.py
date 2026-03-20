@@ -26,7 +26,10 @@ from ..._types import GenerateConfig, GenerateResult
 
 
 async def run_vec_inject(
-    lib, kv_gen, pipeline, tokenizer,
+    lib,
+    kv_gen,
+    pipeline,
+    tokenizer,
     prompt_ids: list[int],
     prompt_text: str,
     config: GenerateConfig,
@@ -44,7 +47,8 @@ async def run_vec_inject(
     t0 = time.monotonic()
     try:
         provider = await LocalVecInjectProvider.load(
-            checkpoint_dir, kv_gen,
+            checkpoint_dir,
+            kv_gen,
             confidence_threshold=confidence_threshold,
         )
     except FileNotFoundError as e:
@@ -61,8 +65,7 @@ async def run_vec_inject(
 
     conf_str = "CONFIDENT" if result.routing_confident else "LOW CONFIDENCE"
     print(
-        f"  Routing [{conf_str}]: top_score={result.top_score:.4f}  "
-        f"({result.retrieval_ms:.1f} ms)",
+        f"  Routing [{conf_str}]: top_score={result.top_score:.4f}  ({result.retrieval_ms:.1f} ms)",
         file=sys.stderr,
     )
 
@@ -106,7 +109,7 @@ async def run_vec_inject(
     # Then extend proper KV with the injected first token and generate normally.
     q_ids = mx.array(prompt_ids)[None]
     t0 = time.monotonic()
-    embed_matrix = pipeline.model.model.embed_tokens.weight
+    embed_matrix = kv_gen.backbone.embed_matrix
 
     # Pass 1 — get injection-biased logits for the first generated token
     h = kv_gen.prefill_to_layer(q_ids, target_layer=inject_layer - 1)
@@ -164,7 +167,9 @@ async def run_vec_inject(
         sys.stdout.flush()
 
         logits, gen_kv = kv_gen.step_uncompiled(
-            mx.array([[next_token]]), gen_kv, seq_len=seq_len,
+            mx.array([[next_token]]),
+            gen_kv,
+            seq_len=seq_len,
         )
         seq_len += 1
 
@@ -185,7 +190,11 @@ def _fallback(lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, config,
 
     top_k = getattr(args, "top_k", None) or 3
     replay_ids = compass_route(
-        lib, kv_gen, prompt_ids, prompt_text, tokenizer,
+        lib,
+        kv_gen,
+        prompt_ids,
+        prompt_text,
+        tokenizer,
         model_config=pipeline.config,
         strategy=RoutingStrategy.GEOMETRIC,
         top_k=top_k,
@@ -196,7 +205,8 @@ def _fallback(lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, config,
     context_kv, seq_len = run_standard(lib, kv_gen, replay_ids, preamble_ids, mx)
 
     postamble_ids = tokenizer.encode(
-        f"\n\n---\nQuestion: {prompt_text}\nAnswer:", add_special_tokens=False,
+        f"\n\n---\nQuestion: {prompt_text}\nAnswer:",
+        add_special_tokens=False,
     )
     q_ids = mx.array(postamble_ids)[None]
     logits, gen_kv = kv_gen.extend(q_ids, context_kv, abs_start=seq_len)

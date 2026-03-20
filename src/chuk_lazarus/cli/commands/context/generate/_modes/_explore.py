@@ -11,7 +11,15 @@ from ...compass_routing import RoutingStrategy, compass_route
 
 
 def run_explore(
-    lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, config, args, mx,
+    lib,
+    kv_gen,
+    pipeline,
+    tokenizer,
+    prompt_ids,
+    prompt_text,
+    config,
+    args,
+    mx,
 ):
     """Agentic navigation: the model explores the document using the compass.
 
@@ -25,7 +33,11 @@ def run_explore(
     strategy_arg = getattr(args, "strategy", None)
     strategy = RoutingStrategy(strategy_arg) if strategy_arg else RoutingStrategy.GEOMETRIC
     compass_scores = compass_route(
-        lib, kv_gen, prompt_ids, prompt_text, tokenizer,
+        lib,
+        kv_gen,
+        prompt_ids,
+        prompt_text,
+        tokenizer,
         model_config=pipeline.config,
         strategy=strategy,
         top_k=20,  # show top 20 on the map
@@ -44,7 +56,6 @@ def run_explore(
     compass_map = "\n".join(map_lines)
 
     # Build prompt with compass map
-    no_chat = getattr(args, "no_chat_template", False)
     system_prompt = getattr(args, "system_prompt", None)
     sys_content = system_prompt or (
         "You are exploring a document transcript. You have a compass map showing the "
@@ -96,13 +107,13 @@ def run_explore(
         generated_text += token_text
 
         # Check for <READ:NNN> pattern (flexible — 4B models may omit closing >)
-        read_match = re.search(r'<READ:(\d+)(?:>|\s|\n)', generated_text)
+        read_match = re.search(r"<READ:(\d+)(?:>|\s|\n)", generated_text)
         if read_match and len(windows_read) < max_reads:
             read_wid = int(read_match.group(1))
             if 0 <= read_wid < lib.num_windows and read_wid not in windows_read:
                 windows_read.add(read_wid)
                 # Strip the <READ:NNN> from tracked text
-                generated_text = generated_text[:read_match.start()]
+                generated_text = generated_text[: read_match.start()]
 
                 # Replay the requested window
                 w_tokens = lib.get_window_tokens(read_wid)
@@ -115,7 +126,8 @@ def run_explore(
                 print(
                     f"\n  [Read window {read_wid}: {len(w_tokens)} tokens injected "
                     f"@ pos {seq_len - len(w_tokens)}–{seq_len - 1} ({elapsed_ms:.0f}ms)]",
-                    file=sys.stderr, flush=True,
+                    file=sys.stderr,
+                    flush=True,
                 )
 
                 # Inject continuation prompt so model resumes analysis
@@ -132,7 +144,9 @@ def run_explore(
                 continue
 
         logits, gen_kv = kv_gen.step_uncompiled(
-            mx.array([[next_token]]), gen_kv, seq_len=seq_len,
+            mx.array([[next_token]]),
+            gen_kv,
+            seq_len=seq_len,
         )
         seq_len += 1
 

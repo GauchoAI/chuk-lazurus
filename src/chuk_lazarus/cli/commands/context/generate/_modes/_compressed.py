@@ -27,7 +27,11 @@ def run_compressed(lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, ar
 
     # Route: find the windows that matter
     routed_ids = compass_route(
-        lib, kv_gen, prompt_ids, prompt_text, tokenizer,
+        lib,
+        kv_gen,
+        prompt_ids,
+        prompt_text,
+        tokenizer,
         model_config=pipeline.config,
         strategy=strategy,
         top_k=top_k,
@@ -67,7 +71,10 @@ def run_compressed(lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, ar
         )
     else:
         # Compute on-the-fly (slow — ~8 minutes for 725 windows)
-        print("  No pre-stored pages — computing on-the-fly (use --store-pages during prefill)", file=sys.stderr)
+        print(
+            "  No pre-stored pages — computing on-the-fly (use --store-pages during prefill)",
+            file=sys.stderr,
+        )
         for wid in range(lib.num_windows):
             if wid in routed_set:
                 continue
@@ -85,7 +92,9 @@ def run_compressed(lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, ar
                 print(
                     f"\r  Compressing: {compressed_count}/{lib.num_windows - len(routed_set)} windows  "
                     f"{rate:.1f} w/s  ETA {eta:.0f}s\033[K",
-                    end="", file=sys.stderr, flush=True,
+                    end="",
+                    file=sys.stderr,
+                    flush=True,
                 )
         print(file=sys.stderr)
 
@@ -97,7 +106,8 @@ def run_compressed(lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, ar
     print(
         f"  Injecting {total_compressed} compressed pages "
         f"({compressed_count} windows × {n_pages} pages)",
-        file=sys.stderr, flush=True,
+        file=sys.stderr,
+        flush=True,
     )
     context_kv = kv_gen.inject_pages(all_pages, target_offsets)
     seq_len = total_compressed

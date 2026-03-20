@@ -5,24 +5,24 @@ from __future__ import annotations
 import sys
 import time
 
-from ._strategy import RoutingStrategy
 from ._bm25 import _bm25_score_windows
+from ._composite import _darkspace_score_windows, _guided_score_windows
 from ._geometric import (
     _compass_score_windows,
     _contrastive_score_windows,
     _deflection_score_windows,
     _directed_score_windows,
 )
+from ._kv_route import _kv_route_score_windows
+from ._legacy import _residual_cosine_score_windows
 from ._model_based import (
     _PREVIEW_TOKENS,
     _attention_score_windows,
     _preview_score_windows,
     _qk_score_windows,
 )
-from ._composite import _darkspace_score_windows, _guided_score_windows
-from ._legacy import _residual_cosine_score_windows
-from ._kv_route import _kv_route_score_windows
 from ._sparse import _sparse_score_windows
+from ._strategy import RoutingStrategy
 from ._temporal import _temporal_stride_windows
 
 
@@ -37,9 +37,9 @@ def compass_route(
     top_k: int = 3,
     bm25_shortlist: int = 10,
     exclude: set[int] | None = None,
-    query_residual: "mx.array | None" = None,
-    routing_layer: int = 29,
-    routing_head: int = 4,
+    query_residual=None,
+    routing_layer: int | None = None,
+    routing_head: int | None = None,
 ) -> list[int]:
     """Route a query to the most relevant windows.
 
@@ -72,8 +72,13 @@ def compass_route(
 
     elif strategy == RoutingStrategy.ATTENTION:
         scores = _attention_score_windows(lib, kv_gen, prompt_ids)
-        num_captured = len([i for i in range(len(kv_gen.backbone.adapted_layers))
-                           if kv_gen.backbone.is_global_layer(i)])
+        num_captured = len(
+            [
+                i
+                for i in range(len(kv_gen.backbone.adapted_layers))
+                if kv_gen.backbone.is_global_layer(i)
+            ]
+        )
         method_name = f"attention ({lib.num_windows} checkpoints, {num_captured} global layers)"
 
     elif strategy == RoutingStrategy.PREVIEW:
@@ -87,9 +92,7 @@ def compass_route(
     elif strategy == RoutingStrategy.HYBRID:
         # Stage 1: BM25 pre-filter
         bm25_scores = _bm25_score_windows(lib, tokenizer, prompt_text)
-        candidates = [
-            wid for wid, s in bm25_scores[:bm25_shortlist] if s > 0.0
-        ]
+        candidates = [wid for wid, s in bm25_scores[:bm25_shortlist] if s > 0.0]
 
         if len(candidates) < top_k:
             # BM25 didn't find enough — fall back to preview on all windows
@@ -97,9 +100,7 @@ def compass_route(
             method_name = f"preview (BM25 fallback, {lib.num_windows} windows)"
         else:
             # Stage 2: preview re-rank on shortlist
-            scores = _preview_score_windows(
-                lib, kv_gen, prompt_ids, candidate_wids=candidates
-            )
+            scores = _preview_score_windows(lib, kv_gen, prompt_ids, candidate_wids=candidates)
             method_name = f"hybrid (BM25→{len(candidates)}→preview)"
 
     elif strategy == RoutingStrategy.COMPASS:
@@ -115,9 +116,11 @@ def compass_route(
             if lib.is_darkspace:
                 method_name = f"darkspace (L{layer}, {pc_e}D frame bank)"
             elif lib.has_structural_basis:
-                method_name = f"compass (L{layer}, structural PC 0-{pc_s-1} removed, full dark space)"
+                method_name = (
+                    f"compass (L{layer}, structural PC 0-{pc_s - 1} removed, full dark space)"
+                )
             else:
-                method_name = f"compass (L{layer}, PC {pc_s}-{pc_e-1}, {pc_e-pc_s}D)"
+                method_name = f"compass (L{layer}, PC {pc_s}-{pc_e - 1}, {pc_e - pc_s}D)"
 
     elif strategy == RoutingStrategy.QK:
         if not lib.has_compass:
@@ -139,16 +142,22 @@ def compass_route(
             _qvec_np = None
             if query_residual is not None:
                 import numpy as np
-                _qvec_np = np.array(
-                    query_residual.reshape(-1).tolist(), dtype=np.float32
-                )
+
+                _qvec_np = np.array(query_residual.reshape(-1).tolist(), dtype=np.float32)
 
             # Both scores from model's own geometry
             compass_scores = _compass_score_windows(
-                lib, kv_gen, prompt_ids, query_vec_np=_qvec_np,
+                lib,
+                kv_gen,
+                prompt_ids,
+                query_vec_np=_qvec_np,
             )
             contrastive_scores = _contrastive_score_windows(
-                lib, kv_gen, prompt_ids, tokenizer, query_vec_np=_qvec_np,
+                lib,
+                kv_gen,
+                prompt_ids,
+                tokenizer,
+                query_vec_np=_qvec_np,
             )
 
             # Reciprocal rank fusion (RRF) — each strategy votes independently.
@@ -158,8 +167,11 @@ def compass_route(
             compass_rank = {wid: rank for rank, (wid, _) in enumerate(compass_scores)}
             contrastive_rank = {wid: rank for rank, (wid, _) in enumerate(contrastive_scores)}
             scores = [
-                (wid, 1.0 / (_RRF_K + compass_rank.get(wid, 999))
-                     + 1.0 / (_RRF_K + contrastive_rank.get(wid, 999)))
+                (
+                    wid,
+                    1.0 / (_RRF_K + compass_rank.get(wid, 999))
+                    + 1.0 / (_RRF_K + contrastive_rank.get(wid, 999)),
+                )
                 for wid in range(lib.num_windows)
             ]
             scores.sort(key=lambda x: -x[1])
@@ -196,7 +208,7 @@ def compass_route(
             scores = _guided_score_windows(lib, kv_gen, prompt_ids, tokenizer)
             layer = lib.compass_layer
             pc_s, pc_e = lib.compass_pc_start, lib.compass_pc_end
-            method_name = f"guided (compass L{layer} PC {pc_s}-{pc_e-1} × token overlap)"
+            method_name = f"guided (compass L{layer} PC {pc_s}-{pc_e - 1} × token overlap)"
 
     elif strategy == RoutingStrategy.DIRECTED:
         if not lib.has_compass:
@@ -215,10 +227,31 @@ def compass_route(
             method_name = "BM25 (fallback, no compass)"
         else:
             # L29 H4 Q·K routing — the model's own fact-addressing mechanism
-            retrieval_layer = routing_layer
-            retrieval_head = routing_head
+            # Resolve routing_layer/head from arch config if not provided
+            _rl = routing_layer
+            _rh = routing_head
+            if _rl is None or _rh is None:
+                from ......inference.context.arch_config import (
+                    ArchitectureConfig,
+                    ArchitectureNotCalibrated,
+                )
+
+                _ac = lib.arch_config
+                if _ac is None and model_config is not None:
+                    _ac = ArchitectureConfig.from_model_config(model_config)
+                if _ac is None:
+                    raise ArchitectureNotCalibrated(
+                        "unknown (no arch_config in library manifest — re-run prefill)",
+                        len(kv_gen.backbone.adapted_layers),
+                    )
+                _rl = _rl if _rl is not None else _ac.retrieval_layer
+                _rh = _rh if _rh is not None else _ac.query_head
+            retrieval_layer = _rl
+            retrieval_head = _rh
             scores = _kv_route_score_windows(
-                lib, kv_gen, prompt_ids,
+                lib,
+                kv_gen,
+                prompt_ids,
                 retrieval_layer=retrieval_layer,
                 query_head=retrieval_head,
             )
@@ -293,8 +326,10 @@ def compass_route(
     # then routed windows in ascending score, so the best match is last
     # (closest to the prompt).  This matters for sliding-window attention
     # models where non-global layers only attend to nearby positions.
-    score_map = {wid: s for wid, s in scores}
-    continuity = [wid for wid in selected if wid == last_wid and wid not in {w for w, _ in scores[:top_k]}]
+    score_map = dict(scores)
+    continuity = [
+        wid for wid in selected if wid == last_wid and wid not in {w for w, _ in scores[:top_k]}
+    ]
     routed = [wid for wid in selected if wid not in continuity]
     routed.sort(key=lambda wid: score_map.get(wid, -1e9))
     return continuity + routed

@@ -164,5 +164,10 @@ class LlamaBackboneAdapter:
     def hidden_size(self) -> int:
         return self._model.config.hidden_size
 
+    @property
+    def embed_matrix(self) -> mx.array:
+        """Token embedding weight matrix, shape (vocab_size, hidden_size)."""
+        return self._backbone.embed_tokens.weight
+
 
 __all__ = ["LlamaBackboneAdapter", "LlamaLayerAdapter"]

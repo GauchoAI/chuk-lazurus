@@ -17,9 +17,9 @@ def _calibrate_grounding(kv_gen, lib, tokenizer, compass_layer, sys_content):
     import numpy as np
 
     calibration = [
-        (170, "What sports scores were mentioned?", True),   # grounding
+        (170, "What sports scores were mentioned?", True),  # grounding
         (170, "What were the fuel pressure readings?", False),  # reaching
-        (76, "What was in the morning news?", True),          # grounding
+        (76, "What was in the morning news?", True),  # grounding
         (76, "What did the astronauts eat for breakfast?", False),  # reaching
     ]
 
@@ -79,7 +79,7 @@ def _calibrate_grounding(kv_gen, lib, tokenizer, compass_layer, sys_content):
     ground_thresh = midpoint + margin
     partial_thresh = midpoint - margin
 
-    variance_pct = (_S[0] ** 2 / np.sum(_S ** 2)) * 100
+    variance_pct = (_S[0] ** 2 / np.sum(_S**2)) * 100
     print(
         f"  Grounding calibrated: PC1={variance_pct:.0f}% variance, "
         f"G={g_mean:+.0f} R={r_mean:+.0f} sep={abs(g_mean - r_mean):.0f}",

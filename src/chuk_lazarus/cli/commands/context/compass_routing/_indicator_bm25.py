@@ -14,21 +14,48 @@ from __future__ import annotations
 
 import math
 
-
 # ── Indicator term banks (from Lazarus experiments) ────────────────────
 
 ENGAGEMENT_INDICATORS = [
-    "laughter", "music", "chuckle", "laughing", "laugh",
-    "joke", "funny", "kidding", "birthday", "congratulations",
-    "beautiful", "cool", "gee", "hey", "czar",
-    "surprised", "amazing", "incredible", "fantastic",
+    "laughter",
+    "music",
+    "chuckle",
+    "laughing",
+    "laugh",
+    "joke",
+    "funny",
+    "kidding",
+    "birthday",
+    "congratulations",
+    "beautiful",
+    "cool",
+    "gee",
+    "hey",
+    "czar",
+    "surprised",
+    "amazing",
+    "incredible",
+    "fantastic",
 ]
 
 TENSION_INDICATORS = [
-    "alarm", "abort", "warning", "fuel", "seconds",
-    "emergency", "caution", "critical", "problem", "malfunction",
-    "failure", "danger", "anomaly", "off-nominal",
-    "go/no-go", "hold", "scrub",
+    "alarm",
+    "abort",
+    "warning",
+    "fuel",
+    "seconds",
+    "emergency",
+    "caution",
+    "critical",
+    "problem",
+    "malfunction",
+    "failure",
+    "danger",
+    "anomaly",
+    "off-nominal",
+    "go/no-go",
+    "hold",
+    "scrub",
 ]
 
 
@@ -44,7 +71,7 @@ def _indicator_bm25_score_windows(
     Same algorithm as _bm25_score_windows but with indicator terms
     instead of query text. Returns (window_id, score) sorted descending.
     """
-    query_terms = set(t.lower() for t in indicators)
+    query_terms = {t.lower() for t in indicators}
     if not query_terms:
         return [(wid, 0.0) for wid in range(lib.num_windows)]
 

@@ -1,0 +1,82 @@
+{
+  "fact_F1_zarkov": {
+    "entity": "Zarkov",
+    "position": 95,
+    "seq_len": 105
+  },
+  "fact_F2_nexaris": {
+    "entity": "Nexaris",
+    "position": 87,
+    "seq_len": 97
+  },
+  "fact_F3_helion": {
+    "entity": "Helion",
+    "position": 88,
+    "seq_len": 98
+  },
+  "fact_F4_keltara": {
+    "entity": "Keltara",
+    "position": 73,
+    "seq_len": 83
+  },
+  "fact_F5_vexon": {
+    "entity": "Vexon",
+    "position": 76,
+    "seq_len": 86
+  },
+  "fact_F6_pyraxis": {
+    "entity": "Pyraxis",
+    "position": 78,
+    "seq_len": 88
+  },
+  "fact_F7_stratex": {
+    "entity": "Stratex",
+    "position": 79,
+    "seq_len": 89
+  },
+  "fact_F8_oberon": {
+    "entity": "Oberon",
+    "position": 72,
+    "seq_len": 82
+  },
+  "fact_F11_namath": {
+    "entity": "Namath",
+    "position": 86,
+    "seq_len": 96
+  },
+  "fact_F12_marchand": {
+    "entity": "Marchand",
+    "position": 81,
+    "seq_len": 91
+  },
+  "fact_F13_webb": {
+    "entity": "Webb",
+    "position": 78,
+    "seq_len": 88
+  },
+  "fact_F14_frost": {
+    "entity": "Frost",
+    "position": 86,
+    "seq_len": 96
+  },
+  "query_Q1_zarkov": {
+    "entity": "Zarkov",
+    "position": 9,
+    "seq_len": 19
+  },
+  "query_Q2_nexaris": {
+    "entity": "Nexaris",
+    "position": 8,
+    "seq_len": 18
+  },
+  "query_Q11_namath": {
+    "entity": "Namath",
+    "position": 8,
+    "seq_len": 18
+  },
+  "query_Q12_marchand": {
+    "entity": "Marchand",
+    "position": 8,
+    "seq_len": 18
+  }
+}

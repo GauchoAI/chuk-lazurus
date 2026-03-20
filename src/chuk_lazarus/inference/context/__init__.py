@@ -34,6 +34,7 @@ Usage
     )
 """
 
+from .arch_config import ArchitectureConfig, ArchitectureNotCalibrated
 from .adapters import (
     GemmaBackboneAdapter,
     GemmaLayerAdapter,
@@ -65,6 +66,15 @@ from .kv_checkpoint import (
 from .kv_generator import KVDirectGenerator, make_kv_generator
 from .protocols import ModelBackboneProtocol, TransformerLayerProtocol
 from .rs_generator import CompiledRSGenerator
+from .sparse_engine import SparseIndexEngine
+from .sparse_index import (
+    EntityExtractor,
+    FactSpan,
+    SparseEntry,
+    SparseSemanticIndex,
+    SurpriseClassifier,
+    extract_content_words,
+)
 from .unlimited_engine import (
     CheckpointStore,
     EngineStats,
@@ -75,15 +85,6 @@ from .unlimited_engine import (
     TokenArchive,
     UnlimitedContextEngine,
 )
-from .sparse_index import (
-    EntityExtractor,
-    FactSpan,
-    SparseEntry,
-    SparseSemanticIndex,
-    SurpriseClassifier,
-    extract_content_words,
-)
-from .sparse_engine import SparseIndexEngine
 from .vec_inject import (
     KV_ROUTE_FILE,
     VEC_INJECT_FILE,
@@ -99,6 +100,9 @@ from .vec_inject import (
 )
 
 __all__ = [
+    # Architecture config
+    "ArchitectureConfig",
+    "ArchitectureNotCalibrated",
     # Protocols
     "ModelBackboneProtocol",
     "TransformerLayerProtocol",
@@ -141,9 +145,11 @@ __all__ = [
     "KVCheckpoint",
     # Mode 5 — sparse semantic index
     "EntityExtractor",
+    "FactSpan",
     "SparseEntry",
     "SparseSemanticIndex",
     "SurpriseClassifier",
+    "extract_content_words",
     "SparseIndexEngine",
     # Vec injection (Experiment 2bd41b18)
     "VecInjectMatch",

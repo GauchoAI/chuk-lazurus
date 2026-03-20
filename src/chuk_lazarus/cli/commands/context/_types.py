@@ -15,9 +15,9 @@ from .._constants import ContextDefaults
 class KVectorMode(str, Enum):
     """K-vector extraction coverage mode."""
 
-    SPARSE = "sparse"    # Use sparse_index fact positions (surprise-guided)
+    SPARSE = "sparse"  # Use sparse_index fact positions (surprise-guided)
     INTERVAL = "interval"  # 8 evenly-spaced samples per window (1.6% coverage)
-    FULL = "full"        # Every position — 100% coverage (~256KB/window for 256D bf16)
+    FULL = "full"  # Every position — 100% coverage (~256KB/window for 256D bf16)
 
     def __str__(self) -> str:
         return self.value
@@ -100,6 +100,15 @@ class PrefillConfig(CommandConfig):
         default=None,
         description="Explicit layer for compass extraction (default: auto ~77% depth)",
     )
+    export_mode: bool = Field(
+        default=False,
+        description=(
+            "Export mode: skip KV checkpoint writing. Produces a portable ~33 MB index "
+            "(vec_inject + compass + tokens) instead of the full ~300 MB library. "
+            "Replay fallback uses fresh per-window prefill instead of checkpoint extension."
+        ),
+    )
+
     def _should_run(self, phase: PrefillPhase) -> bool:
         """Check if a phase should run (enabled explicitly or via ALL)."""
         return PrefillPhase.ALL in self.phases or phase in self.phases
@@ -134,7 +143,9 @@ class PrefillConfig(CommandConfig):
 
     @property
     def run_kvectors(self) -> bool:
-        return self._should_run(PrefillPhase.KVECTORS) or self._should_run(PrefillPhase.KVECTORS_FULL)
+        return self._should_run(PrefillPhase.KVECTORS) or self._should_run(
+            PrefillPhase.KVECTORS_FULL
+        )
 
     @property
     def run_kvectors_full(self) -> bool:
@@ -144,7 +155,7 @@ class PrefillConfig(CommandConfig):
     def kvector_mode(self) -> KVectorMode:
         if self.run_kvectors_full:
             return KVectorMode.FULL
-        return KVectorMode.SPARSE
+        return KVectorMode.INTERVAL
 
     @property
     def run_vec_inject(self) -> bool:
@@ -173,6 +184,7 @@ class PrefillConfig(CommandConfig):
             store_kv_full=getattr(args, "store_kv_full", False),
             phases=phases,
             compass_layer=getattr(args, "compass_layer", None),
+            export_mode=getattr(args, "mode", "standard") == "export",
         )
 
 
@@ -257,6 +269,13 @@ class GenerateResult(CommandResult, OutputMixin):
             )
         )
         return "\n".join(lines)
+
+    def to_stats_only(self) -> str:
+        """Stats line only — for paths that have already streamed the response to stdout."""
+        return self.format_field(
+            "Stats",
+            f"{self.tokens_generated} tokens generated, {self.context_tokens} tokens in context",
+        )
 
 
 __all__ = [
