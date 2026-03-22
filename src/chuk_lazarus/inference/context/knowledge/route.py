@@ -108,20 +108,35 @@ class TFIDFRouter:
         self.window_tokens = window_tokens
         self.idf = idf
 
-    def route(self, query_token_ids: list[int]) -> int | None:
-        """Return the window_id with highest TF-IDF overlap score, or None."""
+    def route(self, query_token_ids: list[int], top_k: int = 1) -> int | list[int] | None:
+        """Return the top window_id(s) by TF-IDF overlap score.
+
+        top_k=1: returns single int (backward compat). top_k>1: returns list.
+        When top_k > 1, uses adaptive selection: includes windows within
+        50% of the top score. If the top window is 10× stronger than #2,
+        only that window is returned.
+        """
         if not self.window_tokens:
-            return None
+            return None if top_k == 1 else []
         query_set = set(query_token_ids)
-        best_wid: int | None = None
-        best_score: float = 0.0
+        scored: list[tuple[float, int]] = []
         for wid, tokens in self.window_tokens.items():
             overlap = query_set & tokens
             score = sum(self.idf.get(t, 0.0) for t in overlap)
-            if score > best_score:
-                best_score = score
-                best_wid = wid
-        return best_wid
+            if score > 0:
+                scored.append((score, wid))
+        if not scored:
+            return None if top_k == 1 else []
+        scored.sort(reverse=True)
+        if top_k == 1:
+            return scored[0][1]
+
+        # Adaptive: include windows within 50% of the top score
+        top_score = scored[0][0]
+        threshold = top_score * 0.5
+        adaptive = [wid for s, wid in scored if s >= threshold]
+        # Cap at top_k
+        return adaptive[:top_k]
 
     def route_with_score(self, query_token_ids: list[int]) -> tuple[int | None, float]:
         """Return (window_id, score) for best match."""

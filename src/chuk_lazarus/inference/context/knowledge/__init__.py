@@ -1,24 +1,13 @@
-"""Knowledge store — the production path for document understanding.
-
-Build once, query fast. Three entry points:
-
-    streaming_prefill()              — read document, extract injection entries
-    KnowledgeStore.route()           — TF-IDF / keyword → window index
-    generate_with_injection()        — query + entries → answer
-
-Usage
------
-    from chuk_lazarus.inference.context.knowledge import (
-        KnowledgeStore,
-        streaming_prefill,
-        generate_with_injection,
-        ArchitectureConfig,
-    )
-"""
+"""Knowledge store — the production path for document understanding."""
 
 from .build import streaming_prefill
 from .config import ArchitectureConfig, ArchitectureNotCalibrated
-from .inject import generate_with_injection, inject_1d
+from .inject import (
+    extract_donor_residual,
+    generate_with_injection,
+    generate_with_persistent_injection,
+    inject_1d,
+)
 from .route import (
     KeywordRouter,
     SparseKeywordIndex,
@@ -36,8 +25,10 @@ __all__ = [
     "KnowledgeStore",
     "SparseKeywordIndex",
     "TFIDFRouter",
+    "extract_donor_residual",
     "extract_window_keywords",
     "generate_with_injection",
+    "generate_with_persistent_injection",
     "inject_1d",
     "streaming_prefill",
 ]

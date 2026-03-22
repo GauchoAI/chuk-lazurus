@@ -63,6 +63,13 @@ def register_knowledge_parsers(subparsers):
         default=0.0,
         help="Sampling temperature (default: 0.0 = greedy)",
     )
+    kn_query.add_argument(
+        "--top-k",
+        type=int,
+        default=3,
+        dest="top_k",
+        help="Number of windows for context (default: 3, adaptive)",
+    )
     kn_query.set_defaults(func=lambda args: asyncio.run(_run_query(args)))
 
     # knowledge chat

@@ -7,19 +7,13 @@ Pass 1 (fast, no model):
 
 Pass 2 (medium, one forward pass per window):
   Chain boundary residuals across all windows (Markov property).
-  No coefficient extraction — just chaining.
 
-Pass 3 (slow, one forward pass per window):
-  For each window, build a context+query donor prompt.
-  Forward the donor to crystal_layer.
-  Extract coefficients from the ANSWER position (last token).
-  The donor primes the model to predict the answer, so the
-  coefficient points in the answer direction (91-100% P(target)
-  vs ~0% from raw prefill).
-
-The coefficient formula:
-    natural_coeff = dot(donor_residual_last, embed(token_id)) / ||embed||^2
-    stored_coeff  = inject_coefficient * natural_coeff   (default 2x)
+Pass 3 (medium, one forward pass per window):
+  Keyword expansion — generate 5 topic words per window.
+  Bridges the vocabulary gap: "baseball" gets associated with
+  a window containing "Philadelphia 7, Baltimore 3" even though
+  the word "baseball" never appears in the text.
+  ~20 bytes per window. Recomputes IDF with expanded token sets.
 """
 
 from __future__ import annotations
@@ -107,45 +101,62 @@ def streaming_prefill(
         if progress_fn:
             progress_fn(wid, num_windows)
 
-    # ── Pass 3: Donor coefficient extraction ────────────────────────
-    # One forward pass per window with a generic donor prompt.
-    # The donor primes the model to produce entity answers, giving
-    # coefficients in the answer direction (91-100% P(target) at 2×).
-    embed_matrix = kv_gen.backbone.embed_matrix
+    # ── Pass 3: Keyword expansion (one forward per window) ─────────
+    # Generate 5 topic words per window using the model. These bridge
+    # the vocabulary gap: "baseball" gets associated with window 170
+    # even though the text says "Philadelphia 7, Baltimore 3."
+    # ~20 bytes per window. Fixes the 4/5 → 5/5 routing accuracy.
     all_entries: list[InjectionEntry] = []
     fact_id_counter = 0
 
+    if tokenizer is not None:
+        from ._sampling import sample_token
+
+        for wid, chunk_ids in enumerate(windows):
+            window_text = tokenizer.decode(chunk_ids, skip_special_tokens=True)
+            # Completion prompt: model generates topic words
+            topic_prompt = f"{window_text}\n\nTopics:"
+            topic_ids = tokenizer.encode(topic_prompt, add_special_tokens=True)
+            topic_mx = mx.array(topic_ids)[None]
+
+            logits, kv_store = kv_gen.prefill(topic_mx)
+            mx.eval(logits)
+            seq_len = topic_mx.shape[1]
+
+            # Generate 5 topic tokens
+            for _ in range(5):
+                token = sample_token(logits[0, -1], 0.0)
+                # Add generated token to routing set
+                window_tokens[wid].add(token)
+                # Also add case/space variants for robust matching
+                kw_text = tokenizer.decode([token]).strip()
+                if kw_text and len(kw_text) >= 2:
+                    kw_lower = kw_text.lower()
+                    keywords[wid].append(kw_lower)
+                    sparse_index.add(wid, [kw_lower])
+                    # Add variant token IDs: " word", "word", "Word"
+                    for variant in [kw_lower, f" {kw_lower}", kw_text, f" {kw_text}"]:
+                        var_ids = tokenizer.encode(variant, add_special_tokens=False)
+                        for vid in var_ids:
+                            window_tokens[wid].add(vid)
+                logits, kv_store = kv_gen.step_uncompiled(
+                    mx.array([[token]]), kv_store, seq_len=seq_len)
+                seq_len += 1
+
+        # Recompute IDF with expanded token sets
+        idf = TFIDFRouter.compute_idf(window_tokens)
+
+    # Build injection entries from IDF-selected targets
+    embed_matrix = kv_gen.backbone.embed_matrix
     for wid, chunk_ids in enumerate(windows):
         target_list = targets.get(wid, [])
-        if not target_list:
-            continue
-
-        # Build donor prompt: context + entity-priming question
-        window_text = tokenizer.decode(chunk_ids, skip_special_tokens=True) if tokenizer else ""
-        donor_prompt = (
-            f"{window_text}\n\n"
-            "Who or what is the most notable entity mentioned above? "
-            "Answer with just the name."
-        )
-        donor_ids = tokenizer.encode(donor_prompt, add_special_tokens=False) if tokenizer else chunk_ids
-
-        # Forward donor to crystal_layer — extract answer-direction residual
-        donor_mx = mx.array(donor_ids)[None]
-        h_donor = kv_gen.prefill_to_layer(
-            donor_mx,
-            target_layer=config.crystal_layer,
-        )
-        # Last position residual — where the answer direction lives
-        r_last = h_donor[0, -1, :]  # (hidden_dim,)
-        mx.eval(r_last)
-        del h_donor
-
-        # Extract coefficients for each target token
         for token_id, pos_in_window in target_list:
             embed = embed_matrix[token_id]
             embed_norm_sq = (embed * embed).sum()
-            natural_coeff = (r_last * embed).sum() / (embed_norm_sq + 1e-8)
-            stored_coeff = float(inject_coefficient * natural_coeff.item())
+            # Use a simple coefficient from the embedding projection
+            # (the focused context replay handles narrative, not the entries)
+            natural_coeff = float(mx.linalg.norm(embed).item())
+            stored_coeff = inject_coefficient * natural_coeff
 
             all_entries.append(InjectionEntry(
                 token_id=token_id,

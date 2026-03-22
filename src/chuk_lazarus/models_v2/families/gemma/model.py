@@ -97,9 +97,15 @@ class GemmaAttention(nn.Module):
         # Determine if this is a sliding window layer
         self.is_sliding = config.is_sliding_layer(layer_idx)
 
-        # RoPE with appropriate base frequency
+        # RoPE with appropriate base frequency and scaling
         rope_base = config.rope_local_base_freq if self.is_sliding else config.rope_theta
-        self.rope = nn.RoPE(dims=self.head_dim, base=rope_base, traditional=False)
+        # Global layers apply rope_scaling (e.g., factor=8 → scale=0.125)
+        rope_scale = 1.0
+        if not self.is_sliding and config.rope_scaling is not None:
+            factor = config.rope_scaling.get("factor", 1.0)
+            if factor > 0:
+                rope_scale = 1.0 / factor
+        self.rope = nn.RoPE(dims=self.head_dim, base=rope_base, traditional=False, scale=rope_scale)
 
     def __call__(
         self,

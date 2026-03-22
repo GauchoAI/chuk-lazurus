@@ -175,6 +175,13 @@ class KnowledgeStore:
         wid = self._route_keyword(query_text)
         return wid, (1.0 if wid is not None else 0.0)
 
+    def route_top_k(self, query_text: str, tokenizer, k: int = 3) -> list[int]:
+        """Return top-k window IDs by TF-IDF score."""
+        router = self._get_tfidf_router()
+        query_ids = tokenizer.encode(query_text, add_special_tokens=False)
+        result = router.route(query_ids, top_k=k)
+        return result if isinstance(result, list) else ([result] if result is not None else [])
+
     def _route_tfidf(self, query_text: str, tokenizer) -> int | None:
         router = self._get_tfidf_router()
         query_ids = tokenizer.encode(query_text, add_special_tokens=False)
@@ -193,6 +200,13 @@ class KnowledgeStore:
         if self._keyword_router is None:
             self._keyword_router = KeywordRouter(self.keywords)
         return self._keyword_router
+
+    # ── Window access ─────────────────────────────────────────────────
+
+    def get_window_text(self, window_id: int, tokenizer) -> str:
+        """Decode a window's tokens back to text for donor construction."""
+        token_list = self.window_token_lists.get(window_id, [])
+        return tokenizer.decode(token_list, skip_special_tokens=True)
 
     # ── Entry access ──────────────────────────────────────────────────
 
