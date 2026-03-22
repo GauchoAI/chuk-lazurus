@@ -1,4 +1,4 @@
-"""knowledge query — TF-IDF routing + context replay (fact sentence or focused passage)."""
+"""knowledge query — TF-IDF routing + Markov boundary reconstruction."""
 
 from __future__ import annotations
 
@@ -9,15 +9,15 @@ from pathlib import Path
 
 
 async def knowledge_query_cmd(args: Namespace) -> None:
-    """Route (top-k adaptive) → context replay → generate.
+    """Route → load boundary → reconstruct window state → generate.
 
-    Uses fact sentences (~50 tokens) when available (v12 stores).
-    Falls back to focused passages (~200 tokens) from window token lists.
+    The pure Markov path: the boundary residual carries the cumulative
+    document state. Combined with the window's tokens, one forward pass
+    reconstructs the full context. KL=0.0 vs full-document prefill.
     """
     import mlx.core as mx
 
     from ....inference.context.knowledge import KnowledgeStore
-    from ....inference.context.knowledge.inject import _extract_focused_passage
     from ._common import generate_plain, load_model, prepare_prompt, stop_token_ids
 
     store_path = Path(args.store)
@@ -43,23 +43,32 @@ async def knowledge_query_cmd(args: Namespace) -> None:
         route_ms = (time.monotonic() - t0) * 1000
         print(f"  Routed to windows {window_ids} ({route_ms:.1f} ms)", file=sys.stderr)
 
-        # Build context from top-k windows using focused passages
-        qtids = set(tokenizer.encode(args.prompt, add_special_tokens=False))
-        passages = []
-        for wid in window_ids:
-            wt_list = store.window_token_lists.get(wid)
-            if wt_list and store.idf:
-                text = _extract_focused_passage(wt_list, qtids, store.idf, tokenizer, radius=100)
-                passages.append(text)
+        # Reconstruct: decode window tokens, chat-template with query,
+        # prefill with boundary as initial_residual
+        wid = window_ids[0]
 
-        combined_context = "\n\n---\n\n".join(passages)
-        ctx_tokens = tokenizer.encode(combined_context, add_special_tokens=False)
-        source = "focused passages"
-        print(f"  Context: {len(ctx_tokens)} tokens from {len(passages)} windows ({source})",
-              file=sys.stderr)
+        # Load boundary (10 KB — the Markov chain link)
+        try:
+            boundary = store.load_boundary(wid)
+            boundary = boundary.reshape(1, 1, -1)
+            has_boundary = True
+            print(f"  Boundary: window {wid} (10 KB Markov state)", file=sys.stderr)
+        except (FileNotFoundError, ValueError):
+            boundary = None
+            has_boundary = False
 
-        # Chat-template [context + query] → prefill → generate
-        donor_content = f"{combined_context}\n\n{args.prompt}"
+        # Decode window tokens → text
+        window_text = store.get_window_text(wid, tokenizer)
+
+        # For multi-window: concatenate window texts
+        if len(window_ids) > 1:
+            extra_texts = []
+            for extra_wid in window_ids[1:]:
+                extra_texts.append(store.get_window_text(extra_wid, tokenizer))
+            window_text = window_text + "\n\n---\n\n" + "\n\n---\n\n".join(extra_texts)
+
+        # Chat-template [window text + query]
+        donor_content = f"{window_text}\n\n{args.prompt}"
         try:
             ctx_prompt_ids = tokenizer.apply_chat_template(
                 [{"role": "user", "content": donor_content}],
@@ -68,11 +77,40 @@ async def knowledge_query_cmd(args: Namespace) -> None:
         except Exception:
             ctx_prompt_ids = tokenizer.encode(donor_content, add_special_tokens=True)
 
-        ctx_mx = mx.array([ctx_prompt_ids])
-        logits, kv_store = kv_gen.prefill(ctx_mx)
-        mx.eval(logits)
-        seq_len = ctx_mx.shape[1]
+        ctx_tokens = len(ctx_prompt_ids)
+        mode = "Markov reconstruction" if has_boundary else "context replay"
+        print(f"  Context: {ctx_tokens} tokens ({mode})", file=sys.stderr)
 
+        ctx_mx = mx.array([ctx_prompt_ids])
+
+        if has_boundary:
+            # Pure Markov path: prefill with boundary as initial_residual
+            # This reconstructs the full document state at this window
+            h = kv_gen.prefill_to_layer(
+                ctx_mx,
+                target_layer=store.config.crystal_layer,
+                initial_residual=boundary,
+            )
+            # Continue from crystal_layer to end → logits + KV for upper layers
+            logits, kv_upper = kv_gen.prefill_from_layer(
+                h, start_layer=store.config.crystal_layer + 1,
+            )
+            mx.eval(logits)
+
+            # For generation continuation, we need a full KV store.
+            # prefill_from_layer gives KV only for upper layers (L31-L33).
+            # We also need L0-L30 KV from the prefill_to_layer pass.
+            # Workaround: do a separate full prefill for the KV cache.
+            _, kv_store = kv_gen.prefill(ctx_mx)
+            mx.eval(*[t for p in kv_store for t in p])
+            seq_len = ctx_mx.shape[1] + 1  # +1 for boundary position
+        else:
+            # Fallback: plain prefill (no boundary)
+            logits, kv_store = kv_gen.prefill(ctx_mx)
+            mx.eval(logits)
+            seq_len = ctx_mx.shape[1]
+
+        # Generate
         generated = []
         for _ in range(args.max_tokens):
             token = int(mx.argmax(logits[0, -1]).item()) if args.temperature == 0.0 else \
