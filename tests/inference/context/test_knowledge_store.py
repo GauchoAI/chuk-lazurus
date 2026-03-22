@@ -241,13 +241,13 @@ class TestKnowledgeStore:
         manifest = json.loads((out / "manifest.json").read_text())
         assert manifest["num_entries"] == 4
         assert manifest["num_windows"] == 2
-        assert manifest["version"] == 10
+        assert manifest["version"] == 12
 
     def test_log_stats(self, capsys):
         store = self._make_store(n_windows=2, entries_per_window=2)
         store.log_stats(file=sys.stdout)
         captured = capsys.readouterr()
-        assert "KnowledgeStore v10" in captured.out
+        assert "KnowledgeStore v12" in captured.out
         assert "4 entries" in captured.out
 
     def test_v9_store_detected(self, tmp_path):

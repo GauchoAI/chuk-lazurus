@@ -35,7 +35,9 @@ WINDOW_TOKEN_LISTS_FILE = "window_token_lists.npz"
 IDF_FILE = "idf.json"
 KEYWORDS_FILE = "keywords.json"
 BOUNDARY_RESIDUAL_FILE = "boundary_residual.npy"
-STORE_VERSION = 10
+BOUNDARIES_DIR = "boundaries"
+RESIDUALS_DIR = "residuals"
+STORE_VERSION = 12
 
 # ── v9 file constants (for detection) ────────────────────────────────
 _V9_PASSAGES_FILE = "passages.npz"
@@ -118,11 +120,20 @@ class KnowledgeStore:
     keywords: dict[int, list[str]]
     """Keyword phrases per window (for keyword routing)."""
 
-    config: ArchitectureConfig
+    boundaries: dict[int, mx.array] = field(default_factory=dict)
+    """Boundary residual per window (hidden_dim,) — the Markov chain."""
+
+    config: ArchitectureConfig = field(default=None)
     """Architecture parameters used during build."""
 
     boundary_residual: mx.array | None = None
     """Final boundary residual for chained prefill resume: (1, 1, hidden_dim)."""
+
+    residual_streams: dict[int, mx.array] | None = field(default=None, repr=False)
+    """L30 residual streams per window (set during build, not persisted in memory)."""
+
+    _store_path: Path | None = field(default=None, repr=False)
+    """Path to store on disk (for lazy residual loading)."""
 
     num_windows: int = 0
     """Number of windows in the source document."""
@@ -202,6 +213,53 @@ class KnowledgeStore:
         return self._keyword_router
 
     # ── Window access ─────────────────────────────────────────────────
+
+    def load_boundary(self, window_id: int) -> mx.array:
+        """Load boundary residual for a window (the Markov chain link).
+
+        Returns (hidden_dim,) float32 — the cumulative state of windows 0..wid.
+        Combined with token IDs, one forward pass reconstructs the full state.
+        """
+        if window_id in self.boundaries:
+            return self.boundaries[window_id]
+        if self._store_path is None:
+            raise ValueError("No store path — boundaries not available")
+        bnd_path = self._store_path / BOUNDARIES_DIR / f"window_{window_id:03d}.npy"
+        if not bnd_path.exists():
+            raise FileNotFoundError(f"Boundary not found: {bnd_path}")
+        np_bnd = np.load(str(bnd_path))
+        bnd = mx.array(np_bnd, dtype=mx.float32)
+        mx.eval(bnd)
+        return bnd
+
+    def load_residual(self, window_id: int) -> mx.array:
+        """Load L30 residual stream for a window (lazy, from disk).
+
+        Returns (seq_len, hidden_dim) bfloat16 — the full L30 state.
+        For patch_all_positions injection: replaces recipient hidden state.
+        """
+        # Check in-memory first (during build)
+        if self.residual_streams and window_id in self.residual_streams:
+            return self.residual_streams[window_id]
+
+        # Load from disk
+        if self._store_path is None:
+            raise ValueError("No store path — residuals not available")
+        res_path = self._store_path / RESIDUALS_DIR / f"window_{window_id:03d}.npy"
+        if not res_path.exists():
+            raise FileNotFoundError(f"Residual not found: {res_path}")
+        np_stream = np.load(str(res_path))
+        stream = mx.array(np_stream, dtype=mx.bfloat16)
+        mx.eval(stream)
+        return stream
+
+    def has_residuals(self) -> bool:
+        """Check if residual streams are available (on disk or in memory)."""
+        if self.residual_streams:
+            return True
+        if self._store_path and (self._store_path / RESIDUALS_DIR).exists():
+            return True
+        return False
 
     def get_window_text(self, window_id: int, tokenizer) -> str:
         """Decode a window's tokens back to text for donor construction."""
@@ -317,10 +375,29 @@ class KnowledgeStore:
         kw_serializable = {str(k): v for k, v in self.keywords.items()}
         (path / KEYWORDS_FILE).write_text(json.dumps(kw_serializable, indent=1) + "\n")
 
+        # Boundaries (Markov chain — 10 KB each)
+        if self.boundaries:
+            bnd_dir = path / BOUNDARIES_DIR
+            bnd_dir.mkdir(exist_ok=True)
+            for wid, bnd in self.boundaries.items():
+                bnd_np = np.array(bnd.tolist(), dtype=np.float32)
+                np.save(str(bnd_dir / f"window_{wid:03d}.npy"), bnd_np)
+
         # Boundary residual
         if self.boundary_residual is not None:
             residual_np = np.array(self.boundary_residual.tolist(), dtype=np.float32)
             np.save(str(path / BOUNDARY_RESIDUAL_FILE), residual_np)
+
+        # Residual streams (L30, bfloat16)
+        has_residuals = False
+        if self.residual_streams:
+            res_dir = path / RESIDUALS_DIR
+            res_dir.mkdir(exist_ok=True)
+            for wid, stream in self.residual_streams.items():
+                # stream: (seq_len, hidden_dim) — save as float16 (closest to bfloat16)
+                stream_np = np.array(stream.tolist(), dtype=np.float16)
+                np.save(str(res_dir / f"window_{wid:03d}.npy"), stream_np)
+            has_residuals = True
 
         # Manifest
         manifest = {
@@ -332,6 +409,7 @@ class KnowledgeStore:
             "crystal_layer": self.config.crystal_layer,
             "window_size": self.config.window_size,
             "arch_config": self.config.to_dict(),
+            "has_residuals": has_residuals,
         }
         (path / MANIFEST_FILE).write_text(json.dumps(manifest, indent=2) + "\n")
 
@@ -393,7 +471,7 @@ class KnowledgeStore:
                 boundary_residual = boundary_residual.reshape(1, 1, -1)
             mx.eval(boundary_residual)
 
-        return cls(
+        store = cls(
             entries=entries,
             window_tokens=window_tokens,
             window_token_lists=window_token_lists,
@@ -404,6 +482,8 @@ class KnowledgeStore:
             num_windows=manifest.get("num_windows", 0),
             num_tokens=manifest.get("num_tokens", 0),
         )
+        store._store_path = path
+        return store
 
     def log_stats(self, file=sys.stderr) -> None:
         entry_bytes = len(self.entries) * 14  # 14 bytes per entry (position_in_window is uint16)

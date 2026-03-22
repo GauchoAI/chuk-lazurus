@@ -1,19 +1,18 @@
 """Build a knowledge store from a document.  Three-pass.
 
 Pass 1 (fast, no model):
-  Tokenise all windows → unique token sets.
+  Tokenise into 512-token windows.
   Compute IDF across all windows.
-  Select target tokens per window (rarest by IDF, dynamic count).
+  Store unique token IDs per window (routing) + ordered lists (reconstruction).
 
-Pass 2 (medium, one forward pass per window):
-  Chain boundary residuals across all windows (Markov property).
+Pass 2 (one forward per window):
+  Chain boundary residuals (Markov property).
+  Each boundary carries the cumulative state of all prior windows.
+  Combined with token IDs, one forward pass reconstructs full state. KL=0.0.
 
-Pass 3 (medium, one forward pass per window):
-  Keyword expansion — generate 5 topic words per window.
-  Bridges the vocabulary gap: "baseball" gets associated with
-  a window containing "Philadelphia 7, Baltimore 3" even though
-  the word "baseball" never appears in the text.
-  ~20 bytes per window. Recomputes IDF with expanded token sets.
+Pass 3 (one generation per window):
+  Model-native keyword expansion (5 topic tokens per window).
+  Bridges vocabulary gaps: "baseball" for a window with "Philadelphia 7, Baltimore 3".
 """
 
 from __future__ import annotations
@@ -82,9 +81,12 @@ def streaming_prefill(
     for wid, chunk_ids in enumerate(windows):
         targets[wid] = _select_targets(chunk_ids, idf, min_k=min_entries)
 
-    # ── Pass 2: Chain boundary residuals (one forward per window) ────
+    # ── Pass 2: Chain boundary residuals (the Markov chain) ────────────
+    # Each boundary carries the cumulative state of all prior windows.
+    # Combined with token IDs, one forward pass reconstructs full state.
     boundary_residual: mx.array | None = None
-    boundary_residuals: dict[int, mx.array | None] = {}
+    boundaries: dict[int, mx.array] = {}
+    residual_streams: dict[int, mx.array] = {}
 
     for wid, chunk_ids in enumerate(windows):
         w_ids = mx.array(chunk_ids)[None]
@@ -93,9 +95,18 @@ def streaming_prefill(
             target_layer=config.crystal_layer,
             initial_residual=boundary_residual,
         )
+
+        # Store boundary for this window (the Markov chain link)
         boundary_residual = h[:, -1:, :]
         mx.eval(boundary_residual)
-        boundary_residuals[wid] = boundary_residual
+        boundaries[wid] = boundary_residual[0, 0, :]  # (hidden_dim,) float32
+
+        # Optional: store full L30 residual stream for pre-cache (Mode B)
+        offset = 1 if wid > 0 else 0  # skip chained boundary position
+        stream = h[0, offset:, :]
+        residual_streams[wid] = stream
+        mx.eval(stream)
+
         del h
 
         if progress_fn:
@@ -169,6 +180,8 @@ def streaming_prefill(
 
     return KnowledgeStore(
         entries=all_entries,
+        boundaries=boundaries,
+        residual_streams=residual_streams,
         window_tokens=window_tokens,
         window_token_lists=window_token_lists,
         idf=idf,

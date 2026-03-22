@@ -4,7 +4,9 @@ from .build import streaming_prefill
 from .config import ArchitectureConfig, ArchitectureNotCalibrated
 from .inject import (
     extract_donor_residual,
+    generate_with_boundary,
     generate_with_injection,
+    generate_with_markov_injection,
     generate_with_persistent_injection,
     inject_1d,
 )

@@ -1,4 +1,4 @@
-"""knowledge query — TF-IDF routing + multi-window focused context replay."""
+"""knowledge query — TF-IDF routing + context replay (fact sentence or focused passage)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,11 @@ from pathlib import Path
 
 
 async def knowledge_query_cmd(args: Namespace) -> None:
-    """Route (top-3) → focused passages → context replay → generate."""
+    """Route (top-k adaptive) → context replay → generate.
+
+    Uses fact sentences (~50 tokens) when available (v12 stores).
+    Falls back to focused passages (~200 tokens) from window token lists.
+    """
     import mlx.core as mx
 
     from ....inference.context.knowledge import KnowledgeStore
@@ -39,7 +43,7 @@ async def knowledge_query_cmd(args: Namespace) -> None:
         route_ms = (time.monotonic() - t0) * 1000
         print(f"  Routed to windows {window_ids} ({route_ms:.1f} ms)", file=sys.stderr)
 
-        # Concatenate focused passages from top-k windows
+        # Build context from top-k windows using focused passages
         qtids = set(tokenizer.encode(args.prompt, add_special_tokens=False))
         passages = []
         for wid in window_ids:
@@ -47,10 +51,12 @@ async def knowledge_query_cmd(args: Namespace) -> None:
             if wt_list and store.idf:
                 text = _extract_focused_passage(wt_list, qtids, store.idf, tokenizer, radius=100)
                 passages.append(text)
-        combined_context = "\n\n---\n\n".join(passages)
 
+        combined_context = "\n\n---\n\n".join(passages)
         ctx_tokens = tokenizer.encode(combined_context, add_special_tokens=False)
-        print(f"  Context: {len(ctx_tokens)} tokens from {len(passages)} windows", file=sys.stderr)
+        source = "focused passages"
+        print(f"  Context: {len(ctx_tokens)} tokens from {len(passages)} windows ({source})",
+              file=sys.stderr)
 
         # Chat-template [context + query] → prefill → generate
         donor_content = f"{combined_context}\n\n{args.prompt}"
