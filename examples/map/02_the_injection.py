@@ -3,10 +3,10 @@
 ACT 5 — The Injection
 
 Four passes. Each removes one thing:
-  1. Full context  (tokens + residual)    → Volt 100%
+  1. Full context  (tokens + residual)    → Volt 96.9%
   2. No context    (no tokens, no map)    → guessing
-  3. Residual only (no tokens, full map)  → Volt 100%
-  4. 12 bytes only (no tokens, 1D map)    → Volt 100%
+  3. Residual only (no tokens, full map)  → Volt 93.4%
+  4. 8 bytes only  (no tokens, 1D map)    → Volt 100%
 
 Usage:
     uv run python examples/map/02_the_injection.py
@@ -16,12 +16,12 @@ import time
 
 import mlx.core as mx
 from chuk_lazarus.inference import UnifiedPipeline
-from chuk_lazarus.inference.context.vec_inject._primitives import vec_inject
 
 # ── Config ────────────────────────────────────────────────────
 MODEL = "google/gemma-3-4b-it"
 RETRIEVAL_LAYER = 29
 INJECT_LAYER = 30
+INJECT_COEFFICIENT = 2.0  # Phase transition at 1.5×, robust at 2×
 
 QUERY = "Zarkov Industries was founded in the city of"
 DOCUMENT = (
@@ -84,12 +84,28 @@ def layer_bar(i, n_layers, token, prob, marker=""):
     )
 
 
+def inject_1d(h, token_id, coefficient, embed_matrix):
+    """
+    1D subspace injection. The validated delivery mechanism.
+
+    Replaces the component of h in the direction of embed(token_id)
+    with the stored coefficient. 8 bytes: token_id (4B) + coefficient (4B).
+
+    h += coefficient * embed(token_id) / ||embed(token_id)||²
+    """
+    embed = embed_matrix[token_id].astype(mx.float32)
+    embed_norm_sq = mx.sum(embed * embed)
+    direction = embed / embed_norm_sq
+    h = h.astype(mx.float32) + coefficient * direction
+    return h.astype(mx.bfloat16) if h.dtype == mx.bfloat16 else h
+
+
 def forward_show(backbone, input_ids_list, tokenizer, inject_at=None,
                  inject_fn=None, swap_residual=None, delay=0.12):
     """Forward pass with layer-by-layer readout.
 
-    inject_fn(h) -> h    : additive injection on last position at inject_at
-    swap_residual         : full residual replacement (all positions) at inject_at
+    inject_fn(h) -> h    : 1D injection on last position at inject_at
+    swap_residual         : full residual replacement (last position) at inject_at
     """
     B, S = 1, len(input_ids_list)
     input_ids = mx.array(input_ids_list)[None]
@@ -97,7 +113,6 @@ def forward_show(backbone, input_ids_list, tokenizer, inject_at=None,
     n_layers = len(backbone.adapted_layers)
 
     for i, layer in enumerate(backbone.adapted_layers):
-        did_inject = False
         marker = ""
 
         if i == inject_at:
@@ -105,14 +120,12 @@ def forward_show(backbone, input_ids_list, tokenizer, inject_at=None,
                 # Full residual swap — last position only from donor
                 donor_last = swap_residual[:, -1:, :]
                 h = mx.concatenate([h[:, :-1, :], donor_last], axis=1)
-                did_inject = True
                 marker = f" {YELLOW}← residual (5,120 bytes){RESET}"
             elif inject_fn is not None:
                 h_last = h[:, -1:, :]
                 h_last = inject_fn(h_last)
                 h = mx.concatenate([h[:, :-1, :], h_last], axis=1)
-                did_inject = True
-                marker = f" {YELLOW}← 12 bytes{RESET}"
+                marker = f" {YELLOW}← 8 bytes{RESET}"
 
         h = run_layer(backbone, layer, i, h, B, S)
         mx.eval(h)
@@ -120,7 +133,7 @@ def forward_show(backbone, input_ids_list, tokenizer, inject_at=None,
         token, prob = read_prediction_at(backbone, h, tokenizer)
         print(layer_bar(i, n_layers, token, prob, marker=marker))
 
-        if did_inject:
+        if marker:
             time.sleep(delay * 4)
         else:
             time.sleep(delay)
@@ -154,11 +167,15 @@ def main():
     )
     residual_bytes = donor_h[:, -1:, :].size * 2  # bfloat16
 
-    # 12-byte injection: coefficient from donor, raw embed for vec_inject
+    # 8-byte injection: token_id (4B) + coefficient (4B)
     r_last = donor_h[0, -1, :].astype(mx.float32)
     e_scaled = backbone.embed(mx.array([[answer_id]]))[0, 0, :].astype(mx.float32)
     mx.eval(r_last, e_scaled)
-    coefficient = float(mx.sum(r_last * e_scaled).item())
+
+    # Natural coefficient × 2 (phase transition at 1.5×, robust at 2×)
+    natural_coeff = float(mx.sum(r_last * e_scaled).item())
+    coefficient = INJECT_COEFFICIENT * natural_coeff
+
     embed_matrix = pipeline.model.model.embed_tokens.weight
 
     results = []
@@ -215,21 +232,27 @@ def main():
 
     print()
     print(f"  {BOLD}Prediction:{RESET}  {CYAN}{tok}{RESET}  ({prob:.1%})")
+    print(f"  {DIM}The map works. But the full residual fights the query's structure.{RESET}")
     results.append((tok, prob))
 
     # ══════════════════════════════════════════════════════════
-    # Pass 4: 12 bytes — one direction
+    # Pass 4: 8 bytes — one direction, 2× coefficient
     # ══════════════════════════════════════════════════════════
     print()
     time.sleep(1.0)
-    print(f"  {BOLD}Pass 4 — 12 bytes{RESET}")
-    print(f"  {YELLOW}token={repr(answer_str)}  coefficient={coefficient:.1f}{RESET}")
-    print(f"  {DIM}Same bare query. 12 bytes injected at L{INJECT_LAYER}.{RESET}")
+    print(f"  {BOLD}Pass 4 — 8 bytes{RESET}")
+    print(
+        f"  {YELLOW}token={repr(answer_str)}  "
+        f"coefficient={coefficient:.1f}  "
+        f"({INJECT_COEFFICIENT}× natural){RESET}"
+    )
+    print(f"  {DIM}Same bare query. 8 bytes injected at L{INJECT_LAYER}.{RESET}")
+    print(f"  {DIM}token_id: 4 bytes. coefficient: 4 bytes. That's it.{RESET}")
     print()
     time.sleep(0.5)
 
     def inject_fn(h):
-        return vec_inject(h, answer_id, coefficient, embed_matrix)
+        return inject_1d(h, answer_id, coefficient, embed_matrix)
 
     logits = forward_show(
         backbone, query_ids, tokenizer,
@@ -247,15 +270,16 @@ def main():
         "Full context (tokens + residual)",
         "No context   (blank map)",
         f"Residual     ({residual_bytes:,} bytes)",
-        "12 bytes     (1 direction)",
+        "8 bytes      (1 direction, 2×)",
     ]
     for label, (t, p) in zip(labels, results):
         mark = "✓" if "volt" in t.lower() or "Volt" in t else "✗"
         colour = CYAN if mark == "✓" else GREEN
         print(f"  {label:<38s} → {colour}{t:<8s}{RESET} {p:5.1%}  {mark}")
     print()
-    print(f"  {residual_bytes:,} bytes → 12 bytes. Same answer.")
-    print(f"  99.8% of the residual is scaffolding. The fact is one scalar.")
+    print(f"  {residual_bytes:,} bytes → 8 bytes. Better answer.")
+    print(f"  99.8% of the residual is scaffolding.")
+    print(f"  The fact is one scalar in one direction. 8 bytes.")
     print()
 
 

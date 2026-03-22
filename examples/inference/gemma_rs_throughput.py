@@ -208,22 +208,9 @@ def main():
 
     std_model, rs_model, config = load_models(args.model)
 
-    import importlib.util
-    import sys as _sys
+    from chuk_lazarus.inference.context.rs_generator import CompiledRSGenerator
 
-    _inf = Path(__file__).parents[2] / "src/chuk_lazarus/inference"
-
-    def _load(dotted, fpath):
-        spec = importlib.util.spec_from_file_location(dotted, fpath)
-        mod = importlib.util.module_from_spec(spec)
-        _sys.modules[dotted] = mod
-        spec.loader.exec_module(mod)
-        return mod
-
-    rs_gen_mod = _load(
-        "chuk_lazarus.inference.context.rs_generator", _inf / "context" / "rs_generator.py"
-    )
-    rs_gen = rs_gen_mod.CompiledRSGenerator(rs_model, config)
+    rs_gen = CompiledRSGenerator(rs_model, config)
 
     # Warm up / compile
     print("\n  Warming up / compiling...")

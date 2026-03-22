@@ -134,6 +134,7 @@ def extract_vec_inject_index(
     )
     result: dict[str, mx.array] = {}
     total_facts = 0
+    boundary_residual = None  # chains across windows
 
     t0 = time.monotonic()
     for wid in range(num_archived):
@@ -157,18 +158,27 @@ def extract_vec_inject_index(
         if not positions:
             continue
 
-        # Single forward pass → h entering inject_layer
-        h = kv_gen.prefill_to_layer(w_ids, target_layer=retrieval_layer)
+        # Forward pass with residual chaining — cumulative document context
+        h = kv_gen.prefill_to_layer(
+            w_ids, target_layer=retrieval_layer,
+            initial_residual=boundary_residual,
+        )
+        # If residual was prepended, h has S+1 positions; offset indices accordingly
+        offset = 1 if boundary_residual is not None else 0
+        S_total = h.shape[1]
+        h_positions_idx = [p + offset for p in positions]
 
-        # K vectors at retrieval layer (for routing)
+        # K and V vectors at retrieval layer
         x = layer_adapter.pre_attn_norm(h)
-        _q, k, _v = layer_adapter.project_qkv(x, B, S, offset=0)
-        k_head = k[:, kv_head_idx, :, :]  # (1, S, head_dim)
-        k_at_pos = k_head[0, positions, :]  # (n_facts, head_dim)
-        mx.eval(k_at_pos)
+        _q, k, v = layer_adapter.project_qkv(x, B, S_total, offset=0)
+        k_head = k[:, kv_head_idx, :, :]  # (1, S_total, head_dim)
+        v_head = v[:, kv_head_idx, :, :]  # (1, S_total, head_dim)
+        k_at_pos = k_head[0, h_positions_idx, :]  # (n_facts, head_dim)
+        v_at_pos = v_head[0, h_positions_idx, :]  # (n_facts, head_dim)
+        mx.eval(k_at_pos, v_at_pos)
 
         # Injection coefficients: c = dot(h[p], embed(T))
-        h_positions = h[0, positions, :]  # (n_facts, hidden_size)
+        h_positions = h[0, h_positions_idx, :]  # (n_facts, hidden_size)
         mx.eval(h_positions)
         h_np = np.array(h_positions.tolist(), dtype=np.float32)
 
@@ -185,9 +195,11 @@ def extract_vec_inject_index(
             distinctive_list.append(1 if _is_distinctive_token(tok, tokenizer) else 0)
 
         k_np = np.array(k_at_pos.tolist(), dtype=np.float16)
+        v_np = np.array(v_at_pos.tolist(), dtype=np.float16)
         # Store as numpy arrays — np.savez has no keyword-argument limit
         # (mx.savez uses nanobind which caps at 1024; 725 windows × 5 = 3625 keys)
         result[VecInjectWindowKey.k_vecs(wid)] = k_np
+        result[VecInjectWindowKey.v_vecs(wid)] = v_np
         result[VecInjectWindowKey.token_ids(wid)] = np.array(token_ids_list, dtype=np.int32)
         result[VecInjectWindowKey.coefs(wid)] = np.array(coefs_list, dtype=np.float32)
         result[VecInjectWindowKey.positions(wid)] = np.array(positions, dtype=np.int32)
@@ -196,9 +208,13 @@ def extract_vec_inject_index(
         # ── Pass 2: H4 output vectors for Stage-2 routing ────────────
         # Requires h entering L29 (output of L28), not L29's output.
         if retrieval_layer > 0:
-            h_pre = kv_gen.prefill_to_layer(w_ids, target_layer=retrieval_layer - 1)
+            h_pre = kv_gen.prefill_to_layer(
+                w_ids, target_layer=retrieval_layer - 1,
+                initial_residual=boundary_residual,
+            )
+            S_pre = h_pre.shape[1]
             x_pre = layer_adapter.pre_attn_norm(h_pre)
-            _q_h4, k_pre, v_pre = layer_adapter.project_qkv(x_pre, B, S, offset=0)
+            _q_h4, k_pre, v_pre = layer_adapter.project_qkv(x_pre, B, S_pre, offset=0)
 
             kv_h = kv_head_idx
             dh = head_dim
@@ -218,15 +234,34 @@ def extract_vec_inject_index(
             o_weight = layer_adapter._block.self_attn.o_proj.weight  # (D, nq*dh)
             h4_contrib = h4_all @ o_weight[:, query_head * dh : (query_head + 1) * dh].T
 
-            h4_at_pos = h4_contrib[positions, :]  # (n_facts, D)
+            h4_at_pos = h4_contrib[h_positions_idx, :]  # (n_facts, D)
             mx.eval(h4_at_pos)
             h4_np = np.array(h4_at_pos.astype(mx.float16).tolist(), dtype=np.float16)
             result[VecInjectWindowKey.h4_vecs(wid)] = h4_np
+
+        # Chain boundary residual — last position carries full document context
+        boundary_residual = h[:, -1:, :]
+        mx.eval(boundary_residual)
+        del h
 
         total_facts += len(positions)
         phase_progress(phase_label, wid + 1, num_archived, t0)
 
     print(file=sys.stderr)
+
+    # Save final residual — the document's Markov state
+    if boundary_residual is not None:
+        residual_np = np.array(
+            boundary_residual[0, 0, :].astype(mx.float32).tolist(),
+            dtype=np.float32,
+        )
+        np.save(str(output_path / "final_residual.npy"), residual_np)
+        print(
+            f"  final_residual: ({residual_np.shape[0]},) float32 = "
+            f"{residual_np.nbytes / 1024:.1f} KB → {output_path / 'final_residual.npy'}",
+            file=sys.stderr,
+            flush=True,
+        )
 
     result[VecInjectMetaKey.LAYER] = np.array(retrieval_layer)
     result[VecInjectMetaKey.KV_HEAD] = np.array(kv_head_idx)

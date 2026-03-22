@@ -161,23 +161,7 @@ def main():
 
     std_model, rs_model, config = load_models(args.model)
 
-    import importlib.util
-    import sys as _sys
-
-    _inf = Path(__file__).parents[2] / "src/chuk_lazarus/inference"
-
-    def _load(dotted, fpath):
-        spec = importlib.util.spec_from_file_location(dotted, fpath)
-        mod = importlib.util.module_from_spec(spec)
-        _sys.modules[dotted] = mod
-        spec.loader.exec_module(mod)
-        return mod
-
-    _load("chuk_lazarus.inference.context.kv_generator", _inf / "context" / "kv_generator.py")
-    _load("chuk_lazarus.inference.context.rs_generator", _inf / "context" / "rs_generator.py")
-    BoundedKVEngine = _load(
-        "chuk_lazarus.inference.context.bounded_engine", _inf / "context" / "bounded_engine.py"
-    ).BoundedKVEngine
+    from chuk_lazarus.inference.context.bounded_engine import BoundedKVEngine
 
     engine = BoundedKVEngine(
         std_model=std_model,
@@ -228,65 +212,66 @@ def main():
             state, input_ids, max_new_tokens=args.gen_tokens
         )
 
+        mem = stats.memory
         path_color = {
             "hot": CYAN,
             "warm": YELLOW,
             "cold": RED,
-        }.get(stats["path"], RESET)
+        }.get(stats.path, RESET)
 
-        warm_bytes = stats["checkpoint_bytes"] + stats["dark_bytes"]
-        evicted = stats["window_start"] > 0
+        warm_bytes = mem.checkpoint_bytes + mem.dark_bytes
+        evicted = mem.window_start > 0
 
         print(
             f"  {turn:>4}  "
-            f"{path_color}{stats['path']:>5}{RESET}  "
+            f"{path_color}{stats.path:>5}{RESET}  "
             f"{n_input:>6}  "
-            f"{stats['generated_tokens']:>4}  "
-            f"{stats['window_size']:>7,}  "
-            f"{fmt_bytes(stats['kv_bytes']):>9}  "
+            f"{stats.generated_tokens:>4}  "
+            f"{mem.window_size:>7,}  "
+            f"{fmt_bytes(mem.hot_bytes):>9}  "
             f"{fmt_bytes(warm_bytes):>9}  "
-            f"{fmt_bytes(stats['token_id_bytes']):>9}  "
+            f"{fmt_bytes(mem.token_id_bytes):>9}  "
             f"{'⚠ ' if evicted else ''}"
-            f"{stats['budget_used_pct']:>5.1f}%  "
-            f"{stats['tok_per_sec']:>6.1f}"
+            f"{mem.budget_used_pct:>5.1f}%  "
+            f"{stats.tok_per_sec:>6.1f}"
         )
 
     # Final state summary
     print(f"\n{BOLD}Final conversation state{RESET}")
     report = engine.memory_report(state)
     print(f"""
-  Total tokens (full history) : {report["total_tokens"]:>6,}   stored in cold tier (Redis)
-  Active window start         : {report["window_start"]:>6,}   tokens before this are forgotten
-  Active window size          : {report["window_size"]:>6,}   tokens visible to the model
+  Total tokens (full history) : {report.total_tokens:>6,}   stored in cold tier (Redis)
+  Active window start         : {report.window_start:>6,}   tokens before this are forgotten
+  Active window size          : {report.window_size:>6,}   tokens visible to the model
 
   ┌──────────────────────────────────────────────┐
   │  HOT  (KV cache)                             │
-  │    {report["kv_token_count"]:>6,} tokens    {fmt_bytes(report["kv_bytes"]):>10}              │
-  │    Budget: {report["budget_used_pct"]:.1f}% used                          │
+  │    {report.hot_token_count:>6,} tokens    {fmt_bytes(report.hot_bytes):>10}              │
+  │    Budget: {report.budget_used_pct:.1f}% used                          │
   ├──────────────────────────────────────────────┤
   │  WARM (checkpoints + dark residuals)         │
-  │    {report["checkpoint_count"]:>6,} checkpoints  {fmt_bytes(report["checkpoint_bytes"]):>10}        │
-  │    {report["dark_layer_count"]:>6,} dark layers  {fmt_bytes(report["dark_bytes"]):>10}        │
-  │    Total warm:              {fmt_bytes(report["checkpoint_bytes"] + report["dark_bytes"]):>10}        │
+  │    {report.checkpoint_count:>6,} checkpoints  {fmt_bytes(report.checkpoint_bytes):>10}        │
+  │    {report.dark_layer_count:>6,} dark layers  {fmt_bytes(report.dark_bytes):>10}        │
+  │    Total warm:              {fmt_bytes(report.checkpoint_bytes + report.dark_bytes):>10}        │
   ├──────────────────────────────────────────────┤
   │  COLD (token IDs)                            │
-  │    {report["total_tokens"]:>6,} token IDs   {fmt_bytes(report["token_id_bytes"]):>10}              │
+  │    {report.total_tokens:>6,} token IDs   {fmt_bytes(report.token_id_bytes):>10}              │
   └──────────────────────────────────────────────┘
 """)
 
     print(f"{BOLD}Memory ratios{RESET}")
-    kv_at_full = bytes_per_token * report["total_tokens"]
-    id_bytes = report["token_id_bytes"]
+    kv_at_full = bytes_per_token * report.total_tokens
+    id_bytes = report.token_id_bytes
     print(f"""
-  If we kept full KV for all {report["total_tokens"]} tokens:
+  If we kept full KV for all {report.total_tokens} tokens:
     KV cache (full)  : {fmt_bytes(kv_at_full)}
     Token IDs (cold) : {fmt_bytes(id_bytes)}
     Ratio            : {kv_at_full // max(id_bytes, 1):,}×
 
   With bounded architecture:
-    HOT  : {fmt_bytes(report["kv_bytes"])} (bounded by {fmt_bytes(budget_bytes)} budget)
+    HOT  : {fmt_bytes(report.hot_bytes)} (bounded by {fmt_bytes(budget_bytes)} budget)
     COLD : {fmt_bytes(id_bytes)} (always)
-    HOT + COLD vs unbounded KV: {fmt_bytes(report["kv_bytes"] + id_bytes)} vs {fmt_bytes(kv_at_full)}
+    HOT + COLD vs unbounded KV: {fmt_bytes(report.hot_bytes + id_bytes)} vs {fmt_bytes(kv_at_full)}
 """)
 
     if state.dark_residuals:

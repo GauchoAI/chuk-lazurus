@@ -15,7 +15,6 @@ Three routing modes:
   3. Combined: accumulated + query (document-aware query)
 """
 
-import sys
 import time
 import math
 import numpy as np
@@ -39,18 +38,7 @@ def main():
     from chuk_lazarus.inference.context import CheckpointLibrary
     from chuk_lazarus.inference.context.unlimited_engine import UnlimitedContextEngine
 
-    # Load compass_routing.py directly to avoid CLI __init__ chain
-    # (which pulls in chuk_virtual_expert, not installed in dev env).
-    import importlib.util
-    _cr_path = str(
-        __import__("pathlib").Path(__file__).resolve().parents[2]
-        / "src" / "chuk_lazarus" / "cli" / "commands" / "context" / "compass_routing.py"
-    )
-    _spec = importlib.util.spec_from_file_location("compass_routing", _cr_path)
-    _cr = importlib.util.module_from_spec(_spec)
-    _spec.loader.exec_module(_cr)
-    compass_route = _cr.compass_route
-    RoutingStrategy = _cr.RoutingStrategy
+    from chuk_lazarus.cli.commands.context.compass_routing import compass_route, RoutingStrategy
 
     print(f"Loading library: {cli_args.checkpoint}")
     lib = CheckpointLibrary(cli_args.checkpoint)

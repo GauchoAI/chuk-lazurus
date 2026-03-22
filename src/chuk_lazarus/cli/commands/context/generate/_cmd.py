@@ -353,38 +353,20 @@ async def context_generate_cmd(args: Namespace) -> None:
     seq_len = 0
 
     # Check for special replay modes
-    use_accumulated = (
-        isinstance(replay_ids, list) and len(replay_ids) == 1 and replay_ids[0] == "accumulated"
-    )
-    use_compressed = (
-        isinstance(replay_ids, list) and len(replay_ids) == 1 and replay_ids[0] == "compressed"
-    )
-    use_explore = (
-        isinstance(replay_ids, list) and len(replay_ids) == 1 and replay_ids[0] == "explore"
-    )
-    use_inject = isinstance(replay_ids, list) and len(replay_ids) == 1 and replay_ids[0] == "inject"
-    use_sparse = isinstance(replay_ids, list) and len(replay_ids) == 1 and replay_ids[0] == "sparse"
-    use_kv = isinstance(replay_ids, list) and len(replay_ids) == 1 and replay_ids[0] == "kv"
-    use_vec_inject = (
-        isinstance(replay_ids, list) and len(replay_ids) == 1 and replay_ids[0] == "vec_inject"
-    )
+    def _special_mode(ids) -> str | None:
+        if isinstance(ids, list) and len(ids) == 1 and isinstance(ids[0], str):
+            return ids[0]
+        return None
 
+    mode = _special_mode(replay_ids)
     # Dispatch to mode handlers
-    if use_vec_inject:
-        from ._modes._vec_inject import run_vec_inject
-
-        await run_vec_inject(
-            lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, config, args, mx
-        )
-        return
-
-    if use_kv:
+    if mode == "kv":
         from ._modes._kv_inject import run_kv_inject
 
         run_kv_inject(lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, config, args, mx)
         return
 
-    if use_sparse:
+    if mode == "sparse":
         from ._modes._sparse_twopass import run_sparse_twopass
 
         max_kw = getattr(args, "max_keywords", None)
@@ -403,24 +385,24 @@ async def context_generate_cmd(args: Namespace) -> None:
         print(result.to_display())
         return
 
-    elif use_accumulated:
+    elif mode == "accumulated":
         from ._modes._accumulated import run_accumulated
 
         context_kv, seq_len = run_accumulated(lib, kv_gen, mx)
 
-    elif use_inject:
+    elif mode == "inject":
         from ._modes._inject import run_inject
 
         run_inject(lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, config, args, mx)
         return
 
-    elif use_explore:
+    elif mode == "explore":
         from ._modes._explore import run_explore
 
         run_explore(lib, kv_gen, pipeline, tokenizer, prompt_ids, prompt_text, config, args, mx)
         return
 
-    elif use_compressed:
+    elif mode == "compressed":
         from ._modes._compressed import run_compressed
 
         context_kv, seq_len = run_compressed(

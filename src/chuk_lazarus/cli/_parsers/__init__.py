@@ -7,6 +7,7 @@ from ._experiment import register_experiment_parsers
 from ._gym import register_gym_parsers
 from ._infer import register_infer_parser
 from ._introspect import register_introspect_parsers
+from ._knowledge import register_knowledge_parsers
 from ._tokenizer import register_tokenizer_parsers
 from ._train import register_train_parsers
 
@@ -20,4 +21,5 @@ __all__ = [
     "register_experiment_parsers",
     "register_bench_parser",
     "register_introspect_parsers",
+    "register_knowledge_parsers",
 ]

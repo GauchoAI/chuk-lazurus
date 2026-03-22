@@ -88,6 +88,11 @@ class GemmaLayerAdapter:
         """Apply RoPE to pre-RoPE Q or K at the desired position offset."""
         return self._block.self_attn.rope(x, offset=offset)
 
+    def head_output_projection(self, head_out: mx.array, head_idx: int) -> mx.array:
+        o_weight = self._block.self_attn.o_proj.weight  # (D, nq*dh)
+        dh = self._block.self_attn.head_dim
+        return mx.matmul(head_out, o_weight[:, head_idx * dh : (head_idx + 1) * dh].T)
+
     def output_project(self, attn_result: mx.array) -> mx.array:
         return self._block.self_attn.o_proj(attn_result)
 

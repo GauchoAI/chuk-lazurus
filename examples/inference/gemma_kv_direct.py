@@ -211,27 +211,11 @@ def main():
     )
 
     # Load generators
-    import importlib.util
-    import sys as _sys
+    from chuk_lazarus.inference.context.rs_generator import CompiledRSGenerator
+    from chuk_lazarus.inference.context.kv_generator import KVDirectGenerator
 
-    _inf = Path(__file__).parents[2] / "src/chuk_lazarus/inference"
-
-    def _load(dotted, fpath):
-        spec = importlib.util.spec_from_file_location(dotted, fpath)
-        mod = importlib.util.module_from_spec(spec)
-        _sys.modules[dotted] = mod
-        spec.loader.exec_module(mod)
-        return mod
-
-    rs_gen_mod = _load(
-        "chuk_lazarus.inference.context.rs_generator", _inf / "context" / "rs_generator.py"
-    )
-    kv_gen_mod = _load(
-        "chuk_lazarus.inference.context.kv_generator", _inf / "context" / "kv_generator.py"
-    )
-
-    rs_gen = rs_gen_mod.CompiledRSGenerator(rs_model, config)
-    kv_gen = kv_gen_mod.KVDirectGenerator.from_gemma_rs(rs_model, config)
+    rs_gen = CompiledRSGenerator(rs_model, config)
+    kv_gen = KVDirectGenerator.from_gemma_rs(rs_model, config)
 
     # Synthetic prompt
     prompt_ids = mx.array([[(i % 8000) + 1 for i in range(args.prompt_len)]])

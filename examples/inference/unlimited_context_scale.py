@@ -15,9 +15,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
-import sys
 import time
 from pathlib import Path
 
@@ -176,26 +174,13 @@ def load_models(model_id: str):
 
     from chuk_lazarus.models_v2.families.gemma import GemmaConfig
     from chuk_lazarus.models_v2.families.gemma_rs import GemmaResidualStreamForCausalLM
+    from chuk_lazarus.inference.context.unlimited_engine import UnlimitedContextEngine
 
     model_path = _download(model_id)
     with open(model_path / "config.json") as f:
         config = GemmaConfig.from_hf_config(json.load(f))
 
     rs = GemmaResidualStreamForCausalLM(config)
-    inf_dir = Path(__file__).parents[2] / "src/chuk_lazarus/inference"
-
-    def _load(dotted, fpath):
-        spec = importlib.util.spec_from_file_location(dotted, fpath)
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules[dotted] = mod
-        spec.loader.exec_module(mod)
-        return mod
-
-    _load("chuk_lazarus.inference.context.kv_generator", inf_dir / "context" / "kv_generator.py")
-    engine_mod = _load(
-        "chuk_lazarus.inference.context.unlimited_engine",
-        inf_dir / "context" / "unlimited_engine.py",
-    )
 
     # Apply weights
     from mlx.utils import tree_unflatten
@@ -216,7 +201,7 @@ def load_models(model_id: str):
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    return rs, config, engine_mod.UnlimitedContextEngine, tokenizer
+    return rs, config, UnlimitedContextEngine, tokenizer
 
 
 # ---------------------------------------------------------------------------

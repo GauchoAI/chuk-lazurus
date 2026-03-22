@@ -103,6 +103,7 @@ from ._parsers import (
     register_gym_parsers,
     register_infer_parser,
     register_introspect_parsers,
+    register_knowledge_parsers,
     register_tokenizer_parsers,
     register_train_parsers,
 )
@@ -146,6 +147,7 @@ Examples:
     register_experiment_parsers(subparsers)
     register_bench_parser(subparsers)
     register_introspect_parsers(subparsers)
+    register_knowledge_parsers(subparsers)
 
     # Serve subcommand — optional (requires chuk-lazarus[server])
     try:

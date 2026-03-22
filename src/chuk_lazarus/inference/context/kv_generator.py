@@ -45,8 +45,33 @@ from .protocols import ModelBackboneProtocol
 # Dtype for attention masks — bfloat16 matches weight precision.
 _MASK_DTYPE = mx.bfloat16
 
-# Type alias for the per-layer KV store
-KVStore = list[tuple[mx.array, mx.array]]
+from .protocols import KVStore
+
+
+def _run_layer(
+    layer, h: mx.array, mask: mx.array | None, B: int, S: int, offset: int = 0,
+) -> tuple[mx.array, mx.array, mx.array]:
+    """Run one transformer layer: attention + FFN. Returns (h_out, k, v).
+
+    This is the standard forward path used by prefill variants. Methods that
+    need manual attention (weight capture) or concatenated KV (extend/step)
+    implement their own layer loops.
+    """
+    x = layer.pre_attn_norm(h)
+    q, k, v = layer.project_qkv(x, B, S, offset=offset)
+
+    k_rpt = mx.repeat(k, layer.n_rep, axis=1) if layer.n_rep > 1 else k
+    v_rpt = mx.repeat(v, layer.n_rep, axis=1) if layer.n_rep > 1 else v
+
+    attn_out = mx.fast.scaled_dot_product_attention(
+        q, k_rpt, v_rpt, scale=layer.attn_scale, mask=mask
+    )
+    attn_out = attn_out.transpose(0, 2, 1, 3).reshape(B, S, -1)
+    attn_out = layer.output_project(attn_out)
+
+    h = layer.residual_add_attn(h, attn_out)
+    h = layer.residual_add_ffn(h, layer.ffn(layer.pre_ffn_norm(h)))
+    return h, k, v
 
 
 class KVDirectGenerator:
@@ -55,10 +80,13 @@ class KVDirectGenerator:
 
     Accepts any ModelBackboneProtocol — Gemma, Llama, Mistral, etc.
 
-    Storage per layer: (K, V) where
-        K.shape = (batch, num_kv_heads, seq_len, head_dim)
-        V.shape = (batch, num_kv_heads, seq_len, head_dim)
-    K and V are post-norm, post-RoPE — ready for scaled_dot_product_attention.
+    All methods assume batch_size=1:
+        input_ids : (1, S) int32
+        kv_store  : list[num_layers] of (K, V) tuples
+        K.shape   = (1, num_kv_heads, seq_len, head_dim)  — post-norm, post-RoPE
+        V.shape   = (1, num_kv_heads, seq_len, head_dim)
+        logits    : (1, S, vocab_size)
+        residual  : (1, S, hidden_size) or (1, 1, hidden_size) for single-position
     """
 
     def __init__(self, backbone: ModelBackboneProtocol) -> None:
@@ -131,21 +159,7 @@ class KVDirectGenerator:
 
         for i, layer in enumerate(backbone.adapted_layers):
             mask = backbone.prefill_mask(i, h)
-            x = layer.pre_attn_norm(h)
-            q, k, v = layer.project_qkv(x, B, S, offset=0)
-
-            k_rpt = mx.repeat(k, layer.n_rep, axis=1) if layer.n_rep > 1 else k
-            v_rpt = mx.repeat(v, layer.n_rep, axis=1) if layer.n_rep > 1 else v
-
-            attn_out = mx.fast.scaled_dot_product_attention(
-                q, k_rpt, v_rpt, scale=layer.attn_scale, mask=mask
-            )
-            attn_out = attn_out.transpose(0, 2, 1, 3).reshape(B, S, -1)
-            attn_out = layer.output_project(attn_out)
-
-            h = layer.residual_add_attn(h, attn_out)
-            h = layer.residual_add_ffn(h, layer.ffn(layer.pre_ffn_norm(h)))
-
+            h, k, v = _run_layer(layer, h, mask, B, S)
             kv_store.append((k, v))
 
         # Capture residual at last position BEFORE final norm
@@ -161,6 +175,7 @@ class KVDirectGenerator:
         input_ids: mx.array,  # (1, S)
         target_layer: int = 26,
         sample_positions: list[int] | None = None,
+        initial_residual: mx.array | None = None,  # (1, 1, hidden) — chained context
     ) -> mx.array:
         """Forward pass through target_layer, return residuals at sampled positions.
 
@@ -170,31 +185,27 @@ class KVDirectGenerator:
         ----------
         target_layer : Layer index to stop at (inclusive).
         sample_positions : Token positions to extract. If None, returns all positions.
+        initial_residual : If provided, prepend as position 0. All tokens
+            attend to it via causal mask. This chains document context across
+            windows — the Markov property guarantees completeness.
 
         Returns
         -------
-        Residuals at sampled positions: shape (1, len(positions), hidden_size).
+        Residuals at sampled positions: shape (1, S_total, hidden_size)
+        where S_total = S + (1 if initial_residual else 0).
         """
         backbone = self.backbone
         B, S = input_ids.shape
         h = backbone.embed(input_ids)
 
+        if initial_residual is not None:
+            h = mx.concatenate([initial_residual, h], axis=1)
+
+        S_total = h.shape[1]
+
         for i, layer in enumerate(backbone.adapted_layers):
             mask = backbone.prefill_mask(i, h)
-            x = layer.pre_attn_norm(h)
-            q, k, v = layer.project_qkv(x, B, S, offset=0)
-
-            k_rpt = mx.repeat(k, layer.n_rep, axis=1) if layer.n_rep > 1 else k
-            v_rpt = mx.repeat(v, layer.n_rep, axis=1) if layer.n_rep > 1 else v
-
-            attn_out = mx.fast.scaled_dot_product_attention(
-                q, k_rpt, v_rpt, scale=layer.attn_scale, mask=mask
-            )
-            attn_out = attn_out.transpose(0, 2, 1, 3).reshape(B, S, -1)
-            attn_out = layer.output_project(attn_out)
-
-            h = layer.residual_add_attn(h, attn_out)
-            h = layer.residual_add_ffn(h, layer.ffn(layer.pre_ffn_norm(h)))
+            h, _, _ = _run_layer(layer, h, mask, B, S_total)
 
             if i == target_layer:
                 break
@@ -348,23 +359,8 @@ class KVDirectGenerator:
                 kv_store.append((zero_k, zero_v))
                 continue
 
-            # Process through this layer normally
             mask = backbone.prefill_mask(i, h)
-            x = layer.pre_attn_norm(h)
-            q, k, v = layer.project_qkv(x, B, N, offset=0)
-
-            k_rpt = mx.repeat(k, layer.n_rep, axis=1) if layer.n_rep > 1 else k
-            v_rpt = mx.repeat(v, layer.n_rep, axis=1) if layer.n_rep > 1 else v
-
-            attn_out = mx.fast.scaled_dot_product_attention(
-                q, k_rpt, v_rpt, scale=layer.attn_scale, mask=mask
-            )
-            attn_out = attn_out.transpose(0, 2, 1, 3).reshape(B, N, -1)
-            attn_out = layer.output_project(attn_out)
-
-            h = layer.residual_add_attn(h, attn_out)
-            h = layer.residual_add_ffn(h, layer.ffn(layer.pre_ffn_norm(h)))
-
+            h, k, v = _run_layer(layer, h, mask, B, N)
             kv_store.append((k, v))
 
         h = backbone.final_norm(h)
@@ -391,21 +387,7 @@ class KVDirectGenerator:
 
         for i, layer in enumerate(backbone.adapted_layers):
             mask = backbone.prefill_mask(i, h)
-            x = layer.pre_attn_norm(h)
-            q, k, v = layer.project_qkv(x, B, S, offset=0)
-
-            k_rpt = mx.repeat(k, layer.n_rep, axis=1) if layer.n_rep > 1 else k
-            v_rpt = mx.repeat(v, layer.n_rep, axis=1) if layer.n_rep > 1 else v
-
-            attn_out = mx.fast.scaled_dot_product_attention(
-                q, k_rpt, v_rpt, scale=layer.attn_scale, mask=mask
-            )
-            attn_out = attn_out.transpose(0, 2, 1, 3).reshape(B, S, -1)
-            attn_out = layer.output_project(attn_out)
-
-            h = layer.residual_add_attn(h, attn_out)
-            h = layer.residual_add_ffn(h, layer.ffn(layer.pre_ffn_norm(h)))
-
+            h, k, v = _run_layer(layer, h, mask, B, S)
             kv_store.append((k, v))
 
         # Extract residuals at evenly-spaced positions BEFORE final norm

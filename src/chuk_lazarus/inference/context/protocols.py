@@ -3,6 +3,14 @@ Protocols for model-agnostic KV-direct generation.
 
 Any transformer architecture can work with KVDirectGenerator by implementing
 these protocols — either directly or via a thin adapter wrapper.
+
+Tensor shape conventions (all APIs assume batch_size=1):
+    input_ids     : (1, S)
+    hidden states : (1, S, hidden_size)
+    Q             : (1, num_heads, S, head_dim)
+    K, V          : (1, num_kv_heads, S, head_dim)
+    KVStore       : list[num_layers] of (K, V) tuples
+    residual      : (1, S, hidden_size)  — or (1, 1, hidden_size) for single-position
 """
 
 from __future__ import annotations
@@ -10,6 +18,10 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 import mlx.core as mx
+
+
+# Per-layer (K, V) pair list — the format used by KVDirectGenerator
+KVStore = list[tuple[mx.array, mx.array]]
 
 
 @runtime_checkable
@@ -22,6 +34,11 @@ class TransformerLayerProtocol(Protocol):
     - Pre-FFN norm source     (Gemma: dedicated 4th norm, Llama: 2nd norm on full residual)
     - Per-head norms          (Gemma: q_norm/k_norm, Llama: none)
     - RoPE application with explicit absolute offset
+
+    Optional methods (may raise NotImplementedError):
+    - project_qkv_pre_rope : Pre-RoPE QKV projection (Gemma only)
+    - apply_rope           : Standalone RoPE application (Gemma only)
+    These are required only for Mode 6 KV injection (prefill_pages / inject_pages).
     """
 
     def pre_attn_norm(self, h: mx.array) -> mx.array:
@@ -104,6 +121,38 @@ class TransformerLayerProtocol(Protocol):
         """Attention scale factor = head_dim ** -0.5."""
         ...
 
+    def project_qkv_pre_rope(
+        self, x: mx.array, B: int, S: int
+    ) -> tuple[mx.array, mx.array, mx.array]:
+        """Project Q, K, V with norms but WITHOUT RoPE.
+
+        Returns pre-RoPE (Q, K, V) for position-independent storage.
+        RoPE is applied later via apply_rope() at desired target positions.
+
+        Used by: prefill_pages(), prefill_pre_rope().
+        """
+        ...
+
+    def apply_rope(self, x: mx.array, offset: int) -> mx.array:
+        """Apply RoPE to pre-RoPE Q or K at the desired position offset.
+
+        Used by: inject_pages(), inject_pre_rope_kv().
+        """
+        ...
+
+    def head_output_projection(self, head_out: mx.array, head_idx: int) -> mx.array:
+        """Project a single head's attention output through O_proj to hidden space.
+
+        head_out : (B, head_dim) — attention output for one head
+        head_idx : which query head to project through
+
+        Returns (B, hidden_size) — the head's contribution to the residual stream.
+
+        This avoids reaching into adapter internals (_block.self_attn.o_proj)
+        for per-head output extraction (e.g. H4 copy head routing).
+        """
+        ...
+
 
 @runtime_checkable
 class ModelBackboneProtocol(Protocol):
@@ -165,4 +214,4 @@ class ModelBackboneProtocol(Protocol):
         ...
 
 
-__all__ = ["ModelBackboneProtocol", "TransformerLayerProtocol"]
+__all__ = ["KVStore", "ModelBackboneProtocol", "TransformerLayerProtocol"]

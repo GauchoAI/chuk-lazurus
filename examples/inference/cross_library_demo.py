@@ -39,11 +39,8 @@ Usage
 from __future__ import annotations
 
 import argparse
-import importlib
-import importlib.util
 import json
 import struct
-import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -52,9 +49,7 @@ from pathlib import Path
 import mlx.core as mx
 
 # Checkpoint library types — imported early so build_library() can use them
-_inf = Path(__file__).parents[2] / "src/chuk_lazarus/inference"
-sys.path.insert(0, str(Path(__file__).parents[2] / "src"))
-from chuk_lazarus.inference.context import (  # noqa: E402
+from chuk_lazarus.inference.context import (
     LibraryFile,
     LibraryFormatVersion,
     LibraryManifest,
@@ -409,27 +404,12 @@ def load_models(model_id: str):
     with open(model_path / "config.json") as f:
         config = GemmaConfig.from_hf_config(json.load(f))
 
+    from chuk_lazarus.inference.context.unlimited_engine import UnlimitedContextEngine
+    from chuk_lazarus.inference.context.checkpoint_library import CheckpointLibrary
+
     rs = GemmaResidualStreamForCausalLM(config)
     _apply_weights(rs, model_path)
     rs.eval()
-
-    inf = Path(__file__).parents[2] / "src/chuk_lazarus/inference"
-
-    def _load(dotted, fpath):
-        spec = importlib.util.spec_from_file_location(dotted, fpath)
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules[dotted] = mod
-        spec.loader.exec_module(mod)
-        return mod
-
-    _load("chuk_lazarus.inference.context.kv_generator", inf / "context" / "kv_generator.py")
-    eng = _load(
-        "chuk_lazarus.inference.context.unlimited_engine", inf / "context" / "unlimited_engine.py"
-    )
-    lib = _load(
-        "chuk_lazarus.inference.context.checkpoint_library",
-        inf / "context" / "checkpoint_library.py",
-    )
 
     tokenizer = AutoTokenizer.from_pretrained(str(model_path))
     if tokenizer.pad_token is None:
@@ -438,9 +418,9 @@ def load_models(model_id: str):
     return (
         rs,
         config,
-        eng.UnlimitedContextEngine,
-        eng.LibrarySource,
-        lib.CheckpointLibrary,
+        UnlimitedContextEngine,
+        LibrarySource,
+        CheckpointLibrary,
         tokenizer,
     )
 

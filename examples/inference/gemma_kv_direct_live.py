@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import time
 from pathlib import Path
 
@@ -160,12 +159,11 @@ def _apply_weights(model, model_path: Path) -> None:
 
 
 def load_models(model_id: str):
-    import importlib.util
-
     from transformers import AutoTokenizer
 
     from chuk_lazarus.models_v2.families.gemma import GemmaConfig, GemmaForCausalLM
     from chuk_lazarus.models_v2.families.gemma_rs import GemmaResidualStreamForCausalLM
+    from chuk_lazarus.inference.context.kv_generator import KVDirectGenerator
 
     model_path = _download(model_id)
     with open(model_path / "config.json") as f:
@@ -179,20 +177,7 @@ def load_models(model_id: str):
     _apply_weights(rs, model_path)
     rs.eval()
 
-    # Load KVDirectGenerator
-    inf = Path(__file__).parents[2] / "src/chuk_lazarus/inference"
-
-    def _load(dotted, fpath):
-        spec = importlib.util.spec_from_file_location(dotted, fpath)
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules[dotted] = mod
-        spec.loader.exec_module(mod)
-        return mod
-
-    kv_gen_mod = _load(
-        "chuk_lazarus.inference.context.kv_generator", inf / "context" / "kv_generator.py"
-    )
-    kv_gen = kv_gen_mod.KVDirectGenerator.from_gemma_rs(rs, config)
+    kv_gen = KVDirectGenerator.from_gemma_rs(rs, config)
 
     tokenizer = AutoTokenizer.from_pretrained(str(model_path))
     if tokenizer.pad_token is None:

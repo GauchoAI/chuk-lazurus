@@ -68,9 +68,6 @@ class TestPrefillPhase:
     def test_str_windows(self):
         assert str(PrefillPhase.WINDOWS) == "windows"
 
-    def test_str_vec_inject(self):
-        assert str(PrefillPhase.VEC_INJECT) == "vec_inject"
-
     def test_str_mode7(self):
         assert str(PrefillPhase.MODE7) == "mode7"
 
@@ -195,18 +192,6 @@ class TestPrefillConfigRunProperties:
     def test_run_kvectors_full_missing(self):
         cfg = _make_prefill_config("kvectors")
         assert cfg.run_kvectors_full is False
-
-    def test_run_vec_inject_all(self):
-        cfg = _make_prefill_config("all")
-        assert cfg.run_vec_inject is True
-
-    def test_run_vec_inject_explicit(self):
-        cfg = _make_prefill_config("vec_inject")
-        assert cfg.run_vec_inject is True
-
-    def test_run_vec_inject_missing(self):
-        cfg = _make_prefill_config("compass")
-        assert cfg.run_vec_inject is False
 
     def test_run_mode7_all(self):
         cfg = _make_prefill_config("all")

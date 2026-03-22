@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import time
 from pathlib import Path
 
@@ -142,23 +141,9 @@ def load_models(model_id: str):
 
 
 def load_engine_class():
-    import importlib.util
+    from chuk_lazarus.inference.context.bounded_engine import BoundedKVEngine
 
-    inf = Path(__file__).parents[2] / "src/chuk_lazarus/inference"
-
-    def _load(dotted, fpath):
-        spec = importlib.util.spec_from_file_location(dotted, fpath)
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules[dotted] = mod
-        spec.loader.exec_module(mod)
-        return mod
-
-    _load("chuk_lazarus.inference.context.rs_generator", inf / "context" / "rs_generator.py")
-    _load("chuk_lazarus.inference.context.kv_generator", inf / "context" / "kv_generator.py")
-    mod = _load(
-        "chuk_lazarus.inference.context.bounded_engine", inf / "context" / "bounded_engine.py"
-    )
-    return mod.BoundedKVEngine
+    return BoundedKVEngine
 
 
 # ---------------------------------------------------------------------------
@@ -233,7 +218,7 @@ def run_unbounded_kv(std_model, input_ids_per_turn: list[list[int]], gen_tokens:
 # ---------------------------------------------------------------------------
 
 
-def print_turn_table(label: str, color: str, rows: list[dict], evict_marker: str = "⚠"):
+def print_turn_table(label: str, color: str, rows, evict_marker: str = "⚠"):
     print(f"\n  {color}{BOLD}{label}{RESET}")
     print(
         f"  {'Turn':>4}  {'Path':>5}  {'Window':>7}  {'Hot':>9}  "
@@ -244,23 +229,40 @@ def print_turn_table(label: str, color: str, rows: list[dict], evict_marker: str
     path_color = {"hot": CYAN, "warm": YELLOW, "cold": RED, "grow": GREEN, "full": CYAN}
 
     for i, r in enumerate(rows, 1):
-        evict = evict_marker if r.get("window_start", 0) > 0 else " "
-        pc = path_color.get(r.get("path", "cold"), RESET)
-        warm = r.get("checkpoint_bytes", 0) + r.get("dark_bytes", 0)
-        bpct = r.get("budget_used_pct", 0)
-        bpct_color = RED if bpct > 100 else (YELLOW if bpct > 85 else RESET)
+        # Support both TurnStats (Pydantic) and plain dicts (unbounded mode)
+        if isinstance(r, dict):
+            path = r.get("path", "?")
+            hot_bytes = r.get("hot_bytes", 0)
+            window_start = 0
+            warm = 0
+            window_size = r.get("total_tokens", 0)
+            token_id_bytes = r.get("total_tokens", 0) * 4
+            bpct = 0.0
+            tps = r.get("tok_per_sec", 0)
+        else:
+            mem = r.memory
+            path = r.path
+            hot_bytes = mem.hot_bytes
+            window_start = mem.window_start
+            warm = mem.checkpoint_bytes + mem.dark_bytes
+            window_size = mem.window_size
+            token_id_bytes = mem.token_id_bytes
+            bpct = mem.budget_used_pct
+            tps = r.tok_per_sec
 
-        hot_str = fmt_bytes(r.get("hot_bytes", r.get("kv_bytes", 0)))
+        evict = evict_marker if window_start > 0 else " "
+        pc = path_color.get(path, RESET)
+        bpct_color = RED if bpct > 100 else (YELLOW if bpct > 85 else RESET)
 
         print(
             f"  {i:>4}  "
-            f"{pc}{r.get('path', '?'):>5}{RESET}  "
-            f"{r.get('window_size', r.get('total_tokens', 0)):>7,}  "
-            f"{hot_str:>9}  "
+            f"{pc}{path:>5}{RESET}  "
+            f"{window_size:>7,}  "
+            f"{fmt_bytes(hot_bytes):>9}  "
             f"{fmt_bytes(warm):>9}  "
-            f"{fmt_bytes(r.get('token_id_bytes', r.get('total_tokens', 0) * 4)):>8}  "
+            f"{fmt_bytes(token_id_bytes):>8}  "
             f"{evict}{bpct_color}{bpct:>5.1f}%{RESET}  "
-            f"{r.get('tok_per_sec', 0):>6.1f}"
+            f"{tps:>6.1f}"
         )
 
 
@@ -351,21 +353,22 @@ def main():
         print("  " + "─" * 66)
 
     def _live_row(i, stats):
-        path = stats.get("path", "?")
+        mem = stats.memory
+        path = stats.path
         pc = {"hot": CYAN, "warm": YELLOW, "cold": RED, "grow": GREEN, "full": CYAN}.get(
             path, RESET
         )
-        bpct = stats.get("budget_used_pct", 0)
+        bpct = mem.budget_used_pct
         bc = RED if bpct > 100 else (YELLOW if bpct > 85 else RESET)
-        evict = "⚠" if stats.get("window_start", 0) > 0 else " "
-        total_s = stats.get("total_ms", 0) / 1000
+        evict = "⚠" if mem.window_start > 0 else " "
+        total_s = stats.total_ms / 1000
         print(
             f"  {i:>4}  {pc}{path:>5}{RESET}  "
-            f"{stats.get('total_tokens', 0):>8,}  "
-            f"{stats.get('window_size', 0):>7,}  "
-            f"{fmt_bytes(stats.get('hot_bytes', 0)):>9}  "
+            f"{mem.total_tokens:>8,}  "
+            f"{mem.window_size:>7,}  "
+            f"{fmt_bytes(mem.hot_bytes):>9}  "
             f"{evict}{bc}{bpct:>5.1f}%{RESET}  "
-            f"{stats.get('tok_per_sec', 0):>6.1f}  "
+            f"{stats.tok_per_sec:>6.1f}  "
             f"{total_s:>4.1f}s"
         )
 
@@ -428,11 +431,11 @@ def main():
 
     # Summary
     def avg_tps(rows):
-        return sum(r.get("tok_per_sec", 0) for r in rows) / len(rows)
+        return sum(r["tok_per_sec"] if isinstance(r, dict) else r.tok_per_sec for r in rows) / len(rows)
 
     peak_unbounded = unbounded_rows[-1]["hot_bytes"]
-    peak_rs = max(r.get("hot_bytes", 0) for r in bounded_rs_rows)
-    peak_kvd = max(r.get("hot_bytes", 0) for r in bounded_kvd_rows)
+    peak_rs = max(r.memory.hot_bytes for r in bounded_rs_rows)
+    peak_kvd = max(r.memory.hot_bytes for r in bounded_kvd_rows)
 
     total_toks = unbounded_rows[-1]["total_tokens"]
     cold_bytes = total_toks * 4

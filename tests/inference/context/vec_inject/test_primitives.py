@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from chuk_lazarus.inference.context.vec_inject._primitives import (
+from chuk_lazarus.inference.context.research.vec_inject._primitives import (
     vec_inject,
     vec_inject_all,
 )
@@ -48,7 +48,7 @@ class TestVecInjectAll:
         match = _make_match(token_id=42, coefficient=0.9)
 
         with patch(
-            "chuk_lazarus.inference.context.vec_inject._primitives.vec_inject",
+            "chuk_lazarus.inference.context.research.vec_inject._primitives.vec_inject",
             return_value=h_out,
         ) as mock_vi:
             result = vec_inject_all(h, matches=[match], embed_matrix=embed_matrix)
@@ -65,7 +65,7 @@ class TestVecInjectAll:
         call_results = [MagicMock(), MagicMock(), MagicMock()]
 
         with patch(
-            "chuk_lazarus.inference.context.vec_inject._primitives.vec_inject",
+            "chuk_lazarus.inference.context.research.vec_inject._primitives.vec_inject",
             side_effect=call_results,
         ) as mock_vi:
             vec_inject_all(h0, matches=[m1, m2, m3], embed_matrix=embed_matrix)
@@ -82,7 +82,7 @@ class TestVecInjectAll:
         m2 = _make_match(token_id=20, coefficient=0.2)
 
         with patch(
-            "chuk_lazarus.inference.context.vec_inject._primitives.vec_inject",
+            "chuk_lazarus.inference.context.research.vec_inject._primitives.vec_inject",
             side_effect=[h1, h2],
         ) as mock_vi:
             result = vec_inject_all(h0, matches=[m1, m2], embed_matrix=embed_matrix)
@@ -102,7 +102,7 @@ class TestVecInjectAll:
         return_vals = [MagicMock() for _ in range(4)] + [h_final]
 
         with patch(
-            "chuk_lazarus.inference.context.vec_inject._primitives.vec_inject",
+            "chuk_lazarus.inference.context.research.vec_inject._primitives.vec_inject",
             side_effect=return_vals,
         ):
             result = vec_inject_all(h0, matches=matches, embed_matrix=embed_matrix)
@@ -116,7 +116,7 @@ class TestVecInjectAll:
         m2 = _make_match(token_id=88, coefficient=4.56)
 
         with patch(
-            "chuk_lazarus.inference.context.vec_inject._primitives.vec_inject",
+            "chuk_lazarus.inference.context.research.vec_inject._primitives.vec_inject",
             side_effect=[MagicMock(), MagicMock()],
         ) as mock_vi:
             vec_inject_all(h, matches=[m1, m2], embed_matrix=embed_matrix)

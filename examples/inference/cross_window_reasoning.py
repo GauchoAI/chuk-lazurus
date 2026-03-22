@@ -38,12 +38,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import importlib
-import importlib.util
 import json
-import sys
 import time
-import types
 from pathlib import Path
 
 import mlx.core as mx
@@ -580,42 +576,9 @@ def _apply_weights(model, model_path: Path) -> None:
 
 
 def _load_inference_engine():
-    """
-    Load UnlimitedContextEngine without triggering chuk_lazarus.inference.__init__.
+    from chuk_lazarus.inference.context.unlimited_engine import UnlimitedContextEngine
 
-    The inference package __init__ imports virtual_expert which needs chuk_virtual_expert,
-    an optional dependency not required for this script.  We bypass it by pre-registering
-    lightweight namespace stubs for the parent packages, then loading the three required
-    module files directly in dependency order.
-    """
-    inf = Path(__file__).parents[2] / "src" / "chuk_lazarus" / "inference"
-
-    # Pre-register namespace stubs so relative imports inside the loaded files
-    # resolve correctly without triggering any __init__.py.
-    for pkg_name, pkg_dir in [
-        ("chuk_lazarus.inference", str(inf)),
-        ("chuk_lazarus.inference.context", str(inf / "context")),
-    ]:
-        if pkg_name not in sys.modules:
-            stub = types.ModuleType(pkg_name)
-            stub.__path__ = [pkg_dir]
-            stub.__package__ = pkg_name
-            sys.modules[pkg_name] = stub
-
-    def _load_mod(dotted, fpath):
-        spec = importlib.util.spec_from_file_location(dotted, str(fpath))
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules[dotted] = mod
-        spec.loader.exec_module(mod)
-        return mod
-
-    # Load in dependency order: protocols → kv_generator → unlimited_engine
-    _load_mod("chuk_lazarus.inference.context.protocols",      inf / "context" / "protocols.py")
-    _load_mod("chuk_lazarus.inference.context.kv_generator",   inf / "context" / "kv_generator.py")
-    engine_mod = _load_mod(
-        "chuk_lazarus.inference.context.unlimited_engine", inf / "context" / "unlimited_engine.py"
-    )
-    return engine_mod.UnlimitedContextEngine
+    return UnlimitedContextEngine
 
 
 def load_models(model_id: str):

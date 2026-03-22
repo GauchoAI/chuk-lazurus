@@ -41,7 +41,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import time
 from pathlib import Path
 
@@ -221,12 +220,11 @@ def _apply_weights(model, model_path: Path) -> None:
 
 
 def load_models(model_id: str):
-    import importlib
-
     from transformers import AutoTokenizer
 
     from chuk_lazarus.models_v2.families.gemma import GemmaConfig
     from chuk_lazarus.models_v2.families.gemma_rs import GemmaResidualStreamForCausalLM
+    from chuk_lazarus.inference.context.unlimited_engine import UnlimitedContextEngine
 
     model_path = _download(model_id)
     with open(model_path / "config.json") as f:
@@ -236,26 +234,11 @@ def load_models(model_id: str):
     _apply_weights(rs, model_path)
     rs.eval()
 
-    # Load UnlimitedContextEngine
-    inf = Path(__file__).parents[2] / "src/chuk_lazarus/inference"
-
-    def _load(dotted, fpath):
-        spec = importlib.util.spec_from_file_location(dotted, fpath)
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules[dotted] = mod
-        spec.loader.exec_module(mod)
-        return mod
-
-    _load("chuk_lazarus.inference.context.kv_generator", inf / "context" / "kv_generator.py")
-    engine_mod = _load(
-        "chuk_lazarus.inference.context.unlimited_engine", inf / "context" / "unlimited_engine.py"
-    )
-
     tokenizer = AutoTokenizer.from_pretrained(str(model_path))
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    return rs, config, engine_mod.UnlimitedContextEngine, tokenizer
+    return rs, config, UnlimitedContextEngine, tokenizer
 
 
 # ---------------------------------------------------------------------------

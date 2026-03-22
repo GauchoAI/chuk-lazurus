@@ -118,7 +118,7 @@ def register_context_parsers(subparsers):
         "--replay",
         nargs="*",
         default=None,
-        help='Window IDs to replay: "auto" (default, compass routing), "all", "last", "kv" (Mode 6 prefix caching), "sparse" (Mode 5), "vec_inject" (1D subspace injection at L30), or specific IDs (e.g. --replay 0 1 45)',
+        help='Window IDs to replay: "auto" (default, compass routing), "all", "last", "kv" (Mode 6 prefix caching), "sparse" (Mode 5), or specific IDs (e.g. --replay 0 1 45)',
     )
     ctx_generate.add_argument(
         "--find",

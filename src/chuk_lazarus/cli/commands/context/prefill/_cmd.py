@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from .._types import PrefillConfig, PrefillResult, ResidualMode
 from ._progress import progress_line
 from ._restore import restore_engine
-from ._save import save_library
+from ._save import SavePhases, save_library
 
 
 async def context_prefill_cmd(args: Namespace) -> None:
@@ -156,15 +156,16 @@ async def context_prefill_cmd(args: Namespace) -> None:
             frame_bank_path=config.frame_bank,
             store_pages=config.store_pages,
             append_from=engine.stats().archived_windows,
-            run_interval=config.run_interval,
-            run_compass=config.run_compass,
-            run_darkspace=config.run_darkspace,
-            run_pages=config.run_pages,
-            run_surprise=config.run_surprise,
-            run_sparse=config.run_sparse,
-            run_kvectors=config.run_kvectors,
-            run_vec_inject=config.run_vec_inject,
-            run_mode7=config.run_mode7,
+            phases=SavePhases(
+                interval=config.run_interval,
+                compass=config.run_compass,
+                darkspace=config.run_darkspace,
+                pages=config.run_pages,
+                surprise=config.run_surprise,
+                sparse=config.run_sparse,
+                kvectors=config.run_kvectors,
+                mode7=config.run_mode7,
+            ),
             compass_layer=config.compass_layer,
             kvector_mode=config.kvector_mode,
             export_mode=config.export_mode,
@@ -211,8 +212,7 @@ async def context_prefill_cmd(args: Namespace) -> None:
                 frame_bank_data=frame_bank_data,
                 frame_bank_path=config.frame_bank,
                 store_pages=True,
-                run_pages=True,
-                run_surprise=False,
+                phases=SavePhases(pages=True, surprise=False),
             )
             return
         print("Already fully prefilled. Nothing to do.", file=sys.stderr)
@@ -267,15 +267,16 @@ async def context_prefill_cmd(args: Namespace) -> None:
             frame_bank_path=config.frame_bank,
             store_pages=config.store_pages,
             append_from=_last_saved_window,
-            run_interval=config.run_interval,
-            run_compass=config.run_compass,
-            run_darkspace=config.run_darkspace,
-            run_pages=config.run_pages,
-            run_surprise=config.run_surprise,
-            run_sparse=config.run_sparse,
-            run_kvectors=config.run_kvectors,
-            run_vec_inject=config.run_vec_inject,
-            run_mode7=config.run_mode7,
+            phases=SavePhases(
+                interval=config.run_interval,
+                compass=config.run_compass,
+                darkspace=config.run_darkspace,
+                pages=config.run_pages,
+                surprise=config.run_surprise,
+                sparse=config.run_sparse,
+                kvectors=config.run_kvectors,
+                mode7=config.run_mode7,
+            ),
             compass_layer=config.compass_layer,
             kvector_mode=config.kvector_mode,
             export_mode=config.export_mode,

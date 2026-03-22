@@ -45,7 +45,6 @@ class PrefillPhase(str, Enum):
     SPARSE = "sparse"
     KVECTORS = "kvectors"
     KVECTORS_FULL = "kvectors_full"
-    VEC_INJECT = "vec_inject"
     MODE7 = "mode7"
 
     def __str__(self) -> str:
@@ -156,10 +155,6 @@ class PrefillConfig(CommandConfig):
         if self.run_kvectors_full:
             return KVectorMode.FULL
         return KVectorMode.INTERVAL
-
-    @property
-    def run_vec_inject(self) -> bool:
-        return self._should_run(PrefillPhase.VEC_INJECT)
 
     @property
     def run_mode7(self) -> bool:

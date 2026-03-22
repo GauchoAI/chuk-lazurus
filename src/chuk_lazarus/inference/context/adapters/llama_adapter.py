@@ -57,6 +57,37 @@ class LlamaLayerAdapter:
             k = attn.rope(k, offset=offset)
         return q, k, v
 
+    def project_qkv_pre_rope(
+        self, x: mx.array, B: int, S: int
+    ) -> tuple[mx.array, mx.array, mx.array]:
+        """Project Q, K, V WITHOUT RoPE for position-independent storage.
+
+        Llama has no per-head q_norm/k_norm, so this is just the linear
+        projections reshaped to head layout.
+        """
+        attn = self._block.self_attn
+        nq = attn.num_heads
+        nkv = attn.num_kv_heads
+        dh = attn.head_dim
+
+        q = attn.q_proj(x).reshape(B, S, nq, dh).transpose(0, 2, 1, 3)
+        k = attn.k_proj(x).reshape(B, S, nkv, dh).transpose(0, 2, 1, 3)
+        v = attn.v_proj(x).reshape(B, S, nkv, dh).transpose(0, 2, 1, 3)
+        # No RoPE — caller applies it later with desired positions
+        return q, k, v
+
+    def apply_rope(self, x: mx.array, offset: int) -> mx.array:
+        """Apply RoPE to pre-RoPE Q or K at the desired position offset."""
+        attn = self._block.self_attn
+        if attn.rope is not None:
+            return attn.rope(x, offset=offset)
+        return x
+
+    def head_output_projection(self, head_out: mx.array, head_idx: int) -> mx.array:
+        o_weight = self._block.self_attn.o_proj.weight  # (D, nq*dh)
+        dh = self._block.self_attn.head_dim
+        return mx.matmul(head_out, o_weight[:, head_idx * dh : (head_idx + 1) * dh].T)
+
     def output_project(self, attn_result: mx.array) -> mx.array:
         return self._block.self_attn.o_proj(attn_result)
 

@@ -8,7 +8,22 @@ import struct
 import sys
 from pathlib import Path
 
+from dataclasses import dataclass
+
 from .._types import KVectorMode, ResidualMode
+
+
+@dataclass(frozen=True)
+class SavePhases:
+    """Which extraction passes to run during save."""
+    interval: bool = True
+    compass: bool = True
+    darkspace: bool = True
+    pages: bool = True
+    surprise: bool = True
+    sparse: bool = True
+    kvectors: bool = True
+    mode7: bool = False
 
 
 def compute_config_hash(config) -> str:
@@ -41,15 +56,7 @@ def save_library(
     frame_bank_path: Path | None = None,
     store_pages: bool = False,
     append_from: int = 0,
-    run_interval: bool = True,
-    run_compass: bool = True,
-    run_darkspace: bool = True,
-    run_pages: bool = True,
-    run_surprise: bool = True,
-    run_sparse: bool = True,
-    run_kvectors: bool = True,
-    run_vec_inject: bool = False,
-    run_mode7: bool = False,
+    phases: SavePhases = SavePhases(),
     compass_layer: int | None = None,
     kvector_mode: KVectorMode = KVectorMode.SPARSE,
     export_mode: bool = False,
@@ -57,7 +64,7 @@ def save_library(
     """Write all library files from the engine's current archived state.
 
     quick=True writes only checkpoints/tokens/windows/manifest (for periodic saves).
-    quick=False also runs extraction passes gated by the run_* flags.
+    quick=False also runs extraction passes gated by the phases flags.
 
     append_from: when > 0, only serialize windows [append_from, num_archived) into
     checkpoints/residuals by appending to existing zip files.  Windows metadata,
@@ -121,7 +128,7 @@ def save_library(
 
     # --- Post-prefill extraction passes (skipped during periodic quick saves) ---
     if not quick:
-        if residual_mode == ResidualMode.DARKSPACE and run_darkspace:
+        if residual_mode == ResidualMode.DARKSPACE and phases.darkspace:
             from ._darkspace import extract_darkspace
 
             extract_darkspace(
@@ -134,7 +141,7 @@ def save_library(
             )
 
         elif residual_mode in (ResidualMode.INTERVAL, ResidualMode.FULL):
-            if run_interval:
+            if phases.interval:
                 from ._interval import extract_interval_residuals
 
                 extract_interval_residuals(
@@ -145,7 +152,7 @@ def save_library(
                 )
 
         # Compass runs for any residual mode when requested
-        if run_compass:
+        if phases.compass:
             from ._compass import calibrate_compass
 
             compass_n_samples = None if residual_mode == ResidualMode.FULL else 8
@@ -159,13 +166,13 @@ def save_library(
             )
 
         # Surprise: per-token perplexity scoring (anomaly detection)
-        if run_surprise:
+        if phases.surprise:
             from ._surprise import extract_surprise
 
             extract_surprise(engine, output_path, num_archived, config)
 
         # Sparse: keyword extraction for Mode 5 sparse semantic index
-        if run_sparse:
+        if phases.sparse:
             # Check if engine is SparseIndexEngine with inline extraction already done
             if hasattr(engine, "sparse_index") and len(engine.sparse_index) > 0:
                 # Inline extraction — index was built during _close_window()
@@ -189,28 +196,15 @@ def save_library(
                 extract_sparse(engine, tokenizer, output_path, num_archived)
 
         # K-vector routing index: L29 H4 K vectors at fact positions
-        if run_kvectors:
+        if phases.kvectors:
             from ._kv_route import extract_kv_route_index
 
             extract_kv_route_index(
                 engine, output_path, num_archived, config, kvector_mode=kvector_mode
             )
 
-        # Vec injection index: K vectors + coefficients c = dot(R_L30, embed(token))
-        if run_vec_inject:
-            from ._vec_inject import extract_vec_inject_index
-
-            extract_vec_inject_index(
-                engine,
-                output_path,
-                num_archived,
-                config,
-                tokenizer=tokenizer,
-                kvector_mode=kvector_mode,
-            )
-
         # Mode 7: calibrate query classifier + engagement/tension probes
-        if run_mode7:
+        if phases.mode7:
             from ._mode7_calibrate import calibrate_mode7_probes
 
             calibrate_mode7_probes(
@@ -224,7 +218,7 @@ def save_library(
             )
 
     # --- Pages ---
-    if store_pages and run_pages:
+    if store_pages and phases.pages:
         from ._pages import extract_pages
 
         extract_pages(engine, output_path, num_archived)
