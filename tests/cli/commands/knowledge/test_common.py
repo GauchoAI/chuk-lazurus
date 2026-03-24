@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, PropertyMock
+from unittest.mock import MagicMock
 
 import mlx.core as mx
 
@@ -11,7 +11,6 @@ from chuk_lazarus.cli.commands.knowledge._common import (
     prepare_prompt,
     stop_token_ids,
 )
-
 
 # ── prepare_prompt ───────────────────────────────────────────────────
 
@@ -73,7 +72,9 @@ class TestGeneratePlain:
             return logits
 
         # prefill returns first token's logits
-        first_logits = make_logits(logits_sequence[0]) if logits_sequence else mx.zeros((1, 1, vocab_size))
+        first_logits = (
+            make_logits(logits_sequence[0]) if logits_sequence else mx.zeros((1, 1, vocab_size))
+        )
         kv_gen.prefill.return_value = (first_logits, "kv_store")
 
         # step returns subsequent tokens

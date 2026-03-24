@@ -289,8 +289,10 @@ async def context_generate_cmd(args: Namespace) -> None:
             model_config=pipeline.config,
             strategy=strategy,
             top_k=top_k,
-            routing_layer=getattr(args, "routing_layer", None) or _arch_config_for(lib, pipeline).retrieval_layer,
-            routing_head=getattr(args, "routing_head", None) or _arch_config_for(lib, pipeline).query_head,
+            routing_layer=getattr(args, "routing_layer", None)
+            or _arch_config_for(lib, pipeline).retrieval_layer,
+            routing_head=getattr(args, "routing_head", None)
+            or _arch_config_for(lib, pipeline).query_head,
         )
 
     print(f"  Replaying windows: {replay_ids}", file=sys.stderr)

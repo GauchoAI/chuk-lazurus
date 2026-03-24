@@ -125,7 +125,9 @@ class TestSerialisation:
 
     def test_inject_coefficient_serialised_when_non_default(self):
         ac = ArchitectureConfig(
-            retrieval_layer=29, query_head=4, injection_layer=30,
+            retrieval_layer=29,
+            query_head=4,
+            injection_layer=30,
             inject_coefficient=3.0,
         )
         d = ac.to_dict()
@@ -134,14 +136,18 @@ class TestSerialisation:
     def test_inject_coefficient_present_when_non_2(self):
         """Default is 10.0, so it serialises (it's non-2.0)."""
         ac = ArchitectureConfig(
-            retrieval_layer=29, query_head=4, injection_layer=30,
+            retrieval_layer=29,
+            query_head=4,
+            injection_layer=30,
         )
         d = ac.to_dict()
         assert d["inject_coefficient"] == 10.0
 
     def test_entries_per_window_serialised_when_non_default(self):
         ac = ArchitectureConfig(
-            retrieval_layer=29, query_head=4, injection_layer=30,
+            retrieval_layer=29,
+            query_head=4,
+            injection_layer=30,
             entries_per_window=16,
         )
         d = ac.to_dict()
@@ -149,15 +155,20 @@ class TestSerialisation:
 
     def test_entries_per_window_omitted_when_default(self):
         ac = ArchitectureConfig(
-            retrieval_layer=29, query_head=4, injection_layer=30,
+            retrieval_layer=29,
+            query_head=4,
+            injection_layer=30,
         )
         d = ac.to_dict()
         assert "entries_per_window" not in d
 
     def test_inject_coefficient_roundtrip(self):
         ac = ArchitectureConfig(
-            retrieval_layer=29, query_head=4, injection_layer=30,
-            inject_coefficient=1.5, entries_per_window=16,
+            retrieval_layer=29,
+            query_head=4,
+            injection_layer=30,
+            inject_coefficient=1.5,
+            entries_per_window=16,
         )
         d = ac.to_dict()
         ac2 = ArchitectureConfig.from_dict(d)

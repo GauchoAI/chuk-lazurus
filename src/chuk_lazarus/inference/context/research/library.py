@@ -207,6 +207,7 @@ class CheckpointLibrary:
         if self.manifest.arch_config is None:
             return None
         from ..knowledge.config import ArchitectureConfig
+
         return ArchitectureConfig.from_dict(self.manifest.arch_config)
 
     # ------------------------------------------------------------------

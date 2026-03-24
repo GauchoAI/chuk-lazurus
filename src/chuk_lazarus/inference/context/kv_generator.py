@@ -40,16 +40,19 @@ from __future__ import annotations
 
 import mlx.core as mx
 
-from .protocols import ModelBackboneProtocol
+from .protocols import KVStore, ModelBackboneProtocol
 
 # Dtype for attention masks — bfloat16 matches weight precision.
 _MASK_DTYPE = mx.bfloat16
 
-from .protocols import KVStore
-
 
 def _run_layer(
-    layer, h: mx.array, mask: mx.array | None, B: int, S: int, offset: int = 0,
+    layer,
+    h: mx.array,
+    mask: mx.array | None,
+    B: int,
+    S: int,
+    offset: int = 0,
 ) -> tuple[mx.array, mx.array, mx.array]:
     """Run one transformer layer: attention + FFN. Returns (h_out, k, v).
 

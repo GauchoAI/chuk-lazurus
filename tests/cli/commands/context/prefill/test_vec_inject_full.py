@@ -80,7 +80,7 @@ def _wire_forward(
     backbone.embed.return_value = mx.zeros((1, 1, hidden))
 
     # H4 output computation (Pass 2) — needs real floats for SDPA and O_proj
-    layer_adapter.attn_scale = head_dim ** -0.5
+    layer_adapter.attn_scale = head_dim**-0.5
     backbone.prefill_mask.return_value = None  # no mask for test sequences
     # o_proj.weight shape: (hidden, nq * head_dim)
     layer_adapter._block.self_attn.o_proj.weight = mx.zeros((hidden, nq * head_dim))

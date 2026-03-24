@@ -166,7 +166,15 @@ class TestExtractKvRouteIndex:
         _wire_forward(kv_gen, layer_adapter, seq_len=10, hidden=64, head_dim=8, nkv=4)
 
         with patch.object(mx, "savez") as mock_savez:
-            extract_kv_route_index(engine, tmp_path, num_archived=1, config=_GEMMA4B_CONFIG, lib=lib, retrieval_layer=29, query_head=4)
+            extract_kv_route_index(
+                engine,
+                tmp_path,
+                num_archived=1,
+                config=_GEMMA4B_CONFIG,
+                lib=lib,
+                retrieval_layer=29,
+                query_head=4,
+            )
 
         mock_savez.assert_called_once()
 
@@ -181,7 +189,15 @@ class TestExtractKvRouteIndex:
         _wire_forward(kv_gen, layer_adapter)
 
         with patch.object(mx, "savez") as mock_savez:
-            extract_kv_route_index(engine, tmp_path, num_archived=1, config=_GEMMA4B_CONFIG, lib=lib, retrieval_layer=29, query_head=4)
+            extract_kv_route_index(
+                engine,
+                tmp_path,
+                num_archived=1,
+                config=_GEMMA4B_CONFIG,
+                lib=lib,
+                retrieval_layer=29,
+                query_head=4,
+            )
 
         _path, kwargs = mock_savez.call_args[0][0], mock_savez.call_args[1]
         assert "layer" in kwargs
@@ -199,7 +215,15 @@ class TestExtractKvRouteIndex:
         _wire_forward(kv_gen, layer_adapter)
 
         with patch.object(mx, "savez") as mock_savez:
-            extract_kv_route_index(engine, tmp_path, num_archived=1, config=_GEMMA4B_CONFIG, lib=lib, retrieval_layer=29, query_head=4)
+            extract_kv_route_index(
+                engine,
+                tmp_path,
+                num_archived=1,
+                config=_GEMMA4B_CONFIG,
+                lib=lib,
+                retrieval_layer=29,
+                query_head=4,
+            )
 
         kwargs = mock_savez.call_args[1]
         assert "w0" in kwargs
@@ -215,7 +239,15 @@ class TestExtractKvRouteIndex:
         _wire_forward(kv_gen, layer_adapter)
 
         with patch.object(mx, "savez") as mock_savez:
-            extract_kv_route_index(engine, tmp_path, num_archived=1, config=_GEMMA4B_CONFIG, lib=lib, retrieval_layer=29, query_head=4)
+            extract_kv_route_index(
+                engine,
+                tmp_path,
+                num_archived=1,
+                config=_GEMMA4B_CONFIG,
+                lib=lib,
+                retrieval_layer=29,
+                query_head=4,
+            )
 
         called_path = mock_savez.call_args[0][0]
         assert "kv_route_index.npz" in called_path
@@ -231,7 +263,15 @@ class TestExtractKvRouteIndex:
         _wire_forward(kv_gen, layer_adapter)
 
         with patch.object(mx, "savez"):
-            extract_kv_route_index(engine, tmp_path, num_archived=2, config=_GEMMA4B_CONFIG, lib=lib, retrieval_layer=29, query_head=4)
+            extract_kv_route_index(
+                engine,
+                tmp_path,
+                num_archived=2,
+                config=_GEMMA4B_CONFIG,
+                lib=lib,
+                retrieval_layer=29,
+                query_head=4,
+            )
 
         assert lib.get_window_tokens.call_count == 2
 
@@ -300,7 +340,15 @@ class TestExtractKvRouteIndex:
         _wire_forward(kv_gen, layer_adapter, seq_len=0)
 
         with patch.object(mx, "savez") as mock_savez:
-            extract_kv_route_index(engine, tmp_path, num_archived=1, config=_GEMMA4B_CONFIG, lib=lib, retrieval_layer=29, query_head=4)
+            extract_kv_route_index(
+                engine,
+                tmp_path,
+                num_archived=1,
+                config=_GEMMA4B_CONFIG,
+                lib=lib,
+                retrieval_layer=29,
+                query_head=4,
+            )
 
         kwargs = mock_savez.call_args[1]
         assert "w0" not in kwargs
@@ -373,7 +421,15 @@ class TestExtractKvRouteIndex:
         _wire_forward(kv_gen, layer_adapter, seq_len=10, hidden=64, head_dim=8, nkv=4)
 
         with patch.object(mx, "savez"):
-            extract_kv_route_index(engine, tmp_path, num_archived=1, config=_GEMMA4B_CONFIG, lib=None, retrieval_layer=29, query_head=4)
+            extract_kv_route_index(
+                engine,
+                tmp_path,
+                num_archived=1,
+                config=_GEMMA4B_CONFIG,
+                lib=None,
+                retrieval_layer=29,
+                query_head=4,
+            )
 
         engine.archive.retrieve.assert_called_once_with(0)
 

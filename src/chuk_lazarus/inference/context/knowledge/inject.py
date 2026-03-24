@@ -23,8 +23,7 @@ import mlx.core as mx
 from ._sampling import sample_token
 
 if TYPE_CHECKING:
-    from .config import ArchitectureConfig
-    from .store import InjectionEntry
+    pass
 
 _MASK_DTYPE = mx.bfloat16
 
@@ -58,15 +57,18 @@ def _run_layer_step(backbone, layer, i, h, kv_store_i, seq_len):
     total = k_all.shape[2]
 
     if (not is_global) and sw is not None and total > sw:
-        step_mask = mx.concatenate([
-            mx.full((1, 1, 1, total - sw), -1e9, dtype=_MASK_DTYPE),
-            mx.zeros((1, 1, 1, sw), dtype=_MASK_DTYPE),
-        ], axis=-1)
+        step_mask = mx.concatenate(
+            [
+                mx.full((1, 1, 1, total - sw), -1e9, dtype=_MASK_DTYPE),
+                mx.zeros((1, 1, 1, sw), dtype=_MASK_DTYPE),
+            ],
+            axis=-1,
+        )
         attn_out = mx.fast.scaled_dot_product_attention(
-            q, k_rpt, v_rpt, scale=layer.attn_scale, mask=step_mask)
+            q, k_rpt, v_rpt, scale=layer.attn_scale, mask=step_mask
+        )
     else:
-        attn_out = mx.fast.scaled_dot_product_attention(
-            q, k_rpt, v_rpt, scale=layer.attn_scale)
+        attn_out = mx.fast.scaled_dot_product_attention(q, k_rpt, v_rpt, scale=layer.attn_scale)
 
     attn_out = attn_out.transpose(0, 2, 1, 3).reshape(B, 1, -1)
     attn_out = layer.output_project(attn_out)
@@ -78,8 +80,9 @@ def _run_layer_step(backbone, layer, i, h, kv_store_i, seq_len):
 # ── 1D injection step (AFTER layer) ─────────────────────────────────
 
 
-def _step_with_injection(kv_gen, new_token_ids, kv_store, seq_len,
-                         inject_token_id, inject_coeff, crystal_layer):
+def _step_with_injection(
+    kv_gen, new_token_ids, kv_store, seq_len, inject_token_id, inject_coeff, crystal_layer
+):
     """Single-token step with 1D injection AFTER crystal_layer."""
     backbone = kv_gen.backbone
     embed_matrix = backbone.embed_matrix
@@ -98,8 +101,9 @@ def _step_with_injection(kv_gen, new_token_ids, kv_store, seq_len,
 # ── Full residual injection step (AFTER layer) ──────────────────────
 
 
-def _step_with_residual_injection(kv_gen, new_token_ids, kv_store, seq_len,
-                                  donor_vec, crystal_layer):
+def _step_with_residual_injection(
+    kv_gen, new_token_ids, kv_store, seq_len, donor_vec, crystal_layer
+):
     """Single-token step with full residual replacement AFTER crystal_layer."""
     backbone = kv_gen.backbone
     h = backbone.embed(new_token_ids)
@@ -143,8 +147,9 @@ def _extract_focused_passage(window_token_list, query_token_ids, idf, tokenizer,
 # ── Donor extraction ─────────────────────────────────────────────────
 
 
-def extract_donor_residual(kv_gen, window_text, query_text, tokenizer, config,
-                           window_token_list=None, idf=None):
+def extract_donor_residual(
+    kv_gen, window_text, query_text, tokenizer, config, window_token_list=None, idf=None
+):
     """Build FOCUSED chat-templated donor, forward to crystal_layer, capture residual.
 
     Focused passage (~200 tokens) → "John" at P=1.0. Full window → "According".
@@ -159,7 +164,8 @@ def extract_donor_residual(kv_gen, window_text, query_text, tokenizer, config,
     if hasattr(tokenizer, "apply_chat_template"):
         try:
             donor_ids = tokenizer.apply_chat_template(
-                [{"role": "user", "content": donor_content}], add_generation_prompt=True)
+                [{"role": "user", "content": donor_content}], add_generation_prompt=True
+            )
         except Exception:
             donor_ids = tokenizer.encode(donor_content, add_special_tokens=True)
     else:
@@ -202,7 +208,8 @@ def _full_forward_with_injection(kv_gen, all_ids, donor_vec, crystal_layer):
         k_rpt = mx.repeat(k, layer.n_rep, axis=1) if layer.n_rep > 1 else k
         v_rpt = mx.repeat(v, layer.n_rep, axis=1) if layer.n_rep > 1 else v
         attn_out = mx.fast.scaled_dot_product_attention(
-            q, k_rpt, v_rpt, scale=layer.attn_scale, mask=mask)
+            q, k_rpt, v_rpt, scale=layer.attn_scale, mask=mask
+        )
         attn_out = attn_out.transpose(0, 2, 1, 3).reshape(B, S, -1)
         attn_out = layer.output_project(attn_out)
         h = layer.residual_add_attn(h, attn_out)
@@ -221,8 +228,9 @@ def _full_forward_with_injection(kv_gen, all_ids, donor_vec, crystal_layer):
 # ── Generate with persistent residual injection ──────────────────────
 
 
-def generate_with_persistent_injection(kv_gen, prompt_ids, donor_vec, config,
-                                       max_tokens=80, temperature=0.0, stop_ids=None):
+def generate_with_persistent_injection(
+    kv_gen, prompt_ids, donor_vec, config, max_tokens=80, temperature=0.0, stop_ids=None
+):
     """Generate with persistent full-sequence injection (matches MCP experiment).
 
     At each injection step: recompute the FULL sequence (prompt + generated
@@ -244,8 +252,7 @@ def generate_with_persistent_injection(kv_gen, prompt_ids, donor_vec, config,
         all_ids = mx.array(base_ids + generated)
 
         # Full forward with injection
-        inject_logits = _full_forward_with_injection(
-            kv_gen, all_ids, donor_vec, crystal_layer)
+        inject_logits = _full_forward_with_injection(kv_gen, all_ids, donor_vec, crystal_layer)
         inject_token = sample_token(inject_logits[0, -1], temperature)
 
         # Natural forward (no injection) for agreement check
@@ -274,7 +281,8 @@ def generate_with_persistent_injection(kv_gen, prompt_ids, donor_vec, config,
                 break
             generated.append(token)
             logits, kv_store = kv_gen.step_uncompiled(
-                mx.array([[token]]), kv_store, seq_len=seq_len)
+                mx.array([[token]]), kv_store, seq_len=seq_len
+            )
             seq_len += 1
 
     return generated
@@ -283,10 +291,19 @@ def generate_with_persistent_injection(kv_gen, prompt_ids, donor_vec, config,
 # ── Generate with 1D entry injection (8-byte proof) ──────────────────
 
 
-def generate_with_injection(kv_gen, prompt_ids, entries, config,
-                            max_tokens=80, temperature=0.0, stop_ids=None,
-                            context_ids=None, context_text=None,
-                            query_text=None, tokenizer=None):
+def generate_with_injection(
+    kv_gen,
+    prompt_ids,
+    entries,
+    config,
+    max_tokens=80,
+    temperature=0.0,
+    stop_ids=None,
+    context_ids=None,
+    context_text=None,
+    query_text=None,
+    tokenizer=None,
+):
     """Generate with 1D entry injection + context replay for narrative.
 
     Phase 1: Inject entity tokens ("John", " C", "oyle") via 1D injection.
@@ -303,8 +320,9 @@ def generate_with_injection(kv_gen, prompt_ids, entries, config,
     if not entries:
         logits, kv_store = kv_gen.prefill(prompt_ids)
         mx.eval(logits)
-        return _plain_loop(kv_gen, logits, kv_store, prompt_ids.shape[1],
-                           max_tokens, temperature, stop_ids)
+        return _plain_loop(
+            kv_gen, logits, kv_store, prompt_ids.shape[1], max_tokens, temperature, stop_ids
+        )
 
     sorted_entries = sorted(entries, key=lambda e: (e.fact_id, e.position_in_window))
     first_entry = sorted_entries[0]
@@ -330,8 +348,14 @@ def generate_with_injection(kv_gen, prompt_ids, entries, config,
         if len(generated) >= max_tokens:
             break
         logits, kv_store = _step_with_injection(
-            kv_gen, mx.array([[prev_token]]), kv_store, seq_len,
-            entry.token_id, entry.coefficient, crystal_layer)
+            kv_gen,
+            mx.array([[prev_token]]),
+            kv_store,
+            seq_len,
+            entry.token_id,
+            entry.coefficient,
+            crystal_layer,
+        )
         seq_len += 1
         token = sample_token(logits[0, -1], temperature)
         if token in stop_ids:
@@ -364,8 +388,7 @@ def generate_with_injection(kv_gen, prompt_ids, entries, config,
         if token in stop_ids:
             break
         generated.append(token)
-        logits, kv_store = kv_gen.step_uncompiled(
-            mx.array([[token]]), kv_store, seq_len=seq_len)
+        logits, kv_store = kv_gen.step_uncompiled(mx.array([[token]]), kv_store, seq_len=seq_len)
         seq_len += 1
     return generated
 
@@ -373,8 +396,9 @@ def generate_with_injection(kv_gen, prompt_ids, entries, config,
 # ── Mode A: Reconstruct from boundary + tokens ──────────────────────
 
 
-def generate_with_boundary(kv_gen, prompt_ids, boundary, config,
-                           max_tokens=80, temperature=0.0, stop_ids=None):
+def generate_with_boundary(
+    kv_gen, prompt_ids, boundary, config, max_tokens=80, temperature=0.0, stop_ids=None
+):
     """Generate with Markov boundary reconstruction (Mode A).
 
     Prefills the chat-templated prompt with initial_residual=boundary.
@@ -383,9 +407,6 @@ def generate_with_boundary(kv_gen, prompt_ids, boundary, config,
     reconstructs the full document state. KL=0.0 vs full-document prefill.
     """
     stop_ids = stop_ids or set()
-
-    # Reshape boundary for initial_residual
-    bnd = boundary.reshape(1, 1, -1) if boundary.ndim == 1 else boundary
 
     # Prefill with boundary as initial context
     logits, kv_store = kv_gen.prefill(prompt_ids)
@@ -400,8 +421,7 @@ def generate_with_boundary(kv_gen, prompt_ids, boundary, config,
         if token in stop_ids:
             break
         generated.append(token)
-        logits, kv_store = kv_gen.step_uncompiled(
-            mx.array([[token]]), kv_store, seq_len=seq_len)
+        logits, kv_store = kv_gen.step_uncompiled(mx.array([[token]]), kv_store, seq_len=seq_len)
         seq_len += 1
     return generated
 
@@ -409,8 +429,9 @@ def generate_with_boundary(kv_gen, prompt_ids, boundary, config,
 # ── Markov residual injection (v12 — patch_all_positions) ────────────
 
 
-def generate_with_markov_injection(kv_gen, prompt_ids, donor_stream, config,
-                                   max_tokens=80, temperature=0.0, stop_ids=None):
+def generate_with_markov_injection(
+    kv_gen, prompt_ids, donor_stream, config, max_tokens=80, temperature=0.0, stop_ids=None
+):
     """Generate with full Markov residual injection (patch_all_positions).
 
     Replaces the ENTIRE hidden state at crystal_layer with the stored
@@ -442,7 +463,8 @@ def generate_with_markov_injection(kv_gen, prompt_ids, donor_stream, config,
         k_rpt = mx.repeat(k, layer.n_rep, axis=1) if layer.n_rep > 1 else k
         v_rpt = mx.repeat(v, layer.n_rep, axis=1) if layer.n_rep > 1 else v
         attn_out = mx.fast.scaled_dot_product_attention(
-            q, k_rpt, v_rpt, scale=layer.attn_scale, mask=mask)
+            q, k_rpt, v_rpt, scale=layer.attn_scale, mask=mask
+        )
         attn_out = attn_out.transpose(0, 2, 1, 3).reshape(B, S_cur, -1)
         attn_out = layer.output_project(attn_out)
         h = layer.residual_add_attn(h, attn_out)
@@ -477,8 +499,7 @@ def generate_with_markov_injection(kv_gen, prompt_ids, donor_stream, config,
         if token in stop_ids:
             break
         generated.append(token)
-        logits, kv_store = kv_gen.step_uncompiled(
-            mx.array([[token]]), kv_store, seq_len=seq_len)
+        logits, kv_store = kv_gen.step_uncompiled(mx.array([[token]]), kv_store, seq_len=seq_len)
         seq_len += 1
 
     return generated

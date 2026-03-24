@@ -42,7 +42,7 @@ def _kv_route_score_windows(
     """
     import mlx.core as mx
 
-    from .....inference.context.arch_config import ArchitectureConfig, ArchitectureNotCalibrated
+    from .....inference.context.arch_config import ArchitectureNotCalibrated
 
     backbone = kv_gen.backbone
     num_layers = len(backbone.adapted_layers)

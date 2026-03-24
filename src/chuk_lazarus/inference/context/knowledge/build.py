@@ -18,7 +18,7 @@ Pass 3 (one generation per window):
 from __future__ import annotations
 
 import math
-from typing import Callable
+from collections.abc import Callable
 
 import mlx.core as mx
 
@@ -151,7 +151,8 @@ def streaming_prefill(
                         for vid in var_ids:
                             window_tokens[wid].add(vid)
                 logits, kv_store = kv_gen.step_uncompiled(
-                    mx.array([[token]]), kv_store, seq_len=seq_len)
+                    mx.array([[token]]), kv_store, seq_len=seq_len
+                )
                 seq_len += 1
 
         # Recompute IDF with expanded token sets
@@ -163,19 +164,20 @@ def streaming_prefill(
         target_list = targets.get(wid, [])
         for token_id, pos_in_window in target_list:
             embed = embed_matrix[token_id]
-            embed_norm_sq = (embed * embed).sum()
             # Use a simple coefficient from the embedding projection
             # (the focused context replay handles narrative, not the entries)
             natural_coeff = float(mx.linalg.norm(embed).item())
             stored_coeff = inject_coefficient * natural_coeff
 
-            all_entries.append(InjectionEntry(
-                token_id=token_id,
-                coefficient=stored_coeff,
-                window_id=wid,
-                position_in_window=pos_in_window,
-                fact_id=fact_id_counter,
-            ))
+            all_entries.append(
+                InjectionEntry(
+                    token_id=token_id,
+                    coefficient=stored_coeff,
+                    window_id=wid,
+                    position_in_window=pos_in_window,
+                    fact_id=fact_id_counter,
+                )
+            )
             fact_id_counter += 1
 
     return KnowledgeStore(

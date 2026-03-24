@@ -17,7 +17,6 @@ from pathlib import Path
 from ..research._stopwords import FUNCTION_WORDS as _FUNCTION_WORDS
 from ..research._stopwords import WORD_RE as _WORD_RE
 
-
 # ── Keyword extraction helpers ───────────────────────────────────────
 
 

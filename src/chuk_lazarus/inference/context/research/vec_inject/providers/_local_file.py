@@ -591,7 +591,6 @@ class LocalVecInjectProvider:
 
         H4 = self.meta.query_head
         kv_h = H4 // layer_adapter.n_rep
-        dh = layer_adapter.head_dim
 
         # Last query position attending over all positions
         q_last = q[:, H4, -1:, :]  # (1, 1, dh)

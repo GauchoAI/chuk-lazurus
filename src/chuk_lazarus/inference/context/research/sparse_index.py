@@ -24,7 +24,6 @@ from pathlib import Path
 
 from ._stopwords import COMMON_ABBREVIATIONS, FUNCTION_WORDS, STOPWORDS  # noqa: F401
 
-
 # -----------------------------------------------------------------------
 # Content word extraction
 # -----------------------------------------------------------------------

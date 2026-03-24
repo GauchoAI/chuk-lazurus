@@ -160,7 +160,8 @@ def extract_vec_inject_index(
 
         # Forward pass with residual chaining — cumulative document context
         h = kv_gen.prefill_to_layer(
-            w_ids, target_layer=retrieval_layer,
+            w_ids,
+            target_layer=retrieval_layer,
             initial_residual=boundary_residual,
         )
         # If residual was prepended, h has S+1 positions; offset indices accordingly
@@ -209,7 +210,8 @@ def extract_vec_inject_index(
         # Requires h entering L29 (output of L28), not L29's output.
         if retrieval_layer > 0:
             h_pre = kv_gen.prefill_to_layer(
-                w_ids, target_layer=retrieval_layer - 1,
+                w_ids,
+                target_layer=retrieval_layer - 1,
                 initial_residual=boundary_residual,
             )
             S_pre = h_pre.shape[1]
@@ -273,7 +275,7 @@ def extract_vec_inject_index(
 
     hidden_size = backbone.hidden_size
     has_h4 = retrieval_layer > 0
-    k_bytes = head_dim * 2          # float16
+    k_bytes = head_dim * 2  # float16
     h4_bytes = hidden_size * 2 if has_h4 else 0  # float16
     storage_bytes = total_facts * (k_bytes + 4 + 4 + 4 + h4_bytes)
     h4_note = f" + {hidden_size}D h4_vec" if has_h4 else ""

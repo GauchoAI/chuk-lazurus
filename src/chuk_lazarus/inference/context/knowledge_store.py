@@ -1,4 +1,5 @@
 """Shim — canonical locations: knowledge/store.py, knowledge/route.py, knowledge/build.py"""
+
 from .knowledge.build import streaming_prefill  # noqa: F401
 from .knowledge.route import (  # noqa: F401
     SparseKeywordIndex,

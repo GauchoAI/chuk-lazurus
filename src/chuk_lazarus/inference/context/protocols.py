@@ -19,7 +19,6 @@ from typing import Protocol, runtime_checkable
 
 import mlx.core as mx
 
-
 # Per-layer (K, V) pair list — the format used by KVDirectGenerator
 KVStore = list[tuple[mx.array, mx.array]]
 

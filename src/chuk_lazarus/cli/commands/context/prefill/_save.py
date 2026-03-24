@@ -6,9 +6,8 @@ import hashlib
 import json
 import struct
 import sys
-from pathlib import Path
-
 from dataclasses import dataclass
+from pathlib import Path
 
 from .._types import KVectorMode, ResidualMode
 
@@ -16,6 +15,7 @@ from .._types import KVectorMode, ResidualMode
 @dataclass(frozen=True)
 class SavePhases:
     """Which extraction passes to run during save."""
+
     interval: bool = True
     compass: bool = True
     darkspace: bool = True

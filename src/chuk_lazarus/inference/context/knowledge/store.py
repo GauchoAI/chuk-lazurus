@@ -24,7 +24,7 @@ import mlx.core as mx
 import numpy as np
 
 from .config import ArchitectureConfig
-from .route import KeywordRouter, SparseKeywordIndex, TFIDFRouter
+from .route import KeywordRouter, TFIDFRouter
 
 # ── File constants ───────────────────────────────────────────────────
 
@@ -60,18 +60,26 @@ class InjectionEntry:
     fact_id: int  # uint16 — groups multi-token facts
 
     def to_tuple(self) -> tuple[int, float, int, int, int]:
-        return (self.token_id, self.coefficient, self.window_id, self.position_in_window, self.fact_id)
+        return (
+            self.token_id,
+            self.coefficient,
+            self.window_id,
+            self.position_in_window,
+            self.fact_id,
+        )
 
 
 # ── Numpy structured dtype for serialisation ─────────────────────────
 
-_ENTRY_DTYPE = np.dtype([
-    ("token_id", np.uint32),
-    ("coefficient", np.float32),
-    ("window_id", np.uint16),
-    ("position_in_window", np.uint16),
-    ("fact_id", np.uint16),
-])
+_ENTRY_DTYPE = np.dtype(
+    [
+        ("token_id", np.uint32),
+        ("coefficient", np.float32),
+        ("window_id", np.uint16),
+        ("position_in_window", np.uint16),
+        ("fact_id", np.uint16),
+    ]
+)
 
 
 def _entries_to_numpy(entries: list[InjectionEntry]) -> np.ndarray:
@@ -186,12 +194,98 @@ class KnowledgeStore:
         wid = self._route_keyword(query_text)
         return wid, (1.0 if wid is not None else 0.0)
 
-    def route_top_k(self, query_text: str, tokenizer, k: int = 3) -> list[int]:
-        """Return top-k window IDs by TF-IDF score."""
+    def route_top_k(
+        self,
+        query_text: str,
+        tokenizer,
+        k: int = 3,
+        expansion_ids: list[int] | None = None,
+    ) -> list[int]:
+        """Return top-k window IDs by TF-IDF score.
+
+        Runs base query first, then expanded query.  Merges: base
+        results have priority; expansion fills remaining slots with
+        windows not already selected.  This way expansion helps when
+        the base query misses (vocabulary gap) but can't overwrite
+        good base matches.
+        """
         router = self._get_tfidf_router()
         query_ids = tokenizer.encode(query_text, add_special_tokens=False)
-        result = router.route(query_ids, top_k=k)
-        return result if isinstance(result, list) else ([result] if result is not None else [])
+
+        # Base routing
+        base_result = router.route(query_ids, top_k=k)
+        if not isinstance(base_result, list):
+            base_result = [base_result] if base_result is not None else []
+
+        if not expansion_ids or len(base_result) >= k:
+            return base_result[:k]
+
+        # Expanded routing — fill remaining slots
+        useful = [t for t in expansion_ids if self.idf.get(t, 0.0) > 0]
+        if useful:
+            expanded_ids = query_ids + useful
+            exp_result = router.route(expanded_ids, top_k=k)
+            if not isinstance(exp_result, list):
+                exp_result = [exp_result] if exp_result is not None else []
+
+            # Merge: base first, then expansion fills gaps
+            seen = set(base_result)
+            merged = list(base_result)
+            for wid in exp_result:
+                if wid not in seen and len(merged) < k:
+                    merged.append(wid)
+                    seen.add(wid)
+            return merged
+
+        return base_result[:k]
+
+    @staticmethod
+    def _expand_query(
+        query_text: str,
+        tokenizer,
+        kv_gen,
+        n_tokens: int = 30,
+    ) -> list[int]:
+        """Generate expansion tokens for a query using the model.
+
+        Asks the model: "Keywords that would appear in a document about:
+        <query>\\nSpecific words:" and collects *n_tokens* greedy tokens.
+        Returns a flat list of token IDs (including case/space variants)
+        suitable for adding to the TF-IDF query set.
+        """
+        import mlx.core as mx
+
+        from ._sampling import sample_token
+
+        prompt = (
+            f"Q: {query_text}\nA: The specific distinctive words and phrases from this event are:"
+        )
+        prompt_ids = tokenizer.encode(prompt, add_special_tokens=True)
+        prompt_mx = mx.array(prompt_ids)[None]
+
+        logits, kv_store = kv_gen.prefill(prompt_mx)
+        mx.eval(logits)
+        seq_len = prompt_mx.shape[1]
+
+        expansion: list[int] = []
+        for _ in range(n_tokens):
+            token = sample_token(logits[0, -1], 0.0)
+            expansion.append(token)
+            # Add case/space variants (mirrors build-time Pass 3)
+            kw_text = tokenizer.decode([token]).strip()
+            if kw_text and len(kw_text) >= 2:
+                kw_lower = kw_text.lower()
+                for variant in [kw_lower, f" {kw_lower}", kw_text, f" {kw_text}"]:
+                    var_ids = tokenizer.encode(variant, add_special_tokens=False)
+                    expansion.extend(var_ids)
+            logits, kv_store = kv_gen.step_uncompiled(
+                mx.array([[token]]),
+                kv_store,
+                seq_len=seq_len,
+            )
+            seq_len += 1
+
+        return expansion
 
     def _route_tfidf(self, query_text: str, tokenizer) -> int | None:
         router = self._get_tfidf_router()
@@ -298,9 +392,7 @@ class KnowledgeStore:
         # Get query token IDs
         query_token_ids: set[int] = set()
         if tokenizer is not None:
-            query_token_ids = set(
-                tokenizer.encode(query_text, add_special_tokens=False)
-            )
+            query_token_ids = set(tokenizer.encode(query_text, add_special_tokens=False))
 
         # Find the routing match position in the window
         match_pos: int | None = None
@@ -441,7 +533,7 @@ class KnowledgeStore:
         if (path / WINDOW_TOKENS_FILE).exists():
             wt_npz = np.load(str(path / WINDOW_TOKENS_FILE), allow_pickle=False)
             for key in wt_npz.files:
-                window_tokens[int(key)] = set(int(t) for t in wt_npz[key])
+                window_tokens[int(key)] = {int(t) for t in wt_npz[key]}
 
         # Window token lists (ordered, for position lookup)
         window_token_lists: dict[int, list[int]] = {}

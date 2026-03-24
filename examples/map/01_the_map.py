@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """
-ACT 3 — The Swap
+ACT 2 — The Map
 
 Three passes through the same prompt:
   1. Normal:   "The capital of Australia is" → Sydney → Canberra
-  2. L0 swap:  France's embeddings from the start → Paris from layer 1
-  3. L26 swap: 25 layers of Australia, then France's map → Sydney → Paris
+  2. L0 swap:  France's residual after L0 → Paris from layer 1 onward
+  3. L26 swap: 26 layers of Australia, then France's residual → Sydney → Paris
+
+Both Pass 2 and Pass 3 are residual stream swaps — the Markov property
+at different layers. Pass 2 swaps early (after L0). Pass 3 swaps late
+(at L26). Both override everything downstream.
 
 Usage:
     uv run python examples/map/01_the_map.py
@@ -127,10 +131,13 @@ def main():
     aus_ids = tokenizer.encode(prompt_aus, add_special_tokens=True)
     fra_ids = tokenizer.encode(prompt_fra, add_special_tokens=True)
 
-    # Pre-extract France's state at both swap points
-    france_embed = backbone.embed(mx.array(fra_ids)[None])
-    mx.eval(france_embed)
+    # Pre-extract France's residual at both swap points
+    # L0: France's state after layer 0 has processed (not raw embeddings)
+    france_at_0 = kv_gen.prefill_to_layer(
+        mx.array(fra_ids)[None], target_layer=0
+    )
 
+    # L26: France's state after 26 layers of processing
     france_at_26 = kv_gen.prefill_to_layer(
         mx.array(fra_ids)[None], target_layer=26
     )
@@ -150,19 +157,19 @@ def main():
     print(f"  {BOLD}Prediction:{RESET}  {GREEN}{tok}{RESET}  ({prob:.1%})")
 
     # ══════════════════════════════════════════════════════════
-    # Pass 2: L0 swap — full embeddings replaced
+    # Pass 2: L0 swap — France's residual after layer 0
     # ══════════════════════════════════════════════════════════
     print()
     time.sleep(1.0)
-    print(f"  {BOLD}Pass 2 — Replace all embeddings at L0{RESET}")
-    print(f"  {YELLOW}France's embeddings. All positions. Before any layer.{RESET}")
+    print(f"  {BOLD}Pass 2 — Replace residual at L1{RESET}")
+    print(f"  {YELLOW}France's residual after layer 0. Injected at layer 1.{RESET}")
     print(f"  {BOLD}Prompt:{RESET} \"{prompt_aus}\"")
     print()
     time.sleep(0.5)
 
     logits = forward_show(
         backbone, aus_ids, tokenizer,
-        france_residual=france_embed, swap_layer=0,
+        france_residual=france_at_0, swap_layer=1,
     )
     tok_l0, prob_l0 = top_prediction(logits, tokenizer)
 
@@ -174,8 +181,8 @@ def main():
     # ══════════════════════════════════════════════════════════
     print()
     time.sleep(1.0)
-    print(f"  {BOLD}Pass 3 — Replace at L26{RESET}")
-    print(f"  {YELLOW}25 layers of Australia. Then France's map.{RESET}")
+    print(f"  {BOLD}Pass 3 — Replace residual at L26{RESET}")
+    print(f"  {YELLOW}26 layers of Australia. Then France's residual.{RESET}")
     print(f"  {BOLD}Prompt:{RESET} \"{prompt_aus}\"")
     print()
     time.sleep(0.5)
@@ -191,9 +198,10 @@ def main():
 
     # ── Closing ───────────────────────────────────────────────
     print()
-    print(f"  Replace the state, replace the knowledge.")
-    print(f"  At L0 — France from the start. At L26 — Sydney flips to Paris.")
-    print(f"  The model doesn't read tokens. It reads the map.")
+    print(f"  The residual IS the state. Replace it, replace the knowledge.")
+    print(f"  At L1 — France from layer 1 onward.")
+    print(f"  At L26 — Sydney at 90%, then one swap: Paris at 100%.")
+    print(f"  The Markov property. Proven at two layers.")
     print()
 
 

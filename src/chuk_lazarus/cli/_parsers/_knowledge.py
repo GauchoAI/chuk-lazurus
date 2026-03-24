@@ -48,7 +48,9 @@ def register_knowledge_parsers(subparsers):
         help="Query a knowledge store with persistent injection",
     )
     kn_query.add_argument("--model", "-m", required=True, help="Model ID or local path")
-    kn_query.add_argument("--store", "-s", required=True, help="Knowledge store directory")
+    kn_query.add_argument(
+        "--store", "-s", default=None, help="Knowledge store directory (omit for plain inference)"
+    )
     kn_query.add_argument("--prompt", "-p", required=True, help="Query text")
     kn_query.add_argument(
         "--max-tokens",

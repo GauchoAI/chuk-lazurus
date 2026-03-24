@@ -49,8 +49,12 @@ async def knowledge_chat_cmd(args: Namespace) -> None:
 
         if window_id is None:
             generated = generate_plain(
-                kv_gen, prompt_ids, max_tokens, stop_ids,
-                stream=True, tokenizer=tokenizer,
+                kv_gen,
+                prompt_ids,
+                max_tokens,
+                stop_ids,
+                stream=True,
+                tokenizer=tokenizer,
             )
         else:
             entries = store.get_entries_for_query(window_id, prompt_text, tokenizer)

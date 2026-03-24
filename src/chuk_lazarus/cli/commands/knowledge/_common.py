@@ -76,9 +76,7 @@ def generate_plain(
         if stream and tokenizer is not None:
             sys.stdout.write(tokenizer.decode([token], skip_special_tokens=True))
             sys.stdout.flush()
-        logits, kv_store = kv_gen.step_uncompiled(
-            mx.array([[token]]), kv_store, seq_len=seq_len
-        )
+        logits, kv_store = kv_gen.step_uncompiled(mx.array([[token]]), kv_store, seq_len=seq_len)
         seq_len += 1
 
     return generated

@@ -10,6 +10,10 @@ import mlx.core as mx
 import numpy as np
 
 from chuk_lazarus.inference.context.arch_config import ArchitectureConfig
+from chuk_lazarus.inference.context.knowledge.store import (
+    _entries_to_numpy,
+    _numpy_to_entries,
+)
 from chuk_lazarus.inference.context.knowledge_store import (
     InjectionEntry,
     KnowledgeStore,
@@ -18,11 +22,6 @@ from chuk_lazarus.inference.context.knowledge_store import (
     extract_window_keywords,
     streaming_prefill,
 )
-from chuk_lazarus.inference.context.knowledge.store import (
-    _entries_to_numpy,
-    _numpy_to_entries,
-)
-
 
 # ── SparseKeywordIndex ───────────────────────────────────────────────
 
@@ -118,8 +117,11 @@ class TestExtractWindowKeywords:
 class TestInjectionEntry:
     def test_creation(self):
         entry = InjectionEntry(
-            token_id=42, coefficient=4608.0,
-            window_id=170, position_in_window=103, fact_id=0,
+            token_id=42,
+            coefficient=4608.0,
+            window_id=170,
+            position_in_window=103,
+            fact_id=0,
         )
         assert entry.token_id == 42
         assert entry.coefficient == 4608.0
@@ -139,7 +141,13 @@ class TestInjectionEntry:
         ]
         arr = _entries_to_numpy(entries)
         assert arr.shape == (3,)
-        assert arr.dtype.names == ("token_id", "coefficient", "window_id", "position_in_window", "fact_id")
+        assert arr.dtype.names == (
+            "token_id",
+            "coefficient",
+            "window_id",
+            "position_in_window",
+            "fact_id",
+        )
 
         loaded = _numpy_to_entries(arr)
         assert len(loaded) == 3
@@ -150,6 +158,7 @@ class TestInjectionEntry:
 
     def test_empty_numpy_roundtrip(self):
         from chuk_lazarus.inference.context.knowledge.store import _ENTRY_DTYPE
+
         arr = np.array([], dtype=_ENTRY_DTYPE)
         loaded = _numpy_to_entries(arr)
         assert loaded == []
@@ -163,13 +172,15 @@ class TestKnowledgeStore:
         entries = []
         for wid in range(n_windows):
             for pos in range(entries_per_window):
-                entries.append(InjectionEntry(
-                    token_id=wid * 100 + pos,
-                    coefficient=1000.0 + wid * 10 + pos,
-                    window_id=wid,
-                    position_in_window=wid * 100 + pos,
-                    fact_id=wid * entries_per_window + pos,
-                ))
+                entries.append(
+                    InjectionEntry(
+                        token_id=wid * 100 + pos,
+                        coefficient=1000.0 + wid * 10 + pos,
+                        window_id=wid,
+                        position_in_window=wid * 100 + pos,
+                        fact_id=wid * entries_per_window + pos,
+                    )
+                )
 
         names = ["apollo", "porridge", "lunar", "coyle", "voltara"]
         topics = ["launch", "contest", "orbit", "transcript", "city"]
@@ -178,7 +189,7 @@ class TestKnowledgeStore:
             keywords[wid] = [names[wid % len(names)], topics[wid % len(topics)]]
 
         window_tokens = {wid: {wid * 100 + i for i in range(20)} for wid in range(n_windows)}
-        idf = {t: 1.0 for t in range(500)}
+        idf = dict.fromkeys(range(500), 1.0)
 
         config = ArchitectureConfig(
             retrieval_layer=29,
@@ -256,12 +267,20 @@ class TestKnowledgeStore:
         store_dir.mkdir()
         # Create v9 files
         np.savez(str(store_dir / "passages.npz"), passages=np.zeros((3, 64)))
-        (store_dir / "manifest.json").write_text(json.dumps({
-            "num_passages": 3, "arch_config": {
-                "retrieval_layer": 29, "query_head": 4, "injection_layer": 30,
-            }
-        }))
+        (store_dir / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "num_passages": 3,
+                    "arch_config": {
+                        "retrieval_layer": 29,
+                        "query_head": 4,
+                        "injection_layer": 30,
+                    },
+                }
+            )
+        )
         import pytest
+
         with pytest.raises(ValueError, match="v9 format"):
             KnowledgeStore.load(store_dir)
 
@@ -524,8 +543,11 @@ class TestKnowledgeStoreEdgeCases:
             InjectionEntry(99, 5120.25, 1, 1, 1),
         ]
         config = ArchitectureConfig(
-            retrieval_layer=17, query_head=0, injection_layer=18,
-            crystal_layer=18, window_size=256,
+            retrieval_layer=17,
+            query_head=0,
+            injection_layer=18,
+            crystal_layer=18,
+            window_size=256,
         )
         store = KnowledgeStore(
             entries=entries,
@@ -568,8 +590,11 @@ class TestKnowledgeStoreEdgeCases:
         kv_gen.prefill_to_layer.return_value = mx.random.normal((1, 3, 8))
 
         config = ArchitectureConfig(
-            retrieval_layer=29, query_head=4, injection_layer=30,
-            window_size=512, entries_per_window=2,
+            retrieval_layer=29,
+            query_head=4,
+            injection_layer=30,
+            window_size=512,
+            entries_per_window=2,
         )
         store = streaming_prefill(kv_gen, list(range(3)), config)
         assert store.num_windows == 1
@@ -605,9 +630,9 @@ class TestTFIDFRouter:
         from chuk_lazarus.inference.context.knowledge.route import TFIDFRouter
 
         window_tokens = {
-            0: {10, 20, 30},       # generic tokens
-            1: {40, 50, 60},       # different tokens
-            2: {10, 40, 70},       # overlaps with both
+            0: {10, 20, 30},  # generic tokens
+            1: {40, 50, 60},  # different tokens
+            2: {10, 40, 70},  # overlaps with both
         }
         idf = TFIDFRouter.compute_idf(window_tokens)
         router = TFIDFRouter(window_tokens, idf)
@@ -659,11 +684,13 @@ class TestInject1D:
     def test_basic_injection(self):
         from chuk_lazarus.inference.context.knowledge.inject import inject_1d
 
-        embed_matrix = mx.array([
-            [0.0, 0.0, 0.0],  # token 0
-            [1.0, 0.0, 0.0],  # token 1 — unit x direction
-            [0.0, 1.0, 0.0],  # token 2 — unit y direction
-        ])
+        embed_matrix = mx.array(
+            [
+                [0.0, 0.0, 0.0],  # token 0
+                [1.0, 0.0, 0.0],  # token 1 — unit x direction
+                [0.0, 1.0, 0.0],  # token 2 — unit y direction
+            ]
+        )
         residual = mx.array([0.0, 0.0, 0.0])
 
         # Inject token 1 with coefficient 5.0

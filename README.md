@@ -286,6 +286,44 @@ shakespeare_ctx/
 - **Two-stage Ctrl-C** — first interrupt saves gracefully, second hard-exits
 - **Automatic resume** — partial libraries are detected and continued from the last window
 
+### Knowledge Store (Build + Query + Chat)
+
+Compress a document into a lightweight knowledge store using TF-IDF routing and 1D vector injection — then query or chat against it without re-reading the source:
+
+```bash
+# Build: tokenize, prefill windows, extract injection entries
+lazarus knowledge build \
+    --model google/gemma-3-4b-it \
+    --input article.txt \
+    --output ./article_kb/
+
+# Query: single-shot question with TF-IDF routing
+lazarus knowledge query \
+    --model google/gemma-3-4b-it \
+    --store ./article_kb/ \
+    --prompt "Who won the competition?"
+
+# Chat: interactive multi-turn conversation grounded in the document
+lazarus knowledge chat \
+    --model google/gemma-3-4b-it \
+    --store ./article_kb/
+```
+
+**How it works:** The build command splits the document into fixed-size windows (default 512 tokens), runs a forward pass on each, and extracts injection entries via K-norm sampling — keeping only the tokens with the highest addressing energy in the model's attention. At query time, TF-IDF routing selects the best windows, their boundary residuals are injected as Markov state, and focused context replay provides the narrative grounding for generation.
+
+**Store layout:**
+
+```
+article_kb/
+├── manifest.json         — model ID, window size, total tokens
+├── kv_index.npz          — K-vectors + token IDs + coefficients (518 bytes/entry)
+├── final_residual.npy    — document Markov state (~10 KB)
+├── tokens.bin            — token archive (replay fallback)
+└── windows.json          — window boundaries + preview text
+```
+
+**Storage:** A 370K-token document produces an ~12 MB store vs ~56 GB for a full KV cache — roughly 4,000× compression.
+
 ### UnifiedPipeline
 
 The `UnifiedPipeline` auto-detects model family and provides a simplified API. One-liner setup, no boilerplate:
