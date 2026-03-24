@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Residual Stream Navigation Map</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0a0a0f;
+    color: #cdd6f4;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Top bar ──────────────────────────────────────────────────── */
+  #topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    background: #11111b;
+    border-bottom: 1px solid #1e1e2e;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+  #title { font-size: 13px; font-weight: 700; color: #cba6f7; letter-spacing: 0.05em; white-space: nowrap; }
+  .sep { color: #313244; user-select: none; }
+  #model-label { color: #6c7086; font-size: 11px; }
+  #prompt-label { color: #a6e3a1; font-size: 11px; max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #drop-zone {
+    margin-left: auto; padding: 4px 10px; border: 1px dashed #45475a;
+    border-radius: 6px; color: #6c7086; cursor: pointer; font-size: 11px;
+    transition: border-color .2s, color .2s; white-space: nowrap;
+  }
+  #drop-zone:hover, #drop-zone.drag-over { border-color: #cba6f7; color: #cba6f7; }
+  #file-input { display: none; }
+
+  /* ── Main layout ──────────────────────────────────────────────── */
+  #main { display: flex; flex: 1; overflow: hidden; }
+  #canvas-wrap { flex: 1; position: relative; overflow: hidden; }
+  #canvas-wrap canvas { display: block; }
+
+  /* ── Right panel ──────────────────────────────────────────────── */
+  #panel {
+    width: 260px; flex-shrink: 0;
+    background: #11111b; border-left: 1px solid #1e1e2e;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .panel-section { padding: 12px 14px; border-bottom: 1px solid #1e1e2e; }
+  .panel-title { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #6c7086; margin-bottom: 8px; }
+
+  /* ── Metrics ──────────────────────────────────────────────────── */
+  .metric-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
+  .metric-label { color: #6c7086; }
+  .metric-value { color: #cdd6f4; font-weight: 600; }
+  .metric-value.highlight { color: #f9e2af; }
+  .metric-value.green { color: #a6e3a1; }
+  .metric-value.purple { color: #cba6f7; }
+  #sharpness-bar-wrap { height: 6px; background: #1e1e2e; border-radius: 3px; overflow: hidden; margin-top: 2px; }
+  #sharpness-bar { height: 100%; background: linear-gradient(90deg,#f38ba8,#f9e2af); border-radius: 3px; transition: width .15s; }
+
+  /* ── Mode toggle ──────────────────────────────────────────────── */
+  #mode-row { display: flex; gap: 4px; margin-bottom: 10px; }
+  .mode-btn {
+    flex: 1; padding: 5px 4px; border: 1px solid #313244;
+    background: #1e1e2e; color: #6c7086; border-radius: 5px;
+    cursor: pointer; font-family: inherit; font-size: 11px;
+    transition: all .15s; text-align: center;
+  }
+  .mode-btn.active { background: #313244; border-color: #cba6f7; color: #cba6f7; font-weight: 700; }
+
+  /* ── Controls ─────────────────────────────────────────────────── */
+  .ctrl-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .ctrl-label { color: #6c7086; width: 44px; flex-shrink: 0; }
+  .ctrl-label.dim { color: #313244; }
+  input[type=range] { flex: 1; -webkit-appearance: none; height: 4px; border-radius: 2px; background: #313244; outline: none; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #cba6f7; cursor: pointer; }
+  input[type=range].dim::-webkit-slider-thumb { background: #45475a; }
+  .ctrl-val { width: 30px; text-align: right; color: #a6adc8; flex-shrink: 0; }
+  .ctrl-val.dim { color: #45475a; }
+  #play-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  button {
+    background: #1e1e2e; border: 1px solid #313244; color: #cdd6f4;
+    border-radius: 6px; padding: 4px 10px; cursor: pointer;
+    font-family: inherit; font-size: 12px; transition: background .15s, border-color .15s;
+  }
+  button:hover { background: #313244; border-color: #45475a; }
+  button.active { background: #45475a; border-color: #cba6f7; color: #cba6f7; }
+  #speed-label { color: #6c7086; font-size: 11px; }
+  select {
+    background: #1e1e2e; border: 1px solid #313244; color: #cdd6f4;
+    border-radius: 6px; padding: 3px 6px; font-family: inherit; font-size: 11px; cursor: pointer;
+  }
+
+  /* ── Token trail ──────────────────────────────────────────────── */
+  #token-trail { flex: 1; overflow-y: auto; padding: 10px 14px; display: flex; flex-direction: column; gap: 3px; }
+  #token-trail::-webkit-scrollbar { width: 4px; }
+  #token-trail::-webkit-scrollbar-thumb { background: #313244; border-radius: 2px; }
+  .trail-entry { display: flex; gap: 6px; align-items: baseline; padding: 3px 6px; border-radius: 4px; cursor: pointer; transition: background .1s; }
+  .trail-entry:hover { background: #1e1e2e; }
+  .trail-entry.active { background: #1e1e2e; border-left: 2px solid #cba6f7; }
+  .trail-step { color: #45475a; width: 24px; flex-shrink: 0; }
+  .trail-token { color: #89b4fa; }
+  .trail-pred { color: #a6e3a1; }
+  .trail-sharp { margin-left: auto; font-size: 10px; color: #6c7086; }
+
+  /* ── Drop overlay ─────────────────────────────────────────────── */
+  #drop-overlay {
+    position: fixed; inset: 0; background: rgba(10,10,15,.88);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100; pointer-events: none; opacity: 0; transition: opacity .2s;
+  }
+  #drop-overlay.show { opacity: 1; pointer-events: auto; }
+  #drop-msg { font-size: 18px; color: #cba6f7; border: 2px dashed #cba6f7; padding: 32px 56px; border-radius: 16px; }
+
+  /* ── Empty state ──────────────────────────────────────────────── */
+  #empty-state { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: #45475a; pointer-events: none; }
+  #empty-state .big { font-size: 48px; }
+  #empty-state p { font-size: 13px; color: #585b70; }
+
+  /* ── Phase legend ─────────────────────────────────────────────── */
+  #phase-legend { display: flex; gap: 12px; flex-wrap: wrap; }
+  .phase-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+  .phase-entry { color: #6c7086; font-size: 11px; display: flex; align-items: center; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div id="title">NAVIGATION MAP</div>
+  <span class="sep">|</span>
+  <span id="model-label">no data</span>
+  <span class="sep">|</span>
+  <span id="prompt-label">drop a nav_map_*.json file to begin</span>
+  <div id="drop-zone" title="Click or drag JSON here">
+    ⬆ load json
+    <input type="file" id="file-input" accept=".json">
+  </div>
+</div>
+
+<div id="main">
+  <div id="canvas-wrap">
+    <div id="empty-state">
+      <div class="big">⬡</div>
+      <p>Residual stream navigation map</p>
+      <p>Run nav_map_extract.py then drop the JSON here</p>
+    </div>
+  </div>
+
+  <div id="panel">
+    <!-- Metrics -->
+    <div class="panel-section">
+      <div class="panel-title">Metrics</div>
+      <div class="metric-row">
+        <span class="metric-label" id="lbl-primary">layer</span>
+        <span class="metric-value highlight" id="m-primary">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label" id="lbl-secondary">step</span>
+        <span class="metric-value" id="m-secondary">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">token</span>
+        <span class="metric-value green" id="m-token">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">predicted</span>
+        <span class="metric-value purple" id="m-pred">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">top token</span>
+        <span class="metric-value" id="m-top">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">sharpness</span>
+        <span class="metric-value" id="m-sharp">—</span>
+      </div>
+      <div id="sharpness-bar-wrap"><div id="sharpness-bar" style="width:0%"></div></div>
+      <div class="metric-row" style="margin-top:6px">
+        <span class="metric-label">residual ‖r‖</span>
+        <span class="metric-value" id="m-norm">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">nearest fact</span>
+        <span class="metric-value highlight" id="m-nearest">—</span>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="panel-section">
+      <div class="panel-title">View mode</div>
+      <div id="mode-row">
+        <div class="mode-btn active" id="btn-mode-layer" title="Animate through layers at a fixed step">Layer depth</div>
+        <div class="mode-btn"       id="btn-mode-token" title="Animate through tokens at a fixed layer">Token drift</div>
+      </div>
+
+      <div class="ctrl-row">
+        <span class="ctrl-label" id="lbl-layer-ctrl">layer</span>
+        <input type="range" id="layer-slider" min="0" max="33" value="33" step="1">
+        <span class="ctrl-val" id="layer-val">33</span>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-label" id="lbl-step-ctrl">step</span>
+        <input type="range" id="step-slider" min="0" max="19" value="0" step="1">
+        <span class="ctrl-val" id="step-val">0</span>
+      </div>
+
+      <div id="play-row">
+        <button id="btn-play">▶ play</button>
+        <button id="btn-reset" title="Reset">↺</button>
+        <span id="speed-label">speed</span>
+        <select id="speed-select">
+          <option value="600">slow</option>
+          <option value="300" selected>mid</option>
+          <option value="120">fast</option>
+          <option value="40">turbo</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Phase legend -->
+    <div class="panel-section" id="phase-section" style="display:none">
+      <div class="panel-title">Phases</div>
+      <div id="phase-legend"></div>
+    </div>
+
+    <!-- Facts -->
+    <div class="panel-section">
+      <div class="panel-title">Fact Landmarks</div>
+      <div id="fact-list"></div>
+    </div>
+
+    <div class="panel-title" style="padding:10px 14px 4px;flex-shrink:0">Token Trail</div>
+    <div id="token-trail"></div>
+  </div>
+</div>
+
+<div id="drop-overlay"><div id="drop-msg">Drop nav_map JSON here</div></div>
+
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/"
+} }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let data       = null;
+let viewMode   = 'layer';  // 'layer' | 'token'
+let currentStep  = 0;
+let currentLayer = 0;
+let playing    = false;
+let playTimer  = null;
+let playSpeed  = 300;
+
+// ── Three.js ──────────────────────────────────────────────────────────────────
+const wrap = document.getElementById('canvas-wrap');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setClearColor(0x0a0a0f, 1);
+wrap.appendChild(renderer.domElement);
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 100);
+camera.position.set(0, 0.4, 2.8);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 1.2;
+controls.maxDistance = 8;
+
+function resize() {
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Static scene objects ───────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+dirLight.position.set(2, 3, 2);
+scene.add(dirLight);
+
+scene.add(new THREE.Mesh(
+  new THREE.SphereGeometry(1, 48, 32),
+  new THREE.MeshBasicMaterial({ color: 0x1e1e2e, wireframe: true, transparent: true, opacity: 0.18 })
+));
+scene.add(new THREE.Mesh(
+  new THREE.SphereGeometry(1, 64, 40),
+  new THREE.MeshPhongMaterial({ color: 0x313244, transparent: true, opacity: 0.07, side: THREE.BackSide, depthWrite: false })
+));
+scene.add(new THREE.Mesh(
+  new THREE.TorusGeometry(1, 0.002, 4, 128),
+  new THREE.MeshBasicMaterial({ color: 0x313244, transparent: true, opacity: 0.35 })
+));
+[0, Math.PI/2, Math.PI/2].forEach((rx, i) => {
+  const m = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.003, 0.003, 2.4, 6),
+    new THREE.MeshBasicMaterial({ color: 0x313244, transparent: true, opacity: 0.25 })
+  );
+  if (i === 1) m.rotation.z = Math.PI/2;
+  if (i === 2) m.rotation.x = Math.PI/2;
+  scene.add(m);
+});
+
+const factGroup       = new THREE.Group(); scene.add(factGroup);
+const trajectoryGroup = new THREE.Group(); scene.add(trajectoryGroup);
+
+// Glowing current-position dot
+const dotMat = new THREE.MeshPhongMaterial({ color: 0xf9e2af, emissive: 0xf9e2af, emissiveIntensity: 1.2 });
+const currentDot = new THREE.Mesh(new THREE.SphereGeometry(0.032, 16, 12), dotMat);
+currentDot.visible = false;
+scene.add(currentDot);
+const dotLight = new THREE.PointLight(0xf9e2af, 2.5, 1.2);
+scene.add(dotLight);
+
+// Label overlay
+const labelLayer = document.createElement('div');
+labelLayer.style.cssText = 'position:absolute;inset:0;pointer-events:none;overflow:hidden;';
+wrap.appendChild(labelLayer);
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const factLabels = [];
+
+function vec3(xyz) { return new THREE.Vector3(xyz[0], xyz[1], xyz[2]); }
+
+function norm3(xyz) {
+  const v = vec3(xyz);
+  const l = v.length();
+  return l > 1e-9 ? v.divideScalar(l) : new THREE.Vector3(0, 0, 1);
+}
+
+// All xyz are already normalised to unit sphere — just return as Vector3
+function spherePt(xyz) { return norm3(xyz); }
+
+function clearLabels() { factLabels.forEach(l => l.div.remove()); factLabels.length = 0; }
+
+function addLabel(text, worldPos, color) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  div.style.cssText = `position:absolute;font-family:'SF Mono','Fira Code',monospace;font-size:11px;
+    color:${color};text-shadow:0 0 6px ${color}88,0 1px 3px #000;white-space:nowrap;pointer-events:none;`;
+  labelLayer.appendChild(div);
+  factLabels.push({ div, worldPos: worldPos.clone() });
+}
+
+function projectLabels() {
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  const tmp = new THREE.Vector3();
+  factLabels.forEach(({ div, worldPos }) => {
+    tmp.copy(worldPos).project(camera);
+    if (tmp.z > 1) { div.style.opacity = '0'; return; }
+    div.style.opacity = '1';
+    div.style.left = ((tmp.x * .5 + .5) * w + 8) + 'px';
+    div.style.top  = ((1 - (tmp.y * .5 + .5)) * h - 6) + 'px';
+  });
+}
+
+// ── Phase colours ─────────────────────────────────────────────────────────────
+const PHASE_COLORS = [
+  new THREE.Color(0x89b4fa),
+  new THREE.Color(0xf9e2af),
+  new THREE.Color(0xa6e3a1),
+];
+
+function phaseColorForLayer(layerIdx) {
+  if (!data?.phase_boundaries?.length) return PHASE_COLORS[0];
+  const b = data.phase_boundaries;
+  if (layerIdx < b[0]) return PHASE_COLORS[0];
+  if (b.length < 2 || layerIdx < b[1]) return PHASE_COLORS[1];
+  return PHASE_COLORS[2];
+}
+
+// Gradient colours for token-drift mode (step index → colour)
+function stepColor(stepIdx, totalSteps) {
+  // blue → purple → amber gradient
+  const t = totalSteps > 1 ? stepIdx / (totalSteps - 1) : 0;
+  const c = new THREE.Color();
+  c.lerpColors(new THREE.Color(0x89b4fa), new THREE.Color(0xf9e2af), t);
+  return c;
+}
+
+// ── Build static fact landmarks ───────────────────────────────────────────────
+function buildScene() {
+  while (factGroup.children.length) factGroup.remove(factGroup.children[0]);
+  while (trajectoryGroup.children.length) trajectoryGroup.remove(trajectoryGroup.children[0]);
+  clearLabels();
+  if (!data) return;
+
+  const factGeo = new THREE.SphereGeometry(0.028, 12, 8);
+  data.facts.forEach(f => {
+    const pos = norm3(f.xyz);
+    const col = parseInt(f.color.replace('#', ''), 16);
+
+    const mesh = new THREE.Mesh(factGeo,
+      new THREE.MeshPhongMaterial({ color: col, emissive: col, emissiveIntensity: f.is_target ? 0.8 : 0.3 }));
+    mesh.position.copy(pos);
+    factGroup.add(mesh);
+
+    if (f.is_target) {
+      const halo = new THREE.Mesh(new THREE.SphereGeometry(0.055, 12, 8),
+        new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.18, depthWrite: false }));
+      halo.position.copy(pos);
+      factGroup.add(halo);
+    }
+    addLabel(f.token, pos, f.color);
+  });
+
+  updateVisualization();
+}
+
+// ── Clear trajectory group ────────────────────────────────────────────────────
+let ghostLines = [];
+
+function clearTraj() {
+  while (trajectoryGroup.children.length) trajectoryGroup.remove(trajectoryGroup.children[0]);
+  ghostLines.forEach(l => scene.remove(l));
+  ghostLines = [];
+}
+
+// ── Draw a polyline ───────────────────────────────────────────────────────────
+function drawLine(pts, color, opacity, parent = trajectoryGroup) {
+  if (pts.length < 2) return;
+  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity, linewidth: 1 });
+  parent.add(new THREE.Line(geo, mat));
+}
+
+function drawDot(pos, color, opacity, radius = 0.012, parent = trajectoryGroup) {
+  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity });
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 8, 6), mat);
+  mesh.position.copy(pos);
+  parent.add(mesh);
+}
+
+// ── Main visualization dispatcher ────────────────────────────────────────────
+function updateVisualization() {
+  if (!data) return;
+  clearTraj();
+
+  if (viewMode === 'layer') drawLayerMode();
+  else                      drawTokenMode();
+}
+
+// ── Layer mode: one step, animate through layers ──────────────────────────────
+function drawLayerMode() {
+  const frame = data.frames[currentStep];
+  if (!frame) return;
+  const numLayers = frame.layers.length;
+  const pts = frame.layers.map(ld => spherePt(ld.xyz));
+
+  // Trajectory segments coloured by phase, dimmed beyond current layer
+  for (let i = 0; i < pts.length - 1; i++) {
+    const active = i <= currentLayer;
+    drawLine([pts[i], pts[i+1]], phaseColorForLayer(i), active ? 0.8 : 0.15);
+  }
+
+  // Dots at each layer — size scales with sharpness
+  frame.layers.forEach((ld, i) => {
+    const r = 0.007 + (ld.sharpness || 0) * 0.018;
+    drawDot(spherePt(ld.xyz), phaseColorForLayer(i), i <= currentLayer ? 0.65 : 0.10, r);
+  });
+
+  // Ghost trails from previous steps (as full layer trajectories)
+  const trailCount = Math.min(currentStep, 4);
+  for (let si = Math.max(0, currentStep - trailCount); si < currentStep; si++) {
+    const pf = data.frames[si];
+    if (!pf) continue;
+    const opacity = 0.05 + 0.04 * (si - (currentStep - trailCount));
+    const ghostPts = pf.layers.map(ld => spherePt(ld.xyz));
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(ghostPts),
+      new THREE.LineBasicMaterial({ color: 0x585b70, transparent: true, opacity })
+    );
+    scene.add(line);
+    ghostLines.push(line);
+  }
+
+  // Current dot
+  const curLd = frame.layers[Math.min(currentLayer, numLayers - 1)];
+  setCurrentDot(spherePt(curLd.xyz), curLd.sharpness || 0);
+  updateMetrics(frame, curLd);
+}
+
+// ── Token mode: fixed layer, animate through steps ────────────────────────────
+function drawTokenMode() {
+  const numSteps = data.frames.length;
+
+  // Collect positions at the fixed layer across all steps
+  const allPts = data.frames.map(f => {
+    const ld = f.layers[Math.min(currentLayer, f.layers.length - 1)];
+    return { pt: spherePt(ld.xyz), ld };
+  });
+
+  // Draw full token trajectory up to currentStep
+  for (let i = 0; i < Math.min(currentStep, allPts.length - 1); i++) {
+    const col = stepColor(i, numSteps);
+    drawLine([allPts[i].pt, allPts[i+1].pt], col, 0.85);
+  }
+
+  // Dots at each step position up to currentStep — size scales with sharpness
+  for (let i = 0; i <= currentStep && i < allPts.length; i++) {
+    const col = stepColor(i, numSteps);
+    const s = allPts[i].ld.sharpness || 0;
+    const r = i === currentStep ? 0.014 + s * 0.02 : 0.007 + s * 0.012;
+    drawDot(allPts[i].pt, col, i === currentStep ? 0.9 : 0.45 + s * 0.3, r);
+  }
+
+  // Faint dots for future steps (show where the trajectory will go)
+  for (let i = currentStep + 1; i < allPts.length; i++) {
+    drawDot(allPts[i].pt, 0x313244, 0.20, 0.008);
+  }
+
+  // Faint full trajectory as guide
+  if (allPts.length > 1) {
+    const guidePts = allPts.map(a => a.pt);
+    drawLine(guidePts, 0x313244, 0.25);
+  }
+
+  // Current dot
+  const cur = allPts[currentStep];
+  setCurrentDot(cur.pt, cur.ld.sharpness || 0);
+
+  const frame = data.frames[currentStep];
+  updateMetrics(frame, cur.ld);
+}
+
+// ── Shared: set glowing current dot ──────────────────────────────────────────
+// Dot sits ON the sphere surface. Size and glow encode commitment (sharpness):
+//   sharpness=0 → tiny dim speck (wandering, uncommitted)
+//   sharpness=1 → large bright orb (locked on a fact)
+function setCurrentDot(pos, sharpness) {
+  currentDot.position.copy(pos);
+  dotLight.position.copy(pos);
+  currentDot.visible = true;
+  const s = Math.max(0, Math.min(1, sharpness));
+  const scale = 0.25 + s * 1.5;           // 0.25× → 1.75× base size
+  currentDot.scale.setScalar(scale);
+  dotMat.emissiveIntensity = 0.4 + s * 2.5;
+  dotLight.intensity = 0.5 + s * 4;
+  dotLight.distance = 0.4 + s * 1.2;
+}
+
+// ── Metrics panel ─────────────────────────────────────────────────────────────
+function updateMetrics(frame, ld) {
+  if (viewMode === 'layer') {
+    document.getElementById('lbl-primary').textContent   = 'layer';
+    document.getElementById('m-primary').textContent     = currentLayer;
+    document.getElementById('lbl-secondary').textContent = 'step';
+    document.getElementById('m-secondary').textContent   = currentStep;
+  } else {
+    document.getElementById('lbl-primary').textContent   = 'step';
+    document.getElementById('m-primary').textContent     = currentStep;
+    document.getElementById('lbl-secondary').textContent = 'layer';
+    document.getElementById('m-secondary').textContent   = currentLayer;
+  }
+  document.getElementById('m-token').textContent = frame?.token || '—';
+  document.getElementById('m-pred').textContent  = frame?.predicted_token || '—';
+
+  if (ld) {
+    document.getElementById('m-top').textContent  = ld.top_token || '—';
+    document.getElementById('m-sharp').textContent = ld.sharpness != null ? ld.sharpness.toFixed(3) : '—';
+    document.getElementById('sharpness-bar').style.width = ((ld.sharpness || 0) * 100).toFixed(1) + '%';
+    const rn = ld.residual_norm;
+    document.getElementById('m-norm').textContent = rn != null ? rn.toFixed(1) : '—';
+
+    if (ld.angles_to_facts) {
+      let nearest = null, minAng = Infinity;
+      for (const [tok, ang] of Object.entries(ld.angles_to_facts)) {
+        if (ang < minAng) { minAng = ang; nearest = tok; }
+      }
+      document.getElementById('m-nearest').textContent =
+        nearest ? `${nearest} (${minAng.toFixed(1)}°)` : '—';
+    }
+  }
+}
+
+// ── Token trail sidebar ───────────────────────────────────────────────────────
+function buildTokenTrail() {
+  const trail = document.getElementById('token-trail');
+  trail.innerHTML = '';
+  if (!data) return;
+  data.frames.forEach((f, i) => {
+    const lastL = f.layers[f.layers.length - 1];
+    const sharp = lastL?.sharpness != null ? (lastL.sharpness * 100).toFixed(0) + '%' : '';
+    const div = document.createElement('div');
+    div.className = 'trail-entry' + (i === currentStep ? ' active' : '');
+    div.dataset.step = i;
+    div.innerHTML = `<span class="trail-step">${i}</span>
+      <span class="trail-token">${escHtml(f.token || '?')}</span>
+      <span class="trail-pred">→ ${escHtml(f.predicted_token || '?')}</span>
+      <span class="trail-sharp">${sharp}</span>`;
+    div.addEventListener('click', () => {
+      currentStep = i;
+      document.getElementById('step-slider').value = i;
+      document.getElementById('step-val').textContent = i;
+      updateTrailActive();
+      updateVisualization();
+    });
+    trail.appendChild(div);
+  });
+}
+
+function updateTrailActive() {
+  document.querySelectorAll('.trail-entry').forEach(el =>
+    el.classList.toggle('active', parseInt(el.dataset.step) === currentStep));
+  document.querySelector('.trail-entry.active')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+function buildFactList() {
+  const list = document.getElementById('fact-list');
+  list.innerHTML = '';
+  if (!data) return;
+  data.facts.forEach(f => {
+    const row = document.createElement('div');
+    row.className = 'metric-row';
+    row.innerHTML = `<span style="display:flex;align-items:center;gap:5px;">
+      <span class="phase-dot" style="background:${f.color}${f.is_target ? '' : '88'}"></span>
+      <span style="color:${f.color}">${escHtml(f.token)}</span>
+      ${f.is_target ? '<span style="color:#6c7086;font-size:10px">(target)</span>' : ''}
+    </span>`;
+    list.appendChild(row);
+  });
+}
+
+function buildPhaseLegend() {
+  const section = document.getElementById('phase-section');
+  const legend  = document.getElementById('phase-legend');
+  legend.innerHTML = '';
+  if (!data?.phase_boundaries?.length) { section.style.display = 'none'; return; }
+  section.style.display = '';
+  const bounds = [0, ...data.phase_boundaries, data.frames[0]?.layers.length || 34];
+  const names  = ['Dark accumulation', 'Routing', 'Fact explosion'];
+  const cols   = ['#89b4fa', '#f9e2af', '#a6e3a1'];
+  for (let i = 0; i < bounds.length - 1; i++) {
+    const e = document.createElement('div');
+    e.className = 'phase-entry';
+    e.innerHTML = `<span class="phase-dot" style="background:${cols[i]}"></span>L${bounds[i]}–${bounds[i+1]-1} ${names[i]||''}`;
+    legend.appendChild(e);
+  }
+}
+
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── Load data ─────────────────────────────────────────────────────────────────
+function loadData(json) {
+  data = json;
+  currentStep  = 0;
+  currentLayer = (data.frames[0]?.layers.length || 34) - 1;
+  stopPlay();
+
+  const maxStep  = data.frames.length - 1;
+  const maxLayer = (data.frames[0]?.layers.length || 34) - 1;
+  const ss = document.getElementById('step-slider');
+  const ls = document.getElementById('layer-slider');
+  ss.max = maxStep;  ss.value = 0;
+  ls.max = maxLayer; ls.value = maxLayer;
+  document.getElementById('step-val').textContent  = 0;
+  document.getElementById('layer-val').textContent = maxLayer;
+
+  document.getElementById('model-label').textContent = data.model || data.model_id || 'unknown model';
+  const prompt = data.prompt || data.frames[0]?.prompt_so_far || '';
+  document.getElementById('prompt-label').textContent = prompt.length > 60 ? '…' + prompt.slice(-57) : prompt;
+  document.getElementById('empty-state').style.display = 'none';
+
+  applyMode(); // set up slider dimming
+  buildScene();
+  buildTokenTrail();
+  buildFactList();
+  buildPhaseLegend();
+}
+
+// ── Mode toggle ───────────────────────────────────────────────────────────────
+function applyMode() {
+  const isLayer = viewMode === 'layer';
+  document.getElementById('btn-mode-layer').classList.toggle('active', isLayer);
+  document.getElementById('btn-mode-token').classList.toggle('active', !isLayer);
+
+  // In layer mode: layer slider is the animation axis, step slider is pinned
+  // In token mode: step slider is the animation axis, layer slider is pinned
+  const layerSlider = document.getElementById('layer-slider');
+  const stepSlider  = document.getElementById('step-slider');
+  const layerLbl = document.getElementById('lbl-layer-ctrl');
+  const stepLbl  = document.getElementById('lbl-step-ctrl');
+  const layerVal = document.getElementById('layer-val');
+  const stepVal  = document.getElementById('step-val');
+
+  if (isLayer) {
+    // layer animates
+    layerSlider.classList.remove('dim'); layerLbl.classList.remove('dim'); layerVal.classList.remove('dim');
+    stepSlider.classList.remove('dim');  stepLbl.classList.remove('dim');  stepVal.classList.remove('dim');
+  } else {
+    // step animates
+    layerSlider.classList.remove('dim'); layerLbl.classList.remove('dim'); layerVal.classList.remove('dim');
+    stepSlider.classList.remove('dim');  stepLbl.classList.remove('dim');  stepVal.classList.remove('dim');
+  }
+}
+
+document.getElementById('btn-mode-layer').addEventListener('click', () => {
+  if (viewMode === 'layer') return;
+  viewMode = 'layer'; stopPlay(); applyMode(); updateVisualization();
+});
+document.getElementById('btn-mode-token').addEventListener('click', () => {
+  if (viewMode === 'token') return;
+  viewMode = 'token'; stopPlay(); applyMode(); updateVisualization();
+});
+
+// ── Sliders ───────────────────────────────────────────────────────────────────
+document.getElementById('layer-slider').addEventListener('input', e => {
+  currentLayer = parseInt(e.target.value);
+  document.getElementById('layer-val').textContent = currentLayer;
+  updateVisualization();
+});
+document.getElementById('step-slider').addEventListener('input', e => {
+  currentStep = parseInt(e.target.value);
+  document.getElementById('step-val').textContent = currentStep;
+  updateTrailActive();
+  updateVisualization();
+});
+
+// ── Playback ──────────────────────────────────────────────────────────────────
+function stopPlay() {
+  playing = false; clearInterval(playTimer); playTimer = null;
+  document.getElementById('btn-play').textContent = '▶ play';
+  document.getElementById('btn-play').classList.remove('active');
+}
+
+function startPlay() {
+  if (!data) return;
+  playing = true; playSpeed = parseInt(document.getElementById('speed-select').value);
+  document.getElementById('btn-play').textContent = '⏸ pause';
+  document.getElementById('btn-play').classList.add('active');
+
+  playTimer = setInterval(() => {
+    if (viewMode === 'layer') {
+      const maxLayer = (data.frames[0]?.layers.length || 34) - 1;
+      if (currentLayer < maxLayer) {
+        currentLayer++;
+        document.getElementById('layer-slider').value = currentLayer;
+        document.getElementById('layer-val').textContent = currentLayer;
+      } else {
+        // advance step, reset layer
+        if (currentStep < data.frames.length - 1) {
+          currentLayer = 0;
+          currentStep++;
+          document.getElementById('layer-slider').value = 0;
+          document.getElementById('layer-val').textContent = 0;
+          document.getElementById('step-slider').value = currentStep;
+          document.getElementById('step-val').textContent = currentStep;
+          updateTrailActive();
+        } else { stopPlay(); return; }
+      }
+    } else {
+      // token mode: advance steps
+      if (currentStep < data.frames.length - 1) {
+        currentStep++;
+        document.getElementById('step-slider').value = currentStep;
+        document.getElementById('step-val').textContent = currentStep;
+        updateTrailActive();
+      } else { stopPlay(); return; }
+    }
+    updateVisualization();
+  }, playSpeed);
+}
+
+document.getElementById('btn-play').addEventListener('click', () => { if (playing) stopPlay(); else startPlay(); });
+document.getElementById('btn-reset').addEventListener('click', () => {
+  stopPlay();
+  currentStep = 0; currentLayer = 0;
+  document.getElementById('step-slider').value = 0;
+  document.getElementById('layer-slider').value = 0;
+  document.getElementById('step-val').textContent = 0;
+  document.getElementById('layer-val').textContent = 0;
+  updateTrailActive(); updateVisualization();
+});
+document.getElementById('speed-select').addEventListener('change', e => {
+  playSpeed = parseInt(e.target.value);
+  if (playing) { stopPlay(); startPlay(); }
+});
+
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
+window.addEventListener('keydown', e => {
+  if (!data) return;
+  const maxLayer = (data.frames[0]?.layers.length || 34) - 1;
+  const maxStep  = data.frames.length - 1;
+
+  // Layer mode: ←/→ scrub layers, ↑/↓ switch steps
+  // Token mode: ←/→ switch steps, ↑/↓ scrub layers
+  const [layerDec, layerInc, stepDec, stepInc] = viewMode === 'layer'
+    ? ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown']
+    : ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'];
+
+  switch (e.key) {
+    case layerInc: case 'l':
+      if (currentLayer < maxLayer) { currentLayer++; syncLayerSlider(); updateVisualization(); } break;
+    case layerDec: case 'h':
+      if (currentLayer > 0)        { currentLayer--; syncLayerSlider(); updateVisualization(); } break;
+    case stepInc: case 'j':
+      if (currentStep < maxStep)   { currentStep++; syncStepSlider(); updateTrailActive(); updateVisualization(); } break;
+    case stepDec: case 'k':
+      if (currentStep > 0)         { currentStep--; syncStepSlider(); updateTrailActive(); updateVisualization(); } break;
+    case ' ':
+      e.preventDefault();
+      if (playing) stopPlay(); else startPlay();
+      break;
+    case 't': viewMode = 'token'; stopPlay(); applyMode(); updateVisualization(); break;
+    case 'd': viewMode = 'layer'; stopPlay(); applyMode(); updateVisualization(); break;
+  }
+});
+
+function syncLayerSlider() {
+  document.getElementById('layer-slider').value = currentLayer;
+  document.getElementById('layer-val').textContent = currentLayer;
+}
+function syncStepSlider() {
+  document.getElementById('step-slider').value = currentStep;
+  document.getElementById('step-val').textContent = currentStep;
+}
+
+// ── File loading ──────────────────────────────────────────────────────────────
+function handleFile(file) {
+  if (!file?.name.endsWith('.json')) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const json = JSON.parse(e.target.result);
+      if (!json.frames || !json.facts) { alert('Not a valid nav_map JSON.'); return; }
+      loadData(json);
+    } catch (err) { alert('Failed to parse JSON: ' + err.message); }
+  };
+  reader.readAsText(file);
+}
+
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
+
+const overlay = document.getElementById('drop-overlay');
+window.addEventListener('dragover', e => { e.preventDefault(); overlay.classList.add('show'); });
+window.addEventListener('dragleave', e => { if (!e.relatedTarget) overlay.classList.remove('show'); });
+window.addEventListener('drop', e => { e.preventDefault(); overlay.classList.remove('show'); handleFile(e.dataTransfer.files[0]); });
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('drag-over'); handleFile(e.dataTransfer.files[0]); });
+
+// ── Render loop ───────────────────────────────────────────────────────────────
+(function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  projectLabels();
+  renderer.render(scene, camera);
+})();
+
+</script>
+</body>
+</html>

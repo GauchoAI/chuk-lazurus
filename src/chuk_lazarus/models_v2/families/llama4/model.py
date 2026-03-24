@@ -18,6 +18,7 @@ from ...components.normalization import RMSNorm
 from ...core.registry import register_model
 from ...heads import LMHead
 from ...models.base import Model, ModelOutput
+from ..constants import HFArchitecture, HFModelType
 from .attention import Llama4Attention
 from .config import Llama4TextConfig
 from .moe import Llama4MoE
@@ -173,8 +174,8 @@ class Llama4Model(Backbone):
 
 
 @register_model(
-    model_type="llama4",
-    architectures=["Llama4ForCausalLM"],
+    model_type=HFModelType.LLAMA4,
+    architectures=[HFArchitecture.LLAMA4_FOR_CAUSAL_LM],
 )
 class Llama4ForCausalLM(Model):
     """

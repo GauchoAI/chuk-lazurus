@@ -1,0 +1,2887 @@
+{
+  "version": "2.0",
+  "model": "test-synthetic",
+  "hidden_dim": 2560,
+  "num_layers": 18,
+  "prompt": "The capital of France is",
+  "target_fact": "Paris",
+  "phase_boundaries": [
+    6,
+    12
+  ],
+  "facts": [
+    {
+      "token": "Paris",
+      "color": "#E24B4A",
+      "is_target": true,
+      "xyz": [
+        0.72,
+        0.6,
+        0.35
+      ],
+      "token_id": 10000
+    },
+    {
+      "token": "Tokyo",
+      "color": "#1D9E75",
+      "is_target": false,
+      "xyz": [
+        -0.6,
+        0.55,
+        0.58
+      ],
+      "token_id": 10001
+    },
+    {
+      "token": "Berlin",
+      "color": "#378ADD",
+      "is_target": false,
+      "xyz": [
+        0.1,
+        -0.85,
+        0.52
+      ],
+      "token_id": 10002
+    },
+    {
+      "token": "Canberra",
+      "color": "#534AB7",
+      "is_target": false,
+      "xyz": [
+        -0.3,
+        -0.55,
+        -0.78
+      ],
+      "token_id": 10003
+    },
+    {
+      "token": "Ottawa",
+      "color": "#D85A30",
+      "is_target": false,
+      "xyz": [
+        0.8,
+        -0.35,
+        -0.49
+      ],
+      "token_id": 10004
+    }
+  ],
+  "frames": [
+    {
+      "step": 0,
+      "token": " is",
+      "token_id": 235326,
+      "predicted_token": "Paris",
+      "predicted_token_id": 118690,
+      "prompt_so_far": "The capital of France is",
+      "layers": [
+        {
+          "layer": 0,
+          "xyz": [
+            -0.025933,
+            -0.016696,
+            0.105287
+          ],
+          "sharpness": 0.0368,
+          "residual_norm": 50.0,
+          "angles_to_facts": {
+            "Paris": 88.03927851110777,
+            "Tokyo": 87.8435913540969,
+            "Berlin": 71.73877665258833,
+            "Canberra": 78.43843639370542,
+            "Ottawa": 70.59594438876141
+          },
+          "top_token": "the",
+          "top_logit": 4.795
+        },
+        {
+          "layer": 1,
+          "xyz": [
+            0.191058,
+            0.112378,
+            0.024772
+          ],
+          "sharpness": 0.0325,
+          "residual_norm": 58.0,
+          "angles_to_facts": {
+            "Paris": 88.16540299119858,
+            "Tokyo": 74.40881244081393,
+            "Berlin": 81.78531367751818,
+            "Canberra": 86.18860913355653,
+            "Ottawa": 70.12997519356122
+          },
+          "top_token": "a",
+          "top_logit": 4.76
+        },
+        {
+          "layer": 2,
+          "xyz": [
+            -0.182264,
+            -0.018201,
+            0.089389
+          ],
+          "sharpness": 0.0479,
+          "residual_norm": 66.0,
+          "angles_to_facts": {
+            "Paris": 86.36573026529473,
+            "Tokyo": 71.85491686760295,
+            "Berlin": 71.93432753666929,
+            "Canberra": 86.9498873269492,
+            "Ottawa": 82.07452062733782
+          },
+          "top_token": "located",
+          "top_logit": 4.883
+        },
+        {
+          "layer": 3,
+          "xyz": [
+            -0.17086,
+            -0.341135,
+            -0.064126
+          ],
+          "sharpness": 0.0189,
+          "residual_norm": 74.0,
+          "angles_to_facts": {
+            "Paris": 89.40067656510887,
+            "Tokyo": 86.5880932850599,
+            "Berlin": 82.37039504728492,
+            "Canberra": 87.23413800621555,
+            "Ottawa": 81.54704290513524
+          },
+          "top_token": "France",
+          "top_logit": 4.651
+        },
+        {
+          "layer": 4,
+          "xyz": [
+            0.026796,
+            0.072421,
+            0.147058
+          ],
+          "sharpness": 0.004,
+          "residual_norm": 82.0,
+          "angles_to_facts": {
+            "Paris": 90.10651787656575,
+            "Tokyo": 72.02002858819458,
+            "Berlin": 75.55947206220185,
+            "Canberra": 82.71368888528801,
+            "Ottawa": 77.29664357940169
+          },
+          "top_token": "the",
+          "top_logit": 4.532
+        },
+        {
+          "layer": 5,
+          "xyz": [
+            0.15011,
+            0.037827,
+            0.347126
+          ],
+          "sharpness": 0.0324,
+          "residual_norm": 90.0,
+          "angles_to_facts": {
+            "Paris": 88.30210277772431,
+            "Tokyo": 73.42277296396193,
+            "Berlin": 84.58253595900699,
+            "Canberra": 73.26804987523857,
+            "Ottawa": 77.58910883515296
+          },
+          "top_token": "a",
+          "top_logit": 4.759
+        },
+        {
+          "layer": 6,
+          "xyz": [
+            0.088722,
+            -0.110898,
+            -0.023729
+          ],
+          "sharpness": 0.0421,
+          "residual_norm": 98.0,
+          "angles_to_facts": {
+            "Paris": 87.75916618223835,
+            "Tokyo": 74.58096143928209,
+            "Berlin": 70.64200487808075,
+            "Canberra": 76.30906096118164,
+            "Ottawa": 75.35481751951406
+          },
+          "top_token": "located",
+          "top_logit": 4.837
+        },
+        {
+          "layer": 7,
+          "xyz": [
+            0.408179,
+            0.176163,
+            -0.018375
+          ],
+          "sharpness": 0.0328,
+          "residual_norm": 106.0,
+          "angles_to_facts": {
+            "Paris": 87.84178980829438,
+            "Tokyo": 88.29095179481087,
+            "Berlin": 79.17703705174797,
+            "Canberra": 75.29760332996105,
+            "Ottawa": 74.93255015387967
+          },
+          "top_token": "France",
+          "top_logit": 4.762
+        },
+        {
+          "layer": 8,
+          "xyz": [
+            0.105207,
+            -0.077184,
+            -0.045891
+          ],
+          "sharpness": 0.02,
+          "residual_norm": 114.0,
+          "angles_to_facts": {
+            "Paris": 88.64133924518278,
+            "Tokyo": 89.95075212990221,
+            "Berlin": 80.1905258735293,
+            "Canberra": 71.81818824347587,
+            "Ottawa": 70.94232750849469
+          },
+          "top_token": "the",
+          "top_logit": 4.66
+        },
+        {
+          "layer": 9,
+          "xyz": [
+            0.252938,
+            0.157839,
+            -0.039574
+          ],
+          "sharpness": 0.0032,
+          "residual_norm": 122.0,
+          "angles_to_facts": {
+            "Paris": 90.47736389532926,
+            "Tokyo": 89.92242760480194,
+            "Berlin": 80.58228690198274,
+            "Canberra": 89.42156755227236,
+            "Ottawa": 87.21559404468996
+          },
+          "top_token": "a",
+          "top_logit": 4.525
+        },
+        {
+          "layer": 10,
+          "xyz": [
+            0.181872,
+            0.085296,
+            -0.03979
+          ],
+          "sharpness": 0.0133,
+          "residual_norm": 130.0,
+          "angles_to_facts": {
+            "Paris": 90.08121024237317,
+            "Tokyo": 72.23104347191753,
+            "Berlin": 78.6953050133821,
+            "Canberra": 79.07447412658414,
+            "Ottawa": 89.0763185504216
+          },
+          "top_token": "located",
+          "top_logit": 4.607
+        },
+        {
+          "layer": 11,
+          "xyz": [
+            0.139099,
+            0.101384,
+            0.09039
+          ],
+          "sharpness": 0.0456,
+          "residual_norm": 138.0,
+          "angles_to_facts": {
+            "Paris": 87.63421186262184,
+            "Tokyo": 75.96889582897266,
+            "Berlin": 82.7789898973201,
+            "Canberra": 82.17940422876345,
+            "Ottawa": 73.0567853709927
+          },
+          "top_token": "France",
+          "top_logit": 4.865
+        },
+        {
+          "layer": 12,
+          "xyz": [
+            0.118675,
+            0.184406,
+            0.016363
+          ],
+          "sharpness": 0.0,
+          "residual_norm": 146.0,
+          "angles_to_facts": {
+            "Paris": 90.6457385814336,
+            "Tokyo": 70.38953484771665,
+            "Berlin": 88.58197232529234,
+            "Canberra": 87.57443755646369,
+            "Ottawa": 86.63331058722359
+          },
+          "top_token": "the",
+          "top_logit": 4.5
+        },
+        {
+          "layer": 13,
+          "xyz": [
+            0.237192,
+            0.275134,
+            0.018855
+          ],
+          "sharpness": 0.0043,
+          "residual_norm": 154.0,
+          "angles_to_facts": {
+            "Paris": 90.58654039232776,
+            "Tokyo": 71.38425036936768,
+            "Berlin": 85.21204330514463,
+            "Canberra": 85.31668858613975,
+            "Ottawa": 72.56782928999526
+          },
+          "top_token": "a",
+          "top_logit": 4.534
+        },
+        {
+          "layer": 14,
+          "xyz": [
+            0.241626,
+            0.193282,
+            0.161293
+          ],
+          "sharpness": 0.0212,
+          "residual_norm": 162.0,
+          "angles_to_facts": {
+            "Paris": 88.51947567998018,
+            "Tokyo": 80.78592177558917,
+            "Berlin": 84.59862138179952,
+            "Canberra": 74.02302126779392,
+            "Ottawa": 76.2343258260179
+          },
+          "top_token": "located",
+          "top_logit": 4.669
+        },
+        {
+          "layer": 15,
+          "xyz": [
+            0.251974,
+            0.157521,
+            0.145759
+          ],
+          "sharpness": 0.0061,
+          "residual_norm": 170.0,
+          "angles_to_facts": {
+            "Paris": 89.90487579265591,
+            "Tokyo": 76.7617112429491,
+            "Berlin": 81.76617436914466,
+            "Canberra": 74.60229465193154,
+            "Ottawa": 74.40434768903118
+          },
+          "top_token": "France",
+          "top_logit": 4.548
+        },
+        {
+          "layer": 16,
+          "xyz": [
+            0.290986,
+            0.235253,
+            0.202174
+          ],
+          "sharpness": 0.043,
+          "residual_norm": 178.0,
+          "angles_to_facts": {
+            "Paris": 86.27335539863545,
+            "Tokyo": 74.76009268737991,
+            "Berlin": 83.37955556592561,
+            "Canberra": 74.28473614740878,
+            "Ottawa": 72.6462369745005
+          },
+          "top_token": "the",
+          "top_logit": 4.844
+        },
+        {
+          "layer": 17,
+          "xyz": [
+            0.278823,
+            0.209106,
+            0.145358
+          ],
+          "sharpness": 0.0404,
+          "residual_norm": 186.0,
+          "angles_to_facts": {
+            "Paris": 86.74708333877386,
+            "Tokyo": 71.93861628457647,
+            "Berlin": 78.62102364812755,
+            "Canberra": 78.47157246039842,
+            "Ottawa": 79.3404933607335
+          },
+          "top_token": "a",
+          "top_logit": 4.823
+        }
+      ]
+    },
+    {
+      "step": 1,
+      "token": " Paris",
+      "token_id": 118690,
+      "predicted_token": "Paris",
+      "predicted_token_id": 118690,
+      "prompt_so_far": "The capital of France is Paris",
+      "layers": [
+        {
+          "layer": 0,
+          "xyz": [
+            -0.222411,
+            0.067929,
+            -0.006781
+          ],
+          "sharpness": 0.0201,
+          "residual_norm": 53.0,
+          "angles_to_facts": {
+            "Paris": 88.86680944132972,
+            "Tokyo": 87.23345072705582,
+            "Berlin": 74.97312667840572,
+            "Canberra": 73.80417816881624,
+            "Ottawa": 78.97227095666264
+          },
+          "top_token": "the",
+          "top_logit": 4.661
+        },
+        {
+          "layer": 1,
+          "xyz": [
+            0.076941,
+            0.017551,
+            0.345359
+          ],
+          "sharpness": 0.0297,
+          "residual_norm": 61.0,
+          "angles_to_facts": {
+            "Paris": 89.04793758787554,
+            "Tokyo": 81.00650624899696,
+            "Berlin": 71.01176659049763,
+            "Canberra": 89.98564936825453,
+            "Ottawa": 86.72055170159904
+          },
+          "top_token": "a",
+          "top_logit": 4.738
+        },
+        {
+          "layer": 2,
+          "xyz": [
+            -0.025128,
+            0.086822,
+            -0.05357
+          ],
+          "sharpness": 0.0394,
+          "residual_norm": 69.0,
+          "angles_to_facts": {
+            "Paris": 86.880764996055,
+            "Tokyo": 78.02080585098905,
+            "Berlin": 71.17270799944357,
+            "Canberra": 77.57946237953833,
+            "Ottawa": 89.70617687559452
+          },
+          "top_token": "located",
+          "top_logit": 4.815
+        },
+        {
+          "layer": 3,
+          "xyz": [
+            0.31194,
+            -0.093161,
+            0.071999
+          ],
+          "sharpness": 0.0706,
+          "residual_norm": 77.0,
+          "angles_to_facts": {
+            "Paris": 85.6408991883942,
+            "Tokyo": 81.11536646811237,
+            "Berlin": 84.36816550592653,
+            "Canberra": 73.09593650548128,
+            "Ottawa": 75.93415650989128
+          },
+          "top_token": "France",
+          "top_logit": 5.064
+        },
+        {
+          "layer": 4,
+          "xyz": [
+            0.044844,
+            -0.164845,
+            -0.023375
+          ],
+          "sharpness": 0.0331,
+          "residual_norm": 85.0,
+          "angles_to_facts": {
+            "Paris": 88.18842238520402,
+            "Tokyo": 80.05700765839028,
+            "Berlin": 87.0543978409657,
+            "Canberra": 73.14865455878966,
+            "Ottawa": 89.21557806548901
+          },
+          "top_token": "the",
+          "top_logit": 4.765
+        },
+        {
+          "layer": 5,
+          "xyz": [
+            0.145484,
+            -0.085206,
+            -0.066213
+          ],
+          "sharpness": 0.0496,
+          "residual_norm": 93.0,
+          "angles_to_facts": {
+            "Paris": 85.77799435585224,
+            "Tokyo": 87.80574628258876,
+            "Berlin": 74.9243069557725,
+            "Canberra": 81.89038307066882,
+            "Ottawa": 82.38763020664206
+          },
+          "top_token": "a",
+          "top_logit": 4.897
+        },
+        {
+          "layer": 6,
+          "xyz": [
+            0.199071,
+            -0.168985,
+            0.020818
+          ],
+          "sharpness": 0.0556,
+          "residual_norm": 101.0,
+          "angles_to_facts": {
+            "Paris": 86.42918359072755,
+            "Tokyo": 74.77371905231692,
+            "Berlin": 77.91571693582509,
+            "Canberra": 83.43380445919942,
+            "Ottawa": 75.99994159597524
+          },
+          "top_token": "located",
+          "top_logit": 4.945
+        },
+        {
+          "layer": 7,
+          "xyz": [
+            0.317107,
+            0.232684,
+            0.125241
+          ],
+          "sharpness": 0.1029,
+          "residual_norm": 109.0,
+          "angles_to_facts": {
+            "Paris": 82.73444202951225,
+            "Tokyo": 71.46521442199266,
+            "Berlin": 74.26308624534082,
+            "Canberra": 75.30400829500803,
+            "Ottawa": 88.66518755987418
+          },
+          "top_token": "France",
+          "top_logit": 5.323
+        },
+        {
+          "layer": 8,
+          "xyz": [
+            -0.010032,
+            0.087257,
+            0.133441
+          ],
+          "sharpness": 0.1022,
+          "residual_norm": 117.0,
+          "angles_to_facts": {
+            "Paris": 82.20984940303511,
+            "Tokyo": 82.23355531451901,
+            "Berlin": 89.74466127263008,
+            "Canberra": 83.07952635421465,
+            "Ottawa": 70.15646214304316
+          },
+          "top_token": "the",
+          "top_logit": 5.318
+        },
+        {
+          "layer": 9,
+          "xyz": [
+            0.104465,
+            0.025961,
+            -0.122056
+          ],
+          "sharpness": 0.0748,
+          "residual_norm": 125.0,
+          "angles_to_facts": {
+            "Paris": 83.50049690589998,
+            "Tokyo": 72.14071955418835,
+            "Berlin": 81.06447281769631,
+            "Canberra": 75.44696424629633,
+            "Ottawa": 82.09659654060448
+          },
+          "top_token": "a",
+          "top_logit": 5.098
+        },
+        {
+          "layer": 10,
+          "xyz": [
+            0.147062,
+            0.125225,
+            0.048095
+          ],
+          "sharpness": 0.1001,
+          "residual_norm": 133.0,
+          "angles_to_facts": {
+            "Paris": 82.80555695841082,
+            "Tokyo": 86.92207426589711,
+            "Berlin": 71.84596935425466,
+            "Canberra": 78.47151545127453,
+            "Ottawa": 75.53360447944503
+          },
+          "top_token": "located",
+          "top_logit": 5.3
+        },
+        {
+          "layer": 11,
+          "xyz": [
+            0.230096,
+            0.138015,
+            0.051096
+          ],
+          "sharpness": 0.1203,
+          "residual_norm": 141.0,
+          "angles_to_facts": {
+            "Paris": 80.2804267967039,
+            "Tokyo": 78.55373837961359,
+            "Berlin": 70.1933939921668,
+            "Canberra": 71.50487720147534,
+            "Ottawa": 87.66212786600286
+          },
+          "top_token": "France",
+          "top_logit": 5.462
+        },
+        {
+          "layer": 12,
+          "xyz": [
+            0.189562,
+            0.259551,
+            0.028435
+          ],
+          "sharpness": 0.0982,
+          "residual_norm": 149.0,
+          "angles_to_facts": {
+            "Paris": 81.42040177661985,
+            "Tokyo": 76.16516699860267,
+            "Berlin": 87.9796297748518,
+            "Canberra": 85.92244609776083,
+            "Ottawa": 87.21405164001806
+          },
+          "top_token": "the",
+          "top_logit": 5.285
+        },
+        {
+          "layer": 13,
+          "xyz": [
+            0.242237,
+            0.222942,
+            0.158799
+          ],
+          "sharpness": 0.1373,
+          "residual_norm": 157.0,
+          "angles_to_facts": {
+            "Paris": 79.40900681868222,
+            "Tokyo": 78.12754779664233,
+            "Berlin": 82.41323020301425,
+            "Canberra": 73.09106676664409,
+            "Ottawa": 88.59762031387349
+          },
+          "top_token": "a",
+          "top_logit": 5.599
+        },
+        {
+          "layer": 14,
+          "xyz": [
+            0.151804,
+            0.290984,
+            0.01303
+          ],
+          "sharpness": 0.1071,
+          "residual_norm": 165.0,
+          "angles_to_facts": {
+            "Paris": 81.83217855026244,
+            "Tokyo": 76.64370935892858,
+            "Berlin": 88.6163177209665,
+            "Canberra": 86.04470277874277,
+            "Ottawa": 87.28128056750559
+          },
+          "top_token": "located",
+          "top_logit": 5.357
+        },
+        {
+          "layer": 15,
+          "xyz": [
+            0.285265,
+            0.260691,
+            0.135171
+          ],
+          "sharpness": 0.1571,
+          "residual_norm": 173.0,
+          "angles_to_facts": {
+            "Paris": 77.58235194598471,
+            "Tokyo": 74.4486743509133,
+            "Berlin": 86.33173211193858,
+            "Canberra": 79.20606469357884,
+            "Ottawa": 76.10381734677202
+          },
+          "top_token": "France",
+          "top_logit": 5.756
+        },
+        {
+          "layer": 16,
+          "xyz": [
+            0.317518,
+            0.285206,
+            0.161636
+          ],
+          "sharpness": 0.1374,
+          "residual_norm": 181.0,
+          "angles_to_facts": {
+            "Paris": 79.36077080114988,
+            "Tokyo": 89.33778208096723,
+            "Berlin": 75.58249985443743,
+            "Canberra": 82.82963477215256,
+            "Ottawa": 77.99356768720122
+          },
+          "top_token": "the",
+          "top_logit": 5.599
+        },
+        {
+          "layer": 17,
+          "xyz": [
+            0.347017,
+            0.29989,
+            0.166603
+          ],
+          "sharpness": 0.1771,
+          "residual_norm": 189.0,
+          "angles_to_facts": {
+            "Paris": 74.41890431131633,
+            "Tokyo": 89.2506863152311,
+            "Berlin": 75.30932725045938,
+            "Canberra": 72.16805094429422,
+            "Ottawa": 78.69127517129289
+          },
+          "top_token": "a",
+          "top_logit": 5.917
+        }
+      ]
+    },
+    {
+      "step": 2,
+      "token": " Paris",
+      "token_id": 118690,
+      "predicted_token": "Paris",
+      "predicted_token_id": 118690,
+      "prompt_so_far": "The capital of France is Paris Paris",
+      "layers": [
+        {
+          "layer": 0,
+          "xyz": [
+            -0.128958,
+            -0.141008,
+            -0.111103
+          ],
+          "sharpness": 0.0193,
+          "residual_norm": 56.0,
+          "angles_to_facts": {
+            "Paris": 89.41979663694192,
+            "Tokyo": 75.09445012277163,
+            "Berlin": 84.1757056766834,
+            "Canberra": 70.03382556437259,
+            "Ottawa": 88.51150330998166
+          },
+          "top_token": "the",
+          "top_logit": 4.654
+        },
+        {
+          "layer": 1,
+          "xyz": [
+            -0.031277,
+            0.009209,
+            -0.204715
+          ],
+          "sharpness": 0.0333,
+          "residual_norm": 64.0,
+          "angles_to_facts": {
+            "Paris": 87.1396064614218,
+            "Tokyo": 83.28475369822544,
+            "Berlin": 76.60400072085193,
+            "Canberra": 76.2783129011672,
+            "Ottawa": 86.96030559012671
+          },
+          "top_token": "a",
+          "top_logit": 4.767
+        },
+        {
+          "layer": 2,
+          "xyz": [
+            -0.073586,
+            -0.014475,
+            0.163806
+          ],
+          "sharpness": 0.0504,
+          "residual_norm": 72.0,
+          "angles_to_facts": {
+            "Paris": 86.05781958766188,
+            "Tokyo": 72.54575598118306,
+            "Berlin": 78.40892667545816,
+            "Canberra": 88.80727341460366,
+            "Ottawa": 83.54635890545465
+          },
+          "top_token": "located",
+          "top_logit": 4.903
+        },
+        {
+          "layer": 3,
+          "xyz": [
+            -0.044729,
+            0.001821,
+            0.212302
+          ],
+          "sharpness": 0.0454,
+          "residual_norm": 80.0,
+          "angles_to_facts": {
+            "Paris": 86.4879670916547,
+            "Tokyo": 78.59776299979669,
+            "Berlin": 81.59969562391365,
+            "Canberra": 83.09411247406143,
+            "Ottawa": 79.29976380494028
+          },
+          "top_token": "France",
+          "top_logit": 4.863
+        },
+        {
+          "layer": 4,
+          "xyz": [
+            0.130347,
+            -0.207932,
+            0.096147
+          ],
+          "sharpness": 0.1003,
+          "residual_norm": 88.0,
+          "angles_to_facts": {
+            "Paris": 81.31189322056508,
+            "Tokyo": 71.69591073450243,
+            "Berlin": 80.30904019830433,
+            "Canberra": 82.65881711531591,
+            "Ottawa": 76.70376510819602
+          },
+          "top_token": "the",
+          "top_logit": 5.302
+        },
+        {
+          "layer": 5,
+          "xyz": [
+            -0.089111,
+            0.054741,
+            -0.028636
+          ],
+          "sharpness": 0.0856,
+          "residual_norm": 96.0,
+          "angles_to_facts": {
+            "Paris": 82.34604338910843,
+            "Tokyo": 74.896850881567,
+            "Berlin": 79.5027268843761,
+            "Canberra": 86.99475389249464,
+            "Ottawa": 71.45656458369139
+          },
+          "top_token": "a",
+          "top_logit": 5.185
+        },
+        {
+          "layer": 6,
+          "xyz": [
+            0.22971,
+            0.182834,
+            0.240421
+          ],
+          "sharpness": 0.1155,
+          "residual_norm": 104.0,
+          "angles_to_facts": {
+            "Paris": 80.09520439171915,
+            "Tokyo": 83.12116022223569,
+            "Berlin": 70.11089636276064,
+            "Canberra": 85.01928953236946,
+            "Ottawa": 85.4009237714805
+          },
+          "top_token": "located",
+          "top_logit": 5.424
+        },
+        {
+          "layer": 7,
+          "xyz": [
+            0.252202,
+            0.284458,
+            0.367474
+          ],
+          "sharpness": 0.1318,
+          "residual_norm": 112.0,
+          "angles_to_facts": {
+            "Paris": 78.24021512857857,
+            "Tokyo": 74.98396559319943,
+            "Berlin": 86.9667269470332,
+            "Canberra": 79.12923650940346,
+            "Ottawa": 86.02833203444528
+          },
+          "top_token": "France",
+          "top_logit": 5.554
+        },
+        {
+          "layer": 8,
+          "xyz": [
+            -0.051235,
+            -0.030321,
+            -0.036936
+          ],
+          "sharpness": 0.1656,
+          "residual_norm": 120.0,
+          "angles_to_facts": {
+            "Paris": 76.32313167685555,
+            "Tokyo": 84.38547922551935,
+            "Berlin": 80.09556329648804,
+            "Canberra": 86.6113833944283,
+            "Ottawa": 80.95743901221657
+          },
+          "top_token": "the",
+          "top_logit": 5.825
+        },
+        {
+          "layer": 9,
+          "xyz": [
+            0.103864,
+            0.093754,
+            0.119966
+          ],
+          "sharpness": 0.1485,
+          "residual_norm": 128.0,
+          "angles_to_facts": {
+            "Paris": 77.91064321442272,
+            "Tokyo": 85.31627368594332,
+            "Berlin": 80.42599625655964,
+            "Canberra": 82.53496873963563,
+            "Ottawa": 75.49194893835076
+          },
+          "top_token": "a",
+          "top_logit": 5.688
+        },
+        {
+          "layer": 10,
+          "xyz": [
+            0.279947,
+            0.189881,
+            0.20359
+          ],
+          "sharpness": 0.1783,
+          "residual_norm": 136.0,
+          "angles_to_facts": {
+            "Paris": 74.23261774354799,
+            "Tokyo": 74.62522959456373,
+            "Berlin": 83.87899624598104,
+            "Canberra": 84.12838283389104,
+            "Ottawa": 71.28457701427756
+          },
+          "top_token": "located",
+          "top_logit": 5.926
+        },
+        {
+          "layer": 11,
+          "xyz": [
+            0.310963,
+            0.183523,
+            0.151827
+          ],
+          "sharpness": 0.1874,
+          "residual_norm": 144.0,
+          "angles_to_facts": {
+            "Paris": 74.94424121073355,
+            "Tokyo": 81.6815882840845,
+            "Berlin": 83.91045972995936,
+            "Canberra": 87.13464064607868,
+            "Ottawa": 85.31189152236139
+          },
+          "top_token": "France",
+          "top_logit": 5.999
+        },
+        {
+          "layer": 12,
+          "xyz": [
+            0.295306,
+            0.17632,
+            0.22953
+          ],
+          "sharpness": 0.2242,
+          "residual_norm": 152.0,
+          "angles_to_facts": {
+            "Paris": 71.73021044559773,
+            "Tokyo": 78.38042565259644,
+            "Berlin": 84.95031337956101,
+            "Canberra": 80.92264619467679,
+            "Ottawa": 82.06505177882482
+          },
+          "top_token": "the",
+          "top_logit": 6.293
+        },
+        {
+          "layer": 13,
+          "xyz": [
+            0.353361,
+            0.249684,
+            0.158273
+          ],
+          "sharpness": 0.2134,
+          "residual_norm": 160.0,
+          "angles_to_facts": {
+            "Paris": 72.14822183181734,
+            "Tokyo": 78.08633338275274,
+            "Berlin": 73.30089462407018,
+            "Canberra": 79.34780298464621,
+            "Ottawa": 72.55255594562321
+          },
+          "top_token": "a",
+          "top_logit": 6.208
+        },
+        {
+          "layer": 14,
+          "xyz": [
+            0.33255,
+            0.243203,
+            0.195461
+          ],
+          "sharpness": 0.2131,
+          "residual_norm": 168.0,
+          "angles_to_facts": {
+            "Paris": 72.1047165580755,
+            "Tokyo": 72.71398974461128,
+            "Berlin": 79.23396888103024,
+            "Canberra": 71.00569266977256,
+            "Ottawa": 77.58207728376279
+          },
+          "top_token": "located",
+          "top_logit": 6.205
+        },
+        {
+          "layer": 15,
+          "xyz": [
+            0.389538,
+            0.304633,
+            0.146585
+          ],
+          "sharpness": 0.2645,
+          "residual_norm": 176.0,
+          "angles_to_facts": {
+            "Paris": 67.85963629708712,
+            "Tokyo": 75.04543063564762,
+            "Berlin": 71.63812465523286,
+            "Canberra": 70.38766574100022,
+            "Ottawa": 80.78838095845067
+          },
+          "top_token": "France",
+          "top_logit": 6.616
+        },
+        {
+          "layer": 16,
+          "xyz": [
+            0.387212,
+            0.294417,
+            0.149248
+          ],
+          "sharpness": 0.2746,
+          "residual_norm": 184.0,
+          "angles_to_facts": {
+            "Paris": 66.79405785447953,
+            "Tokyo": 88.99223465431977,
+            "Berlin": 73.98721364725066,
+            "Canberra": 70.40760034640665,
+            "Ottawa": 73.04764691569581
+          },
+          "top_token": "the",
+          "top_logit": 6.697
+        },
+        {
+          "layer": 17,
+          "xyz": [
+            0.428002,
+            0.332769,
+            0.195712
+          ],
+          "sharpness": 0.2921,
+          "residual_norm": 192.0,
+          "angles_to_facts": {
+            "Paris": 65.24334668324767,
+            "Tokyo": 73.35578286735604,
+            "Berlin": 82.14494987781863,
+            "Canberra": 84.95851303910571,
+            "Ottawa": 72.29065742757795
+          },
+          "top_token": "a",
+          "top_logit": 6.837
+        }
+      ]
+    },
+    {
+      "step": 3,
+      "token": " Paris",
+      "token_id": 118690,
+      "predicted_token": "Paris",
+      "predicted_token_id": 118690,
+      "prompt_so_far": "The capital of France is Paris Paris Paris",
+      "layers": [
+        {
+          "layer": 0,
+          "xyz": [
+            -0.349653,
+            0.026463,
+            0.021365
+          ],
+          "sharpness": 0.0156,
+          "residual_norm": 59.0,
+          "angles_to_facts": {
+            "Paris": 89.95088697392468,
+            "Tokyo": 89.16345676411791,
+            "Berlin": 77.93308883033255,
+            "Canberra": 84.30029410098936,
+            "Ottawa": 71.5199295568612
+          },
+          "top_token": "the",
+          "top_logit": 4.625
+        },
+        {
+          "layer": 1,
+          "xyz": [
+            -0.166378,
+            0.228055,
+            0.166142
+          ],
+          "sharpness": 0.0652,
+          "residual_norm": 67.0,
+          "angles_to_facts": {
+            "Paris": 85.33248684701141,
+            "Tokyo": 72.4211013013463,
+            "Berlin": 89.67688703029343,
+            "Canberra": 85.6527069272204,
+            "Ottawa": 76.94407530616898
+          },
+          "top_token": "a",
+          "top_logit": 5.022
+        },
+        {
+          "layer": 2,
+          "xyz": [
+            0.116147,
+            -0.085551,
+            0.022115
+          ],
+          "sharpness": 0.0879,
+          "residual_norm": 75.0,
+          "angles_to_facts": {
+            "Paris": 83.73753790123664,
+            "Tokyo": 72.11077741287997,
+            "Berlin": 89.21575134429158,
+            "Canberra": 82.71170212202892,
+            "Ottawa": 86.57414622004916
+          },
+          "top_token": "located",
+          "top_logit": 5.203
+        },
+        {
+          "layer": 3,
+          "xyz": [
+            -0.064012,
+            0.031854,
+            -0.328657
+          ],
+          "sharpness": 0.0816,
+          "residual_norm": 83.0,
+          "angles_to_facts": {
+            "Paris": 84.27497723370215,
+            "Tokyo": 80.76345812896511,
+            "Berlin": 79.66995007766393,
+            "Canberra": 78.71148986007789,
+            "Ottawa": 84.62052428610244
+          },
+          "top_token": "France",
+          "top_logit": 5.153
+        },
+        {
+          "layer": 4,
+          "xyz": [
+            0.380342,
+            0.121444,
+            0.002528
+          ],
+          "sharpness": 0.1348,
+          "residual_norm": 91.0,
+          "angles_to_facts": {
+            "Paris": 78.35231932347868,
+            "Tokyo": 79.29416933206463,
+            "Berlin": 82.20663408461041,
+            "Canberra": 77.57978608256528,
+            "Ottawa": 70.57399995540179
+          },
+          "top_token": "the",
+          "top_logit": 5.579
+        },
+        {
+          "layer": 5,
+          "xyz": [
+            0.069404,
+            0.173591,
+            0.305172
+          ],
+          "sharpness": 0.1305,
+          "residual_norm": 99.0,
+          "angles_to_facts": {
+            "Paris": 80.01903113166374,
+            "Tokyo": 84.02367500664403,
+            "Berlin": 75.5253715151237,
+            "Canberra": 70.20302228877354,
+            "Ottawa": 88.96125155554063
+          },
+          "top_token": "a",
+          "top_logit": 5.544
+        },
+        {
+          "layer": 6,
+          "xyz": [
+            0.279104,
+            -0.091291,
+            0.097744
+          ],
+          "sharpness": 0.1707,
+          "residual_norm": 107.0,
+          "angles_to_facts": {
+            "Paris": 75.93196293163642,
+            "Tokyo": 79.81642670157173,
+            "Berlin": 85.85865736264635,
+            "Canberra": 71.86106701109344,
+            "Ottawa": 74.4319280094506
+          },
+          "top_token": "located",
+          "top_logit": 5.865
+        },
+        {
+          "layer": 7,
+          "xyz": [
+            0.101491,
+            0.047006,
+            0.029817
+          ],
+          "sharpness": 0.1854,
+          "residual_norm": 115.0,
+          "angles_to_facts": {
+            "Paris": 74.16774128819564,
+            "Tokyo": 84.91870873427219,
+            "Berlin": 76.61582594391861,
+            "Canberra": 84.05709884371538,
+            "Ottawa": 75.41832853952393
+          },
+          "top_token": "France",
+          "top_logit": 5.983
+        },
+        {
+          "layer": 8,
+          "xyz": [
+            0.278844,
+            0.205284,
+            0.160553
+          ],
+          "sharpness": 0.2083,
+          "residual_norm": 123.0,
+          "angles_to_facts": {
+            "Paris": 72.77685692095982,
+            "Tokyo": 73.70299684875324,
+            "Berlin": 74.32769279757211,
+            "Canberra": 79.68397174425418,
+            "Ottawa": 84.49170002186104
+          },
+          "top_token": "the",
+          "top_logit": 6.166
+        },
+        {
+          "layer": 9,
+          "xyz": [
+            0.230186,
+            0.197969,
+            0.172964
+          ],
+          "sharpness": 0.2139,
+          "residual_norm": 131.0,
+          "angles_to_facts": {
+            "Paris": 71.20328596505107,
+            "Tokyo": 73.58883087370806,
+            "Berlin": 70.28296734512128,
+            "Canberra": 80.68270178535326,
+            "Ottawa": 75.48622653566535
+          },
+          "top_token": "a",
+          "top_logit": 6.211
+        },
+        {
+          "layer": 10,
+          "xyz": [
+            0.256954,
+            0.214293,
+            0.08386
+          ],
+          "sharpness": 0.2703,
+          "residual_norm": 139.0,
+          "angles_to_facts": {
+            "Paris": 66.65351393413742,
+            "Tokyo": 87.45439469997069,
+            "Berlin": 81.48128439252665,
+            "Canberra": 79.3879388986102,
+            "Ottawa": 78.80937596272021
+          },
+          "top_token": "located",
+          "top_logit": 6.663
+        },
+        {
+          "layer": 11,
+          "xyz": [
+            0.33014,
+            0.340786,
+            0.115569
+          ],
+          "sharpness": 0.2907,
+          "residual_norm": 147.0,
+          "angles_to_facts": {
+            "Paris": 64.63970960670686,
+            "Tokyo": 71.48164340511279,
+            "Berlin": 82.58891413903997,
+            "Canberra": 71.07218148585066,
+            "Ottawa": 72.9839516894731
+          },
+          "top_token": "France",
+          "top_logit": 6.825
+        },
+        {
+          "layer": 12,
+          "xyz": [
+            0.315612,
+            0.306478,
+            0.161276
+          ],
+          "sharpness": 0.3105,
+          "residual_norm": 155.0,
+          "angles_to_facts": {
+            "Paris": 63.26843811784579,
+            "Tokyo": 85.81481659686838,
+            "Berlin": 74.51374274130069,
+            "Canberra": 80.45145070260436,
+            "Ottawa": 79.01028929777509
+          },
+          "top_token": "the",
+          "top_logit": 6.984
+        },
+        {
+          "layer": 13,
+          "xyz": [
+            0.380982,
+            0.324889,
+            0.174416
+          ],
+          "sharpness": 0.326,
+          "residual_norm": 163.0,
+          "angles_to_facts": {
+            "Paris": 61.878420392270634,
+            "Tokyo": 84.8017861096909,
+            "Berlin": 88.95180400650756,
+            "Canberra": 74.15575811647102,
+            "Ottawa": 74.22050390610787
+          },
+          "top_token": "a",
+          "top_logit": 7.108
+        },
+        {
+          "layer": 14,
+          "xyz": [
+            0.371586,
+            0.331353,
+            0.202221
+          ],
+          "sharpness": 0.3178,
+          "residual_norm": 171.0,
+          "angles_to_facts": {
+            "Paris": 62.30073136340478,
+            "Tokyo": 81.87622390239126,
+            "Berlin": 75.82518578062056,
+            "Canberra": 74.62952469112052,
+            "Ottawa": 84.13911659758067
+          },
+          "top_token": "located",
+          "top_logit": 7.042
+        },
+        {
+          "layer": 15,
+          "xyz": [
+            0.393453,
+            0.328037,
+            0.155089
+          ],
+          "sharpness": 0.3797,
+          "residual_norm": 179.0,
+          "angles_to_facts": {
+            "Paris": 57.074637793577814,
+            "Tokyo": 83.22366085706736,
+            "Berlin": 88.67336916891027,
+            "Canberra": 78.50277932208424,
+            "Ottawa": 80.89124757421158
+          },
+          "top_token": "France",
+          "top_logit": 7.538
+        },
+        {
+          "layer": 16,
+          "xyz": [
+            0.455474,
+            0.370057,
+            0.218452
+          ],
+          "sharpness": 0.3713,
+          "residual_norm": 187.0,
+          "angles_to_facts": {
+            "Paris": 57.19630216617219,
+            "Tokyo": 84.97915444139247,
+            "Berlin": 81.38414098638185,
+            "Canberra": 75.77221176611684,
+            "Ottawa": 72.48707316349416
+          },
+          "top_token": "the",
+          "top_logit": 7.471
+        },
+        {
+          "layer": 17,
+          "xyz": [
+            0.485706,
+            0.384649,
+            0.233629
+          ],
+          "sharpness": 0.4104,
+          "residual_norm": 195.0,
+          "angles_to_facts": {
+            "Paris": 53.224519502460005,
+            "Tokyo": 70.79721568367226,
+            "Berlin": 78.64057328321545,
+            "Canberra": 76.446431667166,
+            "Ottawa": 75.00735804824008
+          },
+          "top_token": "a",
+          "top_logit": 7.783
+        }
+      ]
+    },
+    {
+      "step": 4,
+      "token": " Paris",
+      "token_id": 118690,
+      "predicted_token": "Paris",
+      "predicted_token_id": 118690,
+      "prompt_so_far": "The capital of France is Paris Paris Paris Paris",
+      "layers": [
+        {
+          "layer": 0,
+          "xyz": [
+            0.203388,
+            0.098613,
+            -0.164477
+          ],
+          "sharpness": 0.0475,
+          "residual_norm": 62.0,
+          "angles_to_facts": {
+            "Paris": 87.7206065836263,
+            "Tokyo": 83.44563168606479,
+            "Berlin": 75.39022051934109,
+            "Canberra": 70.80463346289233,
+            "Ottawa": 85.12537660825114
+          },
+          "top_token": "the",
+          "top_logit": 4.88
+        },
+        {
+          "layer": 1,
+          "xyz": [
+            0.070496,
+            0.105997,
+            -0.031164
+          ],
+          "sharpness": 0.0595,
+          "residual_norm": 70.0,
+          "angles_to_facts": {
+            "Paris": 85.91289704952757,
+            "Tokyo": 79.83451604382027,
+            "Berlin": 71.82484812587654,
+            "Canberra": 76.95922112589301,
+            "Ottawa": 76.66616787330184
+          },
+          "top_token": "a",
+          "top_logit": 4.976
+        },
+        {
+          "layer": 2,
+          "xyz": [
+            -0.186684,
+            -0.054159,
+            0.225054
+          ],
+          "sharpness": 0.0749,
+          "residual_norm": 78.0,
+          "angles_to_facts": {
+            "Paris": 85.14802884873937,
+            "Tokyo": 86.27132069475945,
+            "Berlin": 81.00193217943566,
+            "Canberra": 79.09651817203459,
+            "Ottawa": 76.29034314340336
+          },
+          "top_token": "located",
+          "top_logit": 5.099
+        },
+        {
+          "layer": 3,
+          "xyz": [
+            0.423151,
+            -0.058535,
+            0.14016
+          ],
+          "sharpness": 0.1402,
+          "residual_norm": 86.0,
+          "angles_to_facts": {
+            "Paris": 78.70071707955762,
+            "Tokyo": 80.8518718871439,
+            "Berlin": 78.26495141598643,
+            "Canberra": 73.75165082789054,
+            "Ottawa": 77.2355871830335
+          },
+          "top_token": "France",
+          "top_logit": 5.621
+        },
+        {
+          "layer": 4,
+          "xyz": [
+            -0.070429,
+            0.110807,
+            -0.033212
+          ],
+          "sharpness": 0.1485,
+          "residual_norm": 94.0,
+          "angles_to_facts": {
+            "Paris": 78.49310084328388,
+            "Tokyo": 78.76232190144756,
+            "Berlin": 83.96500058244345,
+            "Canberra": 72.4285216672524,
+            "Ottawa": 89.46293631643388
+          },
+          "top_token": "the",
+          "top_logit": 5.688
+        },
+        {
+          "layer": 5,
+          "xyz": [
+            0.096445,
+            0.220788,
+            0.214675
+          ],
+          "sharpness": 0.1789,
+          "residual_norm": 102.0,
+          "angles_to_facts": {
+            "Paris": 74.08784168366999,
+            "Tokyo": 89.8451427879044,
+            "Berlin": 88.25859756968336,
+            "Canberra": 79.22895788357567,
+            "Ottawa": 72.34932298179115
+          },
+          "top_token": "a",
+          "top_logit": 5.931
+        },
+        {
+          "layer": 6,
+          "xyz": [
+            0.054025,
+            0.124548,
+            -0.062071
+          ],
+          "sharpness": 0.1952,
+          "residual_norm": 110.0,
+          "angles_to_facts": {
+            "Paris": 74.10290140216213,
+            "Tokyo": 89.6048926520675,
+            "Berlin": 74.87461812150276,
+            "Canberra": 81.0253015376094,
+            "Ottawa": 77.67172026494299
+          },
+          "top_token": "located",
+          "top_logit": 6.061
+        },
+        {
+          "layer": 7,
+          "xyz": [
+            0.148046,
+            0.369942,
+            -0.069485
+          ],
+          "sharpness": 0.2256,
+          "residual_norm": 118.0,
+          "angles_to_facts": {
+            "Paris": 71.27807552189527,
+            "Tokyo": 78.2988484710269,
+            "Berlin": 88.68496787365041,
+            "Canberra": 80.15475351619313,
+            "Ottawa": 86.41098946371156
+          },
+          "top_token": "France",
+          "top_logit": 6.305
+        },
+        {
+          "layer": 8,
+          "xyz": [
+            0.341621,
+            -0.134386,
+            -0.086864
+          ],
+          "sharpness": 0.2665,
+          "residual_norm": 126.0,
+          "angles_to_facts": {
+            "Paris": 66.3122966717729,
+            "Tokyo": 80.77161155407748,
+            "Berlin": 76.90247883386016,
+            "Canberra": 81.03834834141622,
+            "Ottawa": 80.86860125917346
+          },
+          "top_token": "the",
+          "top_logit": 6.632
+        },
+        {
+          "layer": 9,
+          "xyz": [
+            0.305443,
+            0.28906,
+            0.268498
+          ],
+          "sharpness": 0.3009,
+          "residual_norm": 134.0,
+          "angles_to_facts": {
+            "Paris": 63.389833822511456,
+            "Tokyo": 85.51088950198518,
+            "Berlin": 70.87294598194603,
+            "Canberra": 84.89410303130391,
+            "Ottawa": 84.10455762050005
+          },
+          "top_token": "a",
+          "top_logit": 6.907
+        },
+        {
+          "layer": 10,
+          "xyz": [
+            0.227878,
+            0.171482,
+            0.002416
+          ],
+          "sharpness": 0.3516,
+          "residual_norm": 142.0,
+          "angles_to_facts": {
+            "Paris": 59.3500849189613,
+            "Tokyo": 70.74039222691152,
+            "Berlin": 80.04582300265932,
+            "Canberra": 81.80360858619134,
+            "Ottawa": 87.39400626724431
+          },
+          "top_token": "located",
+          "top_logit": 7.312
+        },
+        {
+          "layer": 11,
+          "xyz": [
+            0.278402,
+            0.192022,
+            0.152379
+          ],
+          "sharpness": 0.3689,
+          "residual_norm": 150.0,
+          "angles_to_facts": {
+            "Paris": 57.61938018349206,
+            "Tokyo": 83.09562652855467,
+            "Berlin": 73.08722437543098,
+            "Canberra": 79.38981201969463,
+            "Ottawa": 89.38407261148434
+          },
+          "top_token": "France",
+          "top_logit": 7.451
+        },
+        {
+          "layer": 12,
+          "xyz": [
+            0.450279,
+            0.250493,
+            0.095454
+          ],
+          "sharpness": 0.4056,
+          "residual_norm": 158.0,
+          "angles_to_facts": {
+            "Paris": 55.21087944622699,
+            "Tokyo": 77.6001879504531,
+            "Berlin": 76.333223078668,
+            "Canberra": 84.37434850445966,
+            "Ottawa": 85.18803618668727
+          },
+          "top_token": "the",
+          "top_logit": 7.745
+        },
+        {
+          "layer": 13,
+          "xyz": [
+            0.39797,
+            0.413772,
+            0.232263
+          ],
+          "sharpness": 0.4393,
+          "residual_norm": 166.0,
+          "angles_to_facts": {
+            "Paris": 52.45571291820782,
+            "Tokyo": 84.93532733475854,
+            "Berlin": 78.6794294384625,
+            "Canberra": 71.96886252766396,
+            "Ottawa": 82.67495657561582
+          },
+          "top_token": "a",
+          "top_logit": 8.015
+        },
+        {
+          "layer": 14,
+          "xyz": [
+            0.400204,
+            0.328459,
+            0.108978
+          ],
+          "sharpness": 0.4258,
+          "residual_norm": 174.0,
+          "angles_to_facts": {
+            "Paris": 53.26768051245344,
+            "Tokyo": 75.86735551930417,
+            "Berlin": 77.49682179550629,
+            "Canberra": 72.91139591398797,
+            "Ottawa": 80.6233263629752
+          },
+          "top_token": "located",
+          "top_logit": 7.907
+        },
+        {
+          "layer": 15,
+          "xyz": [
+            0.46953,
+            0.393935,
+            0.230608
+          ],
+          "sharpness": 0.4973,
+          "residual_norm": 182.0,
+          "angles_to_facts": {
+            "Paris": 46.48030640871921,
+            "Tokyo": 74.81659583712626,
+            "Berlin": 88.2565803204711,
+            "Canberra": 72.86235440257019,
+            "Ottawa": 79.22299826709995
+          },
+          "top_token": "France",
+          "top_logit": 8.479
+        },
+        {
+          "layer": 16,
+          "xyz": [
+            0.513799,
+            0.443946,
+            0.246151
+          ],
+          "sharpness": 0.5291,
+          "residual_norm": 190.0,
+          "angles_to_facts": {
+            "Paris": 43.73675415511915,
+            "Tokyo": 73.15951244143574,
+            "Berlin": 78.83459567207629,
+            "Canberra": 76.91131248886164,
+            "Ottawa": 81.75143410252844
+          },
+          "top_token": "Paris",
+          "top_logit": 8.733
+        },
+        {
+          "layer": 17,
+          "xyz": [
+            0.543007,
+            0.445726,
+            0.240446
+          ],
+          "sharpness": 0.5242,
+          "residual_norm": 198.0,
+          "angles_to_facts": {
+            "Paris": 43.58719571623039,
+            "Tokyo": 79.66416122118432,
+            "Berlin": 74.74411403855149,
+            "Canberra": 81.43845384701478,
+            "Ottawa": 81.4962386035729
+          },
+          "top_token": "Paris",
+          "top_logit": 8.694
+        }
+      ]
+    },
+    {
+      "step": 5,
+      "token": " Paris",
+      "token_id": 118690,
+      "predicted_token": "Paris",
+      "predicted_token_id": 118690,
+      "prompt_so_far": "The capital of France is Paris Paris Paris Paris Paris",
+      "layers": [
+        {
+          "layer": 0,
+          "xyz": [
+            -0.005739,
+            0.216935,
+            -0.030257
+          ],
+          "sharpness": 0.0137,
+          "residual_norm": 65.0,
+          "angles_to_facts": {
+            "Paris": 89.89669632310937,
+            "Tokyo": 83.71598985468025,
+            "Berlin": 84.89337682330651,
+            "Canberra": 70.98088501552,
+            "Ottawa": 82.12812986152949
+          },
+          "top_token": "the",
+          "top_logit": 4.61
+        },
+        {
+          "layer": 1,
+          "xyz": [
+            0.041456,
+            -0.028457,
+            0.266395
+          ],
+          "sharpness": 0.0682,
+          "residual_norm": 73.0,
+          "angles_to_facts": {
+            "Paris": 84.56948807539362,
+            "Tokyo": 82.73235756011783,
+            "Berlin": 82.41782326260608,
+            "Canberra": 83.55528917246718,
+            "Ottawa": 84.41856753341418
+          },
+          "top_token": "a",
+          "top_logit": 5.045
+        },
+        {
+          "layer": 2,
+          "xyz": [
+            -0.160883,
+            -0.156859,
+            -0.190203
+          ],
+          "sharpness": 0.1079,
+          "residual_norm": 81.0,
+          "angles_to_facts": {
+            "Paris": 80.90261033882229,
+            "Tokyo": 78.81646380325623,
+            "Berlin": 81.59147610736805,
+            "Canberra": 84.64719535878477,
+            "Ottawa": 71.80266751492438
+          },
+          "top_token": "located",
+          "top_logit": 5.364
+        },
+        {
+          "layer": 3,
+          "xyz": [
+            0.331808,
+            0.121836,
+            0.118782
+          ],
+          "sharpness": 0.1404,
+          "residual_norm": 89.0,
+          "angles_to_facts": {
+            "Paris": 79.30556021337934,
+            "Tokyo": 80.6170474740557,
+            "Berlin": 88.26973948963393,
+            "Canberra": 86.60945239134794,
+            "Ottawa": 75.13940169126525
+          },
+          "top_token": "France",
+          "top_logit": 5.623
+        },
+        {
+          "layer": 4,
+          "xyz": [
+            -0.005364,
+            0.199022,
+            -0.153141
+          ],
+          "sharpness": 0.1682,
+          "residual_norm": 97.0,
+          "angles_to_facts": {
+            "Paris": 75.09267539463977,
+            "Tokyo": 89.25786585737755,
+            "Berlin": 72.81514030011765,
+            "Canberra": 89.33000418925505,
+            "Ottawa": 87.20281193797643
+          },
+          "top_token": "the",
+          "top_logit": 5.846
+        },
+        {
+          "layer": 5,
+          "xyz": [
+            -0.186374,
+            0.378167,
+            0.03691
+          ],
+          "sharpness": 0.2074,
+          "residual_norm": 105.0,
+          "angles_to_facts": {
+            "Paris": 72.91856949216375,
+            "Tokyo": 70.27837310201802,
+            "Berlin": 80.73144616538119,
+            "Canberra": 79.0957205546775,
+            "Ottawa": 83.45656763747508
+          },
+          "top_token": "a",
+          "top_logit": 6.159
+        },
+        {
+          "layer": 6,
+          "xyz": [
+            0.067272,
+            0.303153,
+            -0.15864
+          ],
+          "sharpness": 0.2323,
+          "residual_norm": 113.0,
+          "angles_to_facts": {
+            "Paris": 69.55991827729973,
+            "Tokyo": 70.50049299292965,
+            "Berlin": 87.68469690429704,
+            "Canberra": 81.22814764499758,
+            "Ottawa": 88.3051181748632
+          },
+          "top_token": "located",
+          "top_logit": 6.358
+        },
+        {
+          "layer": 7,
+          "xyz": [
+            0.288416,
+            0.322683,
+            -0.116307
+          ],
+          "sharpness": 0.2798,
+          "residual_norm": 121.0,
+          "angles_to_facts": {
+            "Paris": 65.6332065144445,
+            "Tokyo": 72.79554025014443,
+            "Berlin": 88.92523065763892,
+            "Canberra": 76.0872916871201,
+            "Ottawa": 79.85249237956411
+          },
+          "top_token": "France",
+          "top_logit": 6.739
+        },
+        {
+          "layer": 8,
+          "xyz": [
+            0.432229,
+            0.325456,
+            0.241141
+          ],
+          "sharpness": 0.336,
+          "residual_norm": 129.0,
+          "angles_to_facts": {
+            "Paris": 61.24220150191805,
+            "Tokyo": 88.91948171558865,
+            "Berlin": 78.38253506829446,
+            "Canberra": 84.84538029530631,
+            "Ottawa": 73.0904580481967
+          },
+          "top_token": "the",
+          "top_logit": 7.188
+        },
+        {
+          "layer": 9,
+          "xyz": [
+            0.338321,
+            0.164459,
+            0.160148
+          ],
+          "sharpness": 0.3879,
+          "residual_norm": 137.0,
+          "angles_to_facts": {
+            "Paris": 55.15333360865498,
+            "Tokyo": 77.41059917468871,
+            "Berlin": 78.86766172121403,
+            "Canberra": 89.01110339702853,
+            "Ottawa": 87.1090038661191
+          },
+          "top_token": "a",
+          "top_logit": 7.603
+        },
+        {
+          "layer": 10,
+          "xyz": [
+            0.443805,
+            0.015314,
+            0.091084
+          ],
+          "sharpness": 0.3961,
+          "residual_norm": 145.0,
+          "angles_to_facts": {
+            "Paris": 55.14863355465516,
+            "Tokyo": 73.7961712432216,
+            "Berlin": 72.44319438174527,
+            "Canberra": 86.96066376927362,
+            "Ottawa": 79.09434737141035
+          },
+          "top_token": "located",
+          "top_logit": 7.669
+        },
+        {
+          "layer": 11,
+          "xyz": [
+            0.301353,
+            0.309892,
+            0.179401
+          ],
+          "sharpness": 0.4553,
+          "residual_norm": 153.0,
+          "angles_to_facts": {
+            "Paris": 49.509587347366306,
+            "Tokyo": 72.51847770616085,
+            "Berlin": 81.29155951815926,
+            "Canberra": 71.37220305648712,
+            "Ottawa": 85.30314751777169
+          },
+          "top_token": "France",
+          "top_logit": 8.142
+        },
+        {
+          "layer": 12,
+          "xyz": [
+            0.467735,
+            0.393205,
+            0.159509
+          ],
+          "sharpness": 0.4612,
+          "residual_norm": 161.0,
+          "angles_to_facts": {
+            "Paris": 50.29673212707323,
+            "Tokyo": 70.05671102960032,
+            "Berlin": 87.16812252760353,
+            "Canberra": 72.89375960641016,
+            "Ottawa": 72.59984262886874
+          },
+          "top_token": "the",
+          "top_logit": 8.189
+        },
+        {
+          "layer": 13,
+          "xyz": [
+            0.489737,
+            0.373606,
+            0.211271
+          ],
+          "sharpness": 0.4923,
+          "residual_norm": 169.0,
+          "angles_to_facts": {
+            "Paris": 47.26940037693972,
+            "Tokyo": 74.75863212180926,
+            "Berlin": 76.47542923924046,
+            "Canberra": 73.48492402812354,
+            "Ottawa": 71.04798035722354
+          },
+          "top_token": "a",
+          "top_logit": 8.439
+        },
+        {
+          "layer": 14,
+          "xyz": [
+            0.442317,
+            0.408169,
+            0.193199
+          ],
+          "sharpness": 0.5683,
+          "residual_norm": 177.0,
+          "angles_to_facts": {
+            "Paris": 39.87834041477506,
+            "Tokyo": 72.1810802000769,
+            "Berlin": 80.07677379571643,
+            "Canberra": 88.90831285940213,
+            "Ottawa": 70.86730073798343
+          },
+          "top_token": "Paris",
+          "top_logit": 9.047
+        },
+        {
+          "layer": 15,
+          "xyz": [
+            0.460215,
+            0.40172,
+            0.250874
+          ],
+          "sharpness": 0.6154,
+          "residual_norm": 185.0,
+          "angles_to_facts": {
+            "Paris": 34.733112822872656,
+            "Tokyo": 79.57963821996726,
+            "Berlin": 78.03234509025121,
+            "Canberra": 83.72194992124466,
+            "Ottawa": 79.8053770828845
+          },
+          "top_token": "Paris",
+          "top_logit": 9.423
+        },
+        {
+          "layer": 16,
+          "xyz": [
+            0.557541,
+            0.490337,
+            0.285422
+          ],
+          "sharpness": 0.6083,
+          "residual_norm": 193.0,
+          "angles_to_facts": {
+            "Paris": 35.800680436570346,
+            "Tokyo": 82.66153448602032,
+            "Berlin": 80.9671286809672,
+            "Canberra": 76.50370886637336,
+            "Ottawa": 89.89255511721848
+          },
+          "top_token": "Paris",
+          "top_logit": 9.367
+        },
+        {
+          "layer": 17,
+          "xyz": [
+            0.599962,
+            0.502967,
+            0.294543
+          ],
+          "sharpness": 0.6779,
+          "residual_norm": 201.0,
+          "angles_to_facts": {
+            "Paris": 30.690435233990986,
+            "Tokyo": 83.0183332976261,
+            "Berlin": 85.37925460209478,
+            "Canberra": 84.41679833315199,
+            "Ottawa": 74.30046132654994
+          },
+          "top_token": "Paris",
+          "top_logit": 9.924
+        }
+      ]
+    },
+    {
+      "step": 6,
+      "token": " Paris",
+      "token_id": 118690,
+      "predicted_token": "Paris",
+      "predicted_token_id": 118690,
+      "prompt_so_far": "The capital of France is Paris Paris Paris Paris Paris Paris",
+      "layers": [
+        {
+          "layer": 0,
+          "xyz": [
+            0.032305,
+            -0.087211,
+            0.139484
+          ],
+          "sharpness": 0.0208,
+          "residual_norm": 68.0,
+          "angles_to_facts": {
+            "Paris": 88.31821825237454,
+            "Tokyo": 78.53528012521916,
+            "Berlin": 83.30215726120618,
+            "Canberra": 77.48602046871073,
+            "Ottawa": 73.05277849537447
+          },
+          "top_token": "the",
+          "top_logit": 4.666
+        },
+        {
+          "layer": 1,
+          "xyz": [
+            0.012752,
+            0.064827,
+            -0.038869
+          ],
+          "sharpness": 0.0502,
+          "residual_norm": 76.0,
+          "angles_to_facts": {
+            "Paris": 86.95901843698603,
+            "Tokyo": 86.23538570554786,
+            "Berlin": 81.127414712307,
+            "Canberra": 81.72930165478954,
+            "Ottawa": 81.23172827984145
+          },
+          "top_token": "a",
+          "top_logit": 4.902
+        },
+        {
+          "layer": 2,
+          "xyz": [
+            0.143181,
+            -0.067008,
+            0.210355
+          ],
+          "sharpness": 0.1283,
+          "residual_norm": 84.0,
+          "angles_to_facts": {
+            "Paris": 80.19183794471573,
+            "Tokyo": 84.42121357492299,
+            "Berlin": 89.36797250622949,
+            "Canberra": 82.00820182449354,
+            "Ottawa": 77.03292371386298
+          },
+          "top_token": "located",
+          "top_logit": 5.526
+        },
+        {
+          "layer": 3,
+          "xyz": [
+            0.070144,
+            0.041041,
+            -0.027543
+          ],
+          "sharpness": 0.1415,
+          "residual_norm": 92.0,
+          "angles_to_facts": {
+            "Paris": 78.95166327819386,
+            "Tokyo": 77.35122101230701,
+            "Berlin": 85.25211263873699,
+            "Canberra": 81.48200008662926,
+            "Ottawa": 86.14442742304689
+          },
+          "top_token": "France",
+          "top_logit": 5.632
+        },
+        {
+          "layer": 4,
+          "xyz": [
+            -0.173158,
+            0.21327,
+            -0.108317
+          ],
+          "sharpness": 0.2136,
+          "residual_norm": 100.0,
+          "angles_to_facts": {
+            "Paris": 70.8242269718914,
+            "Tokyo": 88.58168581989872,
+            "Berlin": 86.58921579919325,
+            "Canberra": 75.34895450308221,
+            "Ottawa": 73.6083214392171
+          },
+          "top_token": "the",
+          "top_logit": 6.209
+        },
+        {
+          "layer": 5,
+          "xyz": [
+            0.084649,
+            0.153498,
+            0.106512
+          ],
+          "sharpness": 0.2704,
+          "residual_norm": 108.0,
+          "angles_to_facts": {
+            "Paris": 66.7980919428819,
+            "Tokyo": 78.01568687999031,
+            "Berlin": 72.83749308302538,
+            "Canberra": 82.66344025311028,
+            "Ottawa": 70.61314196761812
+          },
+          "top_token": "a",
+          "top_logit": 6.663
+        },
+        {
+          "layer": 6,
+          "xyz": [
+            0.143687,
+            0.091734,
+            0.169089
+          ],
+          "sharpness": 0.2908,
+          "residual_norm": 116.0,
+          "angles_to_facts": {
+            "Paris": 65.27375133866656,
+            "Tokyo": 85.53671239933482,
+            "Berlin": 81.35187113228794,
+            "Canberra": 71.69914079954358,
+            "Ottawa": 71.05217652851043
+          },
+          "top_token": "located",
+          "top_logit": 6.826
+        },
+        {
+          "layer": 7,
+          "xyz": [
+            0.41735,
+            0.179626,
+            0.042418
+          ],
+          "sharpness": 0.3507,
+          "residual_norm": 124.0,
+          "angles_to_facts": {
+            "Paris": 59.40436399802717,
+            "Tokyo": 78.84088373395558,
+            "Berlin": 75.46333688729538,
+            "Canberra": 85.09886287336741,
+            "Ottawa": 72.27635016220404
+          },
+          "top_token": "France",
+          "top_logit": 7.306
+        },
+        {
+          "layer": 8,
+          "xyz": [
+            0.345647,
+            0.206439,
+            0.043352
+          ],
+          "sharpness": 0.3964,
+          "residual_norm": 132.0,
+          "angles_to_facts": {
+            "Paris": 54.41646930333226,
+            "Tokyo": 77.90526792175258,
+            "Berlin": 81.986499138889,
+            "Canberra": 70.15374171799766,
+            "Ottawa": 76.02838724036873
+          },
+          "top_token": "the",
+          "top_logit": 7.671
+        },
+        {
+          "layer": 9,
+          "xyz": [
+            0.402552,
+            0.287251,
+            0.260768
+          ],
+          "sharpness": 0.4088,
+          "residual_norm": 140.0,
+          "angles_to_facts": {
+            "Paris": 54.702941146289234,
+            "Tokyo": 73.51389603751684,
+            "Berlin": 77.60414891430473,
+            "Canberra": 84.07342526765328,
+            "Ottawa": 80.00524693112426
+          },
+          "top_token": "a",
+          "top_logit": 7.77
+        },
+        {
+          "layer": 10,
+          "xyz": [
+            0.22901,
+            0.503102,
+            0.276023
+          ],
+          "sharpness": 0.4559,
+          "residual_norm": 148.0,
+          "angles_to_facts": {
+            "Paris": 49.00678676168496,
+            "Tokyo": 88.42324869004824,
+            "Berlin": 87.24220027224132,
+            "Canberra": 81.51518321473662,
+            "Ottawa": 81.46799361771686
+          },
+          "top_token": "located",
+          "top_logit": 8.147
+        },
+        {
+          "layer": 11,
+          "xyz": [
+            0.349861,
+            0.36659,
+            0.217336
+          ],
+          "sharpness": 0.5154,
+          "residual_norm": 156.0,
+          "angles_to_facts": {
+            "Paris": 45.21681775321692,
+            "Tokyo": 82.36250526608481,
+            "Berlin": 86.64051826143414,
+            "Canberra": 88.39539503482769,
+            "Ottawa": 71.7625976259577
+          },
+          "top_token": "Paris",
+          "top_logit": 8.623
+        },
+        {
+          "layer": 12,
+          "xyz": [
+            0.419853,
+            0.312403,
+            0.179139
+          ],
+          "sharpness": 0.5643,
+          "residual_norm": 164.0,
+          "angles_to_facts": {
+            "Paris": 39.83119562646019,
+            "Tokyo": 76.79026562296927,
+            "Berlin": 76.66137244986264,
+            "Canberra": 73.36265416091373,
+            "Ottawa": 80.20966569084297
+          },
+          "top_token": "Paris",
+          "top_logit": 9.015
+        },
+        {
+          "layer": 13,
+          "xyz": [
+            0.555592,
+            0.470728,
+            0.210321
+          ],
+          "sharpness": 0.6263,
+          "residual_norm": 172.0,
+          "angles_to_facts": {
+            "Paris": 35.27225425272723,
+            "Tokyo": 86.30074011500028,
+            "Berlin": 74.72537697893449,
+            "Canberra": 72.92888436555388,
+            "Ottawa": 73.94543605647966
+          },
+          "top_token": "Paris",
+          "top_logit": 9.51
+        },
+        {
+          "layer": 14,
+          "xyz": [
+            0.520597,
+            0.444349,
+            0.252542
+          ],
+          "sharpness": 0.6739,
+          "residual_norm": 180.0,
+          "angles_to_facts": {
+            "Paris": 30.333947060185466,
+            "Tokyo": 85.08891650493972,
+            "Berlin": 85.19754299215496,
+            "Canberra": 78.97810513990126,
+            "Ottawa": 88.48308516771318
+          },
+          "top_token": "Paris",
+          "top_logit": 9.891
+        },
+        {
+          "layer": 15,
+          "xyz": [
+            0.576285,
+            0.472502,
+            0.27089
+          ],
+          "sharpness": 0.712,
+          "residual_norm": 188.0,
+          "angles_to_facts": {
+            "Paris": 26.21893227005651,
+            "Tokyo": 71.36572516991512,
+            "Berlin": 78.8441612767257,
+            "Canberra": 76.05640870278026,
+            "Ottawa": 75.49347334972319
+          },
+          "top_token": "Paris",
+          "top_logit": 10.196
+        },
+        {
+          "layer": 16,
+          "xyz": [
+            0.632065,
+            0.503952,
+            0.332138
+          ],
+          "sharpness": 0.7289,
+          "residual_norm": 196.0,
+          "angles_to_facts": {
+            "Paris": 26.062850219447405,
+            "Tokyo": 71.5346200234691,
+            "Berlin": 87.28500067850479,
+            "Canberra": 87.1058674291218,
+            "Ottawa": 82.30016776831147
+          },
+          "top_token": "Paris",
+          "top_logit": 10.331
+        },
+        {
+          "layer": 17,
+          "xyz": [
+            0.659111,
+            0.576399,
+            0.329884
+          ],
+          "sharpness": 0.8162,
+          "residual_norm": 204.0,
+          "angles_to_facts": {
+            "Paris": 17.43945053372478,
+            "Tokyo": 86.19631835395943,
+            "Berlin": 83.0367490929722,
+            "Canberra": 76.43053525760857,
+            "Ottawa": 79.51258055886139
+          },
+          "top_token": "Paris",
+          "top_logit": 11.03
+        }
+      ]
+    },
+    {
+      "step": 7,
+      "token": " Paris",
+      "token_id": 118690,
+      "predicted_token": "Paris",
+      "predicted_token_id": 118690,
+      "prompt_so_far": "The capital of France is Paris Paris Paris Paris Paris Paris Paris",
+      "layers": [
+        {
+          "layer": 0,
+          "xyz": [
+            0.043533,
+            0.255653,
+            0.194478
+          ],
+          "sharpness": 0.0172,
+          "residual_norm": 71.0,
+          "angles_to_facts": {
+            "Paris": 89.88316110706273,
+            "Tokyo": 80.09098003001915,
+            "Berlin": 73.4511782287273,
+            "Canberra": 74.95487447196568,
+            "Ottawa": 78.75516548618467
+          },
+          "top_token": "the",
+          "top_logit": 4.637
+        },
+        {
+          "layer": 1,
+          "xyz": [
+            0.108708,
+            0.112245,
+            0.139758
+          ],
+          "sharpness": 0.0671,
+          "residual_norm": 79.0,
+          "angles_to_facts": {
+            "Paris": 84.7798118083768,
+            "Tokyo": 76.76734293682838,
+            "Berlin": 81.95771724765979,
+            "Canberra": 85.78453863127329,
+            "Ottawa": 82.94610713938614
+          },
+          "top_token": "a",
+          "top_logit": 5.037
+        },
+        {
+          "layer": 2,
+          "xyz": [
+            0.111323,
+            0.017792,
+            -0.068118
+          ],
+          "sharpness": 0.1421,
+          "residual_norm": 87.0,
+          "angles_to_facts": {
+            "Paris": 78.52691496060399,
+            "Tokyo": 88.12685394327355,
+            "Berlin": 87.46559324121077,
+            "Canberra": 76.66724072121113,
+            "Ottawa": 81.65479029172839
+          },
+          "top_token": "located",
+          "top_logit": 5.637
+        },
+        {
+          "layer": 3,
+          "xyz": [
+            0.232522,
+            0.32797,
+            0.016059
+          ],
+          "sharpness": 0.1784,
+          "residual_norm": 95.0,
+          "angles_to_facts": {
+            "Paris": 75.1321538797352,
+            "Tokyo": 88.76004399131521,
+            "Berlin": 76.19163774831922,
+            "Canberra": 77.533586121126,
+            "Ottawa": 85.83323915727087
+          },
+          "top_token": "France",
+          "top_logit": 5.927
+        },
+        {
+          "layer": 4,
+          "xyz": [
+            -0.026662,
+            0.252521,
+            -0.123357
+          ],
+          "sharpness": 0.246,
+          "residual_norm": 103.0,
+          "angles_to_facts": {
+            "Paris": 68.90959816880749,
+            "Tokyo": 82.92049641466976,
+            "Berlin": 78.46812732644207,
+            "Canberra": 77.23656192693569,
+            "Ottawa": 77.2519533796409
+          },
+          "top_token": "the",
+          "top_logit": 6.468
+        },
+        {
+          "layer": 5,
+          "xyz": [
+            0.297389,
+            0.325232,
+            0.052184
+          ],
+          "sharpness": 0.276,
+          "residual_norm": 111.0,
+          "angles_to_facts": {
+            "Paris": 65.43215758518696,
+            "Tokyo": 71.54330168601753,
+            "Berlin": 86.88856777371767,
+            "Canberra": 72.02281527335788,
+            "Ottawa": 85.41749440726201
+          },
+          "top_token": "a",
+          "top_logit": 6.708
+        },
+        {
+          "layer": 6,
+          "xyz": [
+            0.012913,
+            0.330816,
+            0.152307
+          ],
+          "sharpness": 0.356,
+          "residual_norm": 119.0,
+          "angles_to_facts": {
+            "Paris": 58.22547856872878,
+            "Tokyo": 77.53439741645049,
+            "Berlin": 73.244944241769,
+            "Canberra": 86.62690113378251,
+            "Ottawa": 85.42195627461977
+          },
+          "top_token": "located",
+          "top_logit": 7.348
+        },
+        {
+          "layer": 7,
+          "xyz": [
+            0.228266,
+            0.131398,
+            0.191878
+          ],
+          "sharpness": 0.4044,
+          "residual_norm": 127.0,
+          "angles_to_facts": {
+            "Paris": 54.07848607657486,
+            "Tokyo": 78.88397419610551,
+            "Berlin": 75.69855865126716,
+            "Canberra": 84.97073036190872,
+            "Ottawa": 78.97855926066681
+          },
+          "top_token": "France",
+          "top_logit": 7.735
+        },
+        {
+          "layer": 8,
+          "xyz": [
+            0.320213,
+            0.323666,
+            0.057666
+          ],
+          "sharpness": 0.4653,
+          "residual_norm": 135.0,
+          "angles_to_facts": {
+            "Paris": 48.86002459036085,
+            "Tokyo": 88.94260340488246,
+            "Berlin": 89.68879587063154,
+            "Canberra": 79.23359956881978,
+            "Ottawa": 75.63543465407551
+          },
+          "top_token": "the",
+          "top_logit": 8.222
+        },
+        {
+          "layer": 9,
+          "xyz": [
+            0.456204,
+            0.480952,
+            0.150155
+          ],
+          "sharpness": 0.5165,
+          "residual_norm": 143.0,
+          "angles_to_facts": {
+            "Paris": 43.78877761934842,
+            "Tokyo": 75.00006423178014,
+            "Berlin": 82.82358072408894,
+            "Canberra": 87.48233890104474,
+            "Ottawa": 81.09081490848862
+          },
+          "top_token": "Paris",
+          "top_logit": 8.632
+        },
+        {
+          "layer": 10,
+          "xyz": [
+            0.54874,
+            0.405347,
+            0.134853
+          ],
+          "sharpness": 0.5676,
+          "residual_norm": 151.0,
+          "angles_to_facts": {
+            "Paris": 39.4644980393407,
+            "Tokyo": 88.10612417956483,
+            "Berlin": 72.94697311983208,
+            "Canberra": 78.74945120389961,
+            "Ottawa": 88.92826526023521
+          },
+          "top_token": "Paris",
+          "top_logit": 9.041
+        },
+        {
+          "layer": 11,
+          "xyz": [
+            0.553662,
+            0.377151,
+            0.24181
+          ],
+          "sharpness": 0.585,
+          "residual_norm": 159.0,
+          "angles_to_facts": {
+            "Paris": 38.352593531234284,
+            "Tokyo": 74.71556147726865,
+            "Berlin": 89.89050702476582,
+            "Canberra": 77.49825346835536,
+            "Ottawa": 70.563750910563
+          },
+          "top_token": "Paris",
+          "top_logit": 9.18
+        },
+        {
+          "layer": 12,
+          "xyz": [
+            0.436569,
+            0.330854,
+            0.119569
+          ],
+          "sharpness": 0.6422,
+          "residual_norm": 167.0,
+          "angles_to_facts": {
+            "Paris": 32.77809006162481,
+            "Tokyo": 86.59523166305645,
+            "Berlin": 83.92143977151967,
+            "Canberra": 72.77585383636372,
+            "Ottawa": 84.1107235057816
+          },
+          "top_token": "Paris",
+          "top_logit": 9.637
+        },
+        {
+          "layer": 13,
+          "xyz": [
+            0.552308,
+            0.49451,
+            0.287041
+          ],
+          "sharpness": 0.73,
+          "residual_norm": 175.0,
+          "angles_to_facts": {
+            "Paris": 25.399098073528716,
+            "Tokyo": 84.54469570649863,
+            "Berlin": 80.55543011773449,
+            "Canberra": 72.22373720648477,
+            "Ottawa": 75.7620315607846
+          },
+          "top_token": "Paris",
+          "top_logit": 10.34
+        },
+        {
+          "layer": 14,
+          "xyz": [
+            0.604701,
+            0.432446,
+            0.322228
+          ],
+          "sharpness": 0.764,
+          "residual_norm": 183.0,
+          "angles_to_facts": {
+            "Paris": 21.458822162774833,
+            "Tokyo": 88.10293771323997,
+            "Berlin": 81.93478085637894,
+            "Canberra": 70.32870704411789,
+            "Ottawa": 80.30751460418813
+          },
+          "top_token": "Paris",
+          "top_logit": 10.612
+        },
+        {
+          "layer": 15,
+          "xyz": [
+            0.650851,
+            0.494523,
+            0.325445
+          ],
+          "sharpness": 0.8061,
+          "residual_norm": 191.0,
+          "angles_to_facts": {
+            "Paris": 18.280007880493514,
+            "Tokyo": 83.28742603484018,
+            "Berlin": 71.71227909974523,
+            "Canberra": 89.49308981904443,
+            "Ottawa": 71.35358645817692
+          },
+          "top_token": "Paris",
+          "top_logit": 10.949
+        },
+        {
+          "layer": 16,
+          "xyz": [
+            0.678374,
+            0.559953,
+            0.329761
+          ],
+          "sharpness": 0.8666,
+          "residual_norm": 199.0,
+          "angles_to_facts": {
+            "Paris": 12.94793424214963,
+            "Tokyo": 82.7134158293726,
+            "Berlin": 89.6207884510312,
+            "Canberra": 75.07300522138425,
+            "Ottawa": 70.32484462217896
+          },
+          "top_token": "Paris",
+          "top_logit": 11.433
+        },
+        {
+          "layer": 17,
+          "xyz": [
+            0.717049,
+            0.599502,
+            0.345376
+          ],
+          "sharpness": 0.9386,
+          "residual_norm": 207.0,
+          "angles_to_facts": {
+            "Paris": 6.998617786130252,
+            "Tokyo": 76.6503721674397,
+            "Berlin": 70.88671376590416,
+            "Canberra": 80.92027490415383,
+            "Ottawa": 86.27017731112176
+          },
+          "top_token": "Paris",
+          "top_logit": 12.009
+        }
+      ]
+    }
+  ]
+}

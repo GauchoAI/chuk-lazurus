@@ -1,0 +1,336 @@
+<start_of_turn>user
+The following is a keyword index extracted from a long document. Use it to answer the question.
+
+Index:
+W0: Tape
+Page, Forces, Hornet, Command, Remote
+
+Neil, APOLLO, Edwin, Voice
+
+Trans
+W1: CD, Roll, CDI, Out, One Bravo, NET, Stand, They
+W2: MARK, CD, Bruce, Your, GO, COI, Inboard, Starting
+W3: PU, CD, Ore, Well, Shutdown, CDP, GOGS, AGS
+W4: Tape
+Page, VA, Ore, GU, Reading, Both, Canaries, AOS
+W5: How, Simplex, Out, AOS, AO, Alfa, ANAR, Carnarvon
+W6: Check, Tape
+Page, HONEYSUCKLE, Both, AOS, Carnarvon, 00033, Honeysuckle
+W7: Tape
+Page, TV, CD, Reading, Out, AOS, NOTE, CDP
+W8: TV, Apollo
+Over, TLI, Loud, Radio, Which, Stand, FM
+W9: Readback, Tape
+Page, Roll, FM, HA, SPS, Deneb, Vega
+W10: TV, TLI, Tape, Have, NET, Let, RCS, OFF
+W11: Tape
+Page, Ready, 179, REV, ON, TLI, RYROARM, PAD
+W12: Readback, CANARY, Canaries, AOS, 357, REV, Looks, TLI
+W13: TV, CT, LOS, Tanan, AOS, Can, Goddard, PRIMARY
+W14: Reading, Out, AOS, Carnarvon, Houston
+Radio, Think, Monitor, Loud
+W15: Should, TLI, Tape, Radio, GO, LOS, Out, NET
+W16: Slightly Less, Everything, Tape, Beautiful, Jittle, Thrust
+Everything, Out, Your
+W17: NOUN, Tape, GO, 35579, Out, Separation, VI, Plus
+W18: Out, APOLLO, VOICE, NET, Our, IVB, AIR, GROUND
+W19: NEP, Tape
+Page, How, OMNI, GO, Radio, Apollo
+Ore, Our
+W20: AUTO, CD, Buzz, Loud, Radio, Apollo
+Ore, Can, Mike
+
+How
+W21: SM, OPEN, COMMAND, Could, How, PITCH, Tape, ACCEL
+W22: 4.4, DSKY, And Houston, PRO, LM, ACCEL, During, REPRESS
+W23: 450, Captain, 4.4, What, Standing, Buzz, Wtiat, How
+W24: CLOSE, Tape
+Page, Yes, CDF, NET, Out, PAD, When
+W25: Out, SPS, 020, Sub, Evasive, PAD, Yucatan Peninsula, North America
+W26: 213, Readback, Standing, How, Evasive, Your, Loud, Start
+W27: Tape, GO, AUTOMATIC, NET, Out, Mark, CRYO, NO
+W28: APOLLO, Just, ON, Sorry
+
+Apollo, VOICE, CIR, Minus, NET
+W29: 002.5, Tape
+Page, Yes, Ready, Roll, 357.5, NET, Mark
+W30: Alrighty, LOX, NET, Out, Tape
+Page
+You, That
+
+Apollo, OO, Right
+W31: Athabaska, North Atlantic, 000, Just, LM, United States, Europe, IVB
+W32: Ullage, 307.0, NE, Tape, LOX, Our, GET, Thank
+W33: Tape
+Page, Arid, APS, Ore, LOX, CRYO, Out, NET
+W34: AUTO, With, Tape, FF, Out, NET, BLOCK, LM/CM
+W35: FLIGHT, 0.2, How, Bruce, CD, Join, VENT, Don
+W36: Cape, Standing, Yes, Tape, Roll, SNET, After, GET
+W37: Could, Oka, Torquing, Tape, TLI, NET, Sure, PAD
+W38: Readback, Tape
+Page, Ready, Out, TLI, 01344, NET, 165
+W39: Tape
+Page, Mike, Sure, Well, APOLLO, Lou, VOICE, Buzz
+W40: NOUN, Stand, Tape, Charlie, NET, Our, ALARM, Guidance
+W41: Tape
+Page, NOUN, TLI, Stand, Your, Hello, NET, Mike
+W42: NOUN, Buzz, Charlie, Hello, Also, NET, GOSS, Thank
+W43: AUTO, Your, Charlie, Roll, Hello, 130, 340.0, Can
+W44: Tape
+Page, Could, Yes, NOUN, Hello, NET, Mike, Continue
+W45: Tape
+Page, How, TLI, NET, Ail, Forty, Could, NOUN
+W46: Tape
+Page, Buzz, NET, Same, GOSS, Because, 1978, Then
+W47: APOLLO, VOICE, Looks, NET, 340.0, Stand, TRANSCRIPTION, AUTO
+W48: Tape
+Page, NOUN, Charlie, But, Our, Ove, Mike, NET
+W49: Tape
+Page, Stand, Charlie, There, Hello, NET, Where, GOSS
+W50: NOUN, Stand, Charlie, Thank, DSKY, VERB, Mike, LM
+W51: Seems, 000, ALARM, NET, Our, BLOCK, PROGRAM, Stand
+W52: Codes, 000, Prior, DSKY, Apollo
+
+Going, Menkent, NET, BLOCK
+W53: VOICE, TRANSCRIPTION, Recommend, 22.43, Tape, Charlie, OF, PTC
+W54: Tape
+Page, How, Alfa, LM, Delta, NET, ATTITUDE, Did
+W55: How, 000, Apollo
+
+Looks, Delta, Will
+
+Alfa, Buzz, NET, Thank
+W56: San Fernando Valley, FTC, Tape
+Page, How, Buzz, Charlie, Your, Hello
+W57: Could, TV, 0.2, RAPID, Hello, During, REPRESS, While
+W58: Tape
+Page, What, How, TV, REACQ, NET, Ove, Let
+W59: Looks, Tape
+Page, TV, Five, Charlie, Sun, Hello, Therefore
+W60: What, How, TV, Charlie, Hello, But, NET, Goldstone
+W61: Mexico, Hawaiian Island, TV, Pacific Ocean, Tape, Charlie, High Sierras, Start
+W62: TV, Colombia, DSKY, Looks, Buzz, NET, CRYO, When
+W63: Tape
+Page, Ready, APOLLO, 027, VOICE, Buzz, NET, 165
+W64: 0.5, Charlie, Would, Out, Hello, Delete, LM/CM, VENT
+W65: OMNI, Buzz, Charlie, Baker, CLOSED, Hello, Also, VENT
+W66: 10002, WIDE, How, Yes, Charlie, Have, Hello, NET
+W67: How, APOLLO, TO-GROUND, VOICE, Hope, 0.5, Buzz, 124600
+W68: BEST, Tape
+Page, APOLLO, DSKY, VOICE, NET, REST, When
+W69: COMMAND, AUTO, Foxtrot, ACCEL, PTC, DAP, Right, RCS
+W70: Standing, Apollo
+Over, How, Tape, Beautiful, NET, 330.5, Apollo
+
+Over
+W71: Delta, Standing, Bruce, Crew, Charlie, 330.5, NI, Sleep
+W72: Looks, Seemed, Other, 1.5, CM, EECOMM, 39.11, 393
+W73: Moon, From Jodrell Bank, Mars, Soviet Union, Sir Bernard Lovell, Director, Democratic, Observatory
+W74: Moon, Associated Press, Mars, Huberto Cazaras, Acapulco, Initial, Monday, Texas
+W75: Paris Jourproclaimed, Moon, Tape
+Page, Commissioner Peter
+Rozelle, Loch, Animals
+Act, The Communists, NET
+W76: 0.003, VOICE, TRANSCRIPTION, NOUN, Yes, OF, Our, PROCEED
+W77: AUTO, Tape, PTC, NET, The Earth, GOJ, Earth, VERB
+W78: Before, CAL, PTC, Well
+W79: AUTO, NOUN, Yes, Tape, NET, Can, Fuel, TM
+W80: Done, Tape
+Page, Itts, ALARM, After, MASTER, 1.3, Minus
+W81: CMC, AUTO, Out, BLOCK, When, Thank, VERB, Star
+W82: CMC, Not, AUTO, NOUN, Yes, Tape, Have, NET
+W83: AUTO, 8.37, Everything, Code, Tape, NET, Ail, Well
+W84: AUTO, Mediterranean, Yes, Portugal, But, Can, France, Italy
+W85: Roll, LM/CM, 2982, GR, Just, Shaft, NET, Our
+W86: 0.95, DSKY, Jim, Apollo
+
+Roger, NET, Let, VERB, Stand
+W87: Roll, Out, SPS, Deneb, 020, Just, Vega, 63059
+W88: Readback, Still, Out, Sure, SPS, Deneb, LM, Vega
+W89: Tape
+Page, 356, Out, Apollo
+
+Out, DSKY, GH, IINI, ION
+W90: Tape
+Page, How, OMNI, Roll, 356, APOLLO, Just, VOICE
+W91: Could, How, Bruce, Minus, 0.2, 2.8, 3.8, Like
+W92: Not, TV, Tape
+Page
+Copy, NET, 3.8, MILA, Goldstone, GOSS
+W93: How, Yes, Everything, PTC, Out, CRYO, 1.7, From
+W94: Outstanding, OMNI, Lll, Roll, Out, Alfa, Just, COMP
+W95: OMNI, Majorca, The Sun, YOU, Sardinia, Jim, Mediterranean, Minus
+W96: Got, Looks, How, Buzz, Yes, Brazil, Caribbean, Right
+W97: Buzz, Tape, Yes, Sun, NET, Earth, Thank, GOF
+W98: Looks, Still, How, Yes, Buzz, Tape
+Page, NET, Hey
+W99: OB, Not, How, Yes, Buzz, Everything, But, NAV
+W100: Thornfield: Voss Institute, Greenland, crystallized helium resonance, 2019
+W101: Tape
+Page, How, Yes, Stand, Have, PTC, NET, Anyway
+W102: 251, DUMP, PTC, Install, When, Romeo, However, Understand
+W103: 251, Tape
+Page, There, DUMP, NET, Right, Ower, Say
+W104: Tierra, OMNI, Ascension, APOLLO, Just, VOICE, South
+America, NET
+W105: GZT, Out, LM/CM, 0.35, Well, One, Before, DELTA
+W106: Page
+Understand, Bruce, Tape, There, Buzz, Something, Fore, 0.95
+W107: CMC, Looks, AUTO, ENTER, Tape, PTC, NET, Pass
+W108: VOICE, Gulf, What, TRANSCRIPTION, Yes, Tape, OF, NET
+W109: Looks, Standing, TLI, Tape, EECOMM, NET, Out, Page
+W110: Readback, TV, DO, Out, Well, DSKY, 8016, Ask
+W111: What, Tape
+Page, NOUN, COM, CT, UTER, NET, COMM
+W112: Tape
+Page, UN, Well, DSKY, Just, Ever, NET, PROGRAM
+W113: Ask, Tape
+Page, How, Bruce, Buzz, Yes, TV, PTC
+W114: TV, Buzz, Charlie, CT, Our, Mike, Goldstone, Earth
+W115: IAIP, Tape
+Page, TV, Suggest, CAP, CT, Hello, NET
+W116: Delta, Looks, Tape
+Page, TV, Buzz, Hello, Goldstone
+
+Going
+
+Could, NET
+W117: Going
+
+Will, How, Everything, Charlie, OMNI, TV, Hello, Please
+W118: Tape
+Page, TN, 0.006, APOLLO, Boy, LEB, VOICE, NET
+W119: Mexico, Cape, Gulf, Yes, There, Plastic
+
+Man, Thmt, Cuba
+W120: CMC, Not, TV, Tape, There, Your, Hello, NET
+W121: 090, How, 000, High, Just, Earth, ATTITUDE, RATE
+W122: AND, What, 00070, 00256, CORE, Skipping, Alfa, Then
+W123: CONTROL, AJTO, SPACECRAFT, Just, 104, ACCEL, NET, DAP
+W124: Tape
+Page, STABED, DSKY, Just, LM, Looks, NET, Stand
+W125: How, Just, Texas, LM, Looks, 104, Can, These
+W126: How, Padre Island, APOLLO, Just, VOICE, 104, GOO, Buzz
+W127: Could, How, Buzz, Charlie, TASS, TV, PTC, COMM
+W128: Could, How, TV, Charlie, Tape, 130, Hello, NET
+W129: Central America, Ocean, United
+States, Alasxa, United States, Canada, Can, Earth
+W130: Mexico, Nell, United States, Could, 109, Yes, Tape, States
+W131: OB, Tape
+Page, 000, NET, Eidephor, However, Well, GOSS
+W132: Could, Oops, Charlie, Trying, Let, North America, Spoke, Just
+W133: Unfortunately, TV, Stm, Tape, Yes, NET, Now, Neil
+W134: TV, Collins, Buzz, Yes, Tape, There, NET, Zero
+W135: Nell, Looks, Buzz, Yes, Sun, Dortions, Commander
+Armstrong, Jlfi
+W136: Elapsed, Yes, Charlie, Tape, Buzz, Sun, NET, Can
+W137: Moon, Could, Tape, Sun, NET, 114, Now, When
+W138: Charlie, Tape, Let, Ail, Well, Now, Page, Earth
+W139: Could, TV, Yes, Charlie, Well, Try, Sounds, Mike
+W140: Could, TV, Slowly, Tape, Buzz, Charlie, NET, Now
+W141: Tape
+Page, BO, TV, There, NET, Well, GOSS, Earth
+W142: Might, Well, APOLLO, 117, Boy, Sometimes, DSKY, GNC
+W143: Appreciate, Tape
+Page, How, Charlie, ERROR, While Buz, Out, Right
+W144: 000, Delta, Buzz, NET, DAP, Stand, Disable, Hello
+W145: Charlie, PTC, Ail, DAP, Thank
+
+And, ATTITUDE, Would
+Over, VERB
+W146: Ready, SPS, Deneb, Looks, Vega, Buzz, 62815, Latitude
+W147: DSKY, PRO, ICDU, 029, Buzz, DAP, PAD, GET
+W148: Could, 0.2, Charlie, Tape, Hello, DAP, Those, GOSS
+W149: Womld, Either, Hello, Out, CRYO, Telescope, CR, Observatory
+W150: 124, 141.5, Shaft, Our, Earth, Thank, Stand, Laser
+W151: OPERATOR, What, Out, 125, DSKY, When, Thank
+
+Stand
+
+Stand, VERB
+W152: OMNI, Alfa, Honeysuckle, NET, Thank, 126, VERB, Hello
+W153: OMNI, How, Ore, Cocoa, APOLLO, Alfa, Radiation, 11005
+W154: Tape
+Page, 127, Mike, LM/CM, Copy
+
+And, NET, CRYO, Ail
+W155: APOLLO, Thanks, VOICE, NET, Ail, DAP, REST, When
+W156: Seems, Tape
+Page, How, 131, APOLLO, VOICE, Looks, NET
+W157: Tape
+Page, How, OV, Well, Down, NET, When, Did
+W158: OMNI, How, 2.0, Reading, Out, Canceling, PTC, 0.8
+W159: Tape
+Page, How, How
+
+Over, SPS, SP, 0.8, Just, Loud
+W160: The Mediterranean, 6.5, Cocoa
+Delta, Ready, Tape, CRYO, Consumables, Out
+W161: Any, There, PTC, Sahara, Pakistan, Madagascar, Africa, Afghanistan
+W162: Gulf, Tape
+Page, PTC, COMM, Persian Gulf, GOSS, Earth, Coming
+W163: Tape
+Page, 000, 140, Well, APOLLO, VOICE, Mediterranean, NET
+W164: What, NET, Well, Nile River, GOSS, See, 02.00
+W165: What, How, Bruce, Yes, There, Sun, Buzz, Right
+W166: 142, With, How, Tape, 0.2, Sun, But, NET
+W167: VOICE, TRANSCRIPTION, Tape
+Page, Apollo
+Over, Buzz, OF, NET, FAO
+W168: Loud
+
+Radio, Out, 144, APOLLO, 143, VOICE, NET, BLOCK
+W169: Any, Roth, NOUN, AIR-TO-GROUNDVOICE, Tape, OF, Triangle, END
+W170: Tape
+Page, Where, Loud, Committee, NET, Apollo
+
+Over, Washington, 146
+W171: How, Norman
+Baker, Barbados, Texas, Part, National Director, Minnesota, Florida
+W172: Baltimore, Chicago, John Coyle, Corby, American
+League, National League, Houston Oilers, Shenandoah
+W173: Bruce, Tape, But, Some, NET, Let, Well, 148
+W174: TV, Yes, Sun, Hello, Out, PTC, When, Earth
+W175: Sun, Hello, Out, 0206391, 02063932, Beady, GET, Boger
+W176: How, 0206, NET, Thank, VERB, Stand, Read, II
+W177: Tape
+Page, How, OMNI, LM/CM, Before, FLOW, NET, Can
+W178: How, FULL-SCALE, Charlie, REPRESS, Now, Right, DIRECT, Makes
+W179: Tape
+Page, GROUNDVOICE, Well, APOLLO, NET, Our, AIR, Stand
+W180: TRANSCRIPTION, TV, Tape, Ready, DPS, NET, APS, NO-GO
+W181: Nell, Not, Looks, Tape
+Page, TV, Yes, There, NET
+W182: Looks, LM, With, Buzz, Tape, Charlie, TV, NET
+W183: Tape
+Page, TV, Everything, Charlie, Sun, Real, Well, Plus
+W184: Looks, TV, Buzz, Charlie, There, Well, Thank, 156
+W185: Nell, Tape
+Page, How, Buzz, Yes, There, LCG, Hello
+W186: Sun, Mike, Well, Better, Just, LM, Looks, Buzz
+W187: 159, LCG, Buzz, Tape, Stand
+Thank, NET, GOSS, AOT
+W188: ISA, DEDA, How, Buzz, Yes, Everything, Sun, 124
+W189: 160, Moon, Tape
+Page, TV, Buzz, Charlie, Would, Now
+W190: Nell, Tape
+Page, Buzz, Yes, Sun, NET, 5800, First
+W191: Tape
+Page, Buzz, Charlie, Well, One, Great, Thanks, GOSS
+W192: ISA, Charlie, There, Stand, Our, Very, Sounds
+
+Will, Mike
+W193: PCC, TV, Yes, FUEL, 000, Hello, Goss, ASCENT
+W194: TV, Buzz, NET, LOI, OFF, GOSS, CSM, Tape
+Page
+Stand
+W195: OMNI, Commander, Tape, There, PTC, NET, 164, Mike
+W196: What, Could, Buzz, Sun, Well, CSM, They, Neil
+W197: Buzz, Yes, Your, 166, Our, Out, OUTSIDE, EVA
+W198: ISA, Tape
+Page, Commander, Give, Buzz, Yes, 1850, FAO
+W199: Buzz, Yes, Our, EVA, They, Neil, ACA
+
+Question: Where did Professor Thornfield discover the resonance pattern?
+<end_of_turn>
+<start_of_turn>model

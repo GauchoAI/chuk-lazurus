@@ -23,13 +23,13 @@ from pathlib import Path
 
 import mlx.core as mx
 
-BOLD   = "\033[1m"
-GREEN  = "\033[92m"
-CYAN   = "\033[96m"
+BOLD = "\033[1m"
+GREEN = "\033[92m"
+CYAN = "\033[96m"
 YELLOW = "\033[93m"
-RED    = "\033[91m"
-DIM    = "\033[2m"
-RESET  = "\033[0m"
+RED = "\033[91m"
+DIM = "\033[2m"
+RESET = "\033[0m"
 
 CONTEXT_LENGTHS = [64, 128, 256, 512, 1024, 2048]
 GEN_TOKENS_DEFAULT = 8
@@ -38,18 +38,24 @@ GEN_TOKENS_DEFAULT = 8
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--model", default="mlx-community/gemma-3-270m-it-bf16")
-    p.add_argument("--gen-tokens", type=int, default=GEN_TOKENS_DEFAULT,
-                   help="New tokens to generate per benchmark run")
-    p.add_argument("--context-lengths", nargs="+", type=int,
-                   default=CONTEXT_LENGTHS)
+    p.add_argument(
+        "--gen-tokens",
+        type=int,
+        default=GEN_TOKENS_DEFAULT,
+        help="New tokens to generate per benchmark run",
+    )
+    p.add_argument("--context-lengths", nargs="+", type=int, default=CONTEXT_LENGTHS)
     return p.parse_args()
 
 
 def fmt_bytes(n: int) -> str:
-    if n < 1024:       return f"{n} B"
-    if n < 1024**2:    return f"{n/1024:.1f} KB"
-    if n < 1024**3:    return f"{n/1024**2:.1f} MB"
-    return f"{n/1024**3:.2f} GB"
+    if n < 1024:
+        return f"{n} B"
+    if n < 1024**2:
+        return f"{n / 1024:.1f} KB"
+    if n < 1024**3:
+        return f"{n / 1024**2:.1f} MB"
+    return f"{n / 1024**3:.2f} GB"
 
 
 def _download(model_id: str) -> Path:
@@ -57,15 +63,19 @@ def _download(model_id: str) -> Path:
     if local.exists() and local.is_dir():
         return local
     from huggingface_hub import snapshot_download
+
     print(f"  Downloading {model_id}...")
-    return Path(snapshot_download(
-        model_id,
-        allow_patterns=["*.json", "*.safetensors", "*.model", "tokenizer*"],
-    ))
+    return Path(
+        snapshot_download(
+            model_id,
+            allow_patterns=["*.json", "*.safetensors", "*.model", "tokenizer*"],
+        )
+    )
 
 
 def load_models(model_id: str):
     from mlx.utils import tree_unflatten
+
     from chuk_lazarus.models_v2.families.gemma import GemmaConfig, GemmaForCausalLM
     from chuk_lazarus.models_v2.families.gemma_rs import GemmaResidualStreamForCausalLM
 
@@ -170,16 +180,18 @@ def bar_chart(rows: list[tuple[int, float, float]], width: int = 30) -> None:
 
     for ctx, std_tps, rs_tps in rows:
         std_bar = "█" * int(std_tps / max_tps * width)
-        rs_bar  = "█" * int(rs_tps  / max_tps * width)
+        rs_bar = "█" * int(rs_tps / max_tps * width)
         std_pad = "░" * (width - len(std_bar))
-        rs_pad  = "░" * (width - len(rs_bar))
+        rs_pad = "░" * (width - len(rs_bar))
 
         slowdown = std_tps / rs_tps if rs_tps > 0 else 0
 
-        print(f"  {ctx:>8,}  "
-              f"{std_tps:>7.1f}  {CYAN}{std_bar}{DIM}{std_pad}{RESET}  "
-              f"{rs_tps:>7.1f}  {DIM}{rs_bar}{rs_pad}{RESET}  "
-              f"  {YELLOW}{slowdown:.1f}×{RESET}")
+        print(
+            f"  {ctx:>8,}  "
+            f"{std_tps:>7.1f}  {CYAN}{std_bar}{DIM}{std_pad}{RESET}  "
+            f"{rs_tps:>7.1f}  {DIM}{rs_bar}{rs_pad}{RESET}  "
+            f"  {YELLOW}{slowdown:.1f}×{RESET}"
+        )
 
 
 def main():
@@ -196,30 +208,28 @@ def main():
 
     std_model, rs_model, config = load_models(args.model)
 
-    import importlib.util, sys as _sys
-    _inf = Path(__file__).parents[2] / "src/chuk_lazarus/inference"
-    def _load(dotted, fpath):
-        spec = importlib.util.spec_from_file_location(dotted, fpath)
-        mod  = importlib.util.module_from_spec(spec)
-        _sys.modules[dotted] = mod
-        spec.loader.exec_module(mod)
-        return mod
-    rs_gen_mod = _load("chuk_lazarus.inference.rs_generator", _inf / "rs_generator.py")
-    rs_gen = rs_gen_mod.CompiledRSGenerator(rs_model, config)
+    from chuk_lazarus.inference.context.rs_generator import CompiledRSGenerator
+
+    rs_gen = CompiledRSGenerator(rs_model, config)
 
     # Warm up / compile
     print("\n  Warming up / compiling...")
     _w = mx.array([[1, 2, 3, 4, 5]])
-    _ = std_model(_w); mx.eval()
-    _l, _s = rs_gen.prefill(_w); mx.eval(_l)
-    _l2, _s2 = rs_gen.step(mx.array([[6]]), _s, 5); mx.eval(_l2)
+    _ = std_model(_w)
+    mx.eval()
+    _l, _s = rs_gen.prefill(_w)
+    mx.eval(_l)
+    _l2, _s2 = rs_gen.step(mx.array([[6]]), _s, 5)
+    mx.eval(_l2)
     print("  Done.\n")
 
     col = 12
-    print(f"  {'Context':>8}  "
-          f"{'Prefill(ms)':>{col}}  {'Std gen(ms)':>{col}}  {'RS gen(ms)':>{col}}  "
-          f"{'Std tok/s':>{col}}  {'RS tok/s':>{col}}  "
-          f"{'Slowdown':>10}  {'KV size':>{col}}  {'RS size':>{col}}")
+    print(
+        f"  {'Context':>8}  "
+        f"{'Prefill(ms)':>{col}}  {'Std gen(ms)':>{col}}  {'RS gen(ms)':>{col}}  "
+        f"{'Std tok/s':>{col}}  {'RS tok/s':>{col}}  "
+        f"{'Slowdown':>10}  {'KV size':>{col}}  {'RS size':>{col}}"
+    )
     print("  " + "─" * 128)
 
     chart_rows = []
@@ -230,25 +240,25 @@ def main():
         std_prefill, std_gen_ms, std_kv_bytes = bench_standard(
             std_model, input_ids, args.gen_tokens
         )
-        rs_prefill, rs_gen_ms, rs_res_bytes = bench_rs_compiled(
-            rs_gen, input_ids, args.gen_tokens
-        )
+        rs_prefill, rs_gen_ms, rs_res_bytes = bench_rs_compiled(rs_gen, input_ids, args.gen_tokens)
 
-        std_tps  = 1000 / std_gen_ms if std_gen_ms > 0 else 0
-        rs_tps   = 1000 / rs_gen_ms  if rs_gen_ms  > 0 else 0
-        slowdown = std_tps / rs_tps   if rs_tps     > 0 else 0
+        std_tps = 1000 / std_gen_ms if std_gen_ms > 0 else 0
+        rs_tps = 1000 / rs_gen_ms if rs_gen_ms > 0 else 0
+        slowdown = std_tps / rs_tps if rs_tps > 0 else 0
 
         chart_rows.append((ctx_len, std_tps, rs_tps))
 
-        print(f"  {ctx_len:>8,}  "
-              f"{std_prefill:.0f}ms{'':{col-len(str(int(std_prefill)))-2}}  "
-              f"{std_gen_ms:>{col}.1f}  "
-              f"{rs_gen_ms:>{col}.1f}  "
-              f"{CYAN}{std_tps:>{col}.1f}{RESET}  "
-              f"{YELLOW}{rs_tps:>{col}.1f}{RESET}  "
-              f"{slowdown:>9.1f}×  "
-              f"{fmt_bytes(std_kv_bytes):>{col}}  "
-              f"{fmt_bytes(rs_res_bytes):>{col}}")
+        print(
+            f"  {ctx_len:>8,}  "
+            f"{std_prefill:.0f}ms{'':{col - len(str(int(std_prefill))) - 2}}  "
+            f"{std_gen_ms:>{col}.1f}  "
+            f"{rs_gen_ms:>{col}.1f}  "
+            f"{CYAN}{std_tps:>{col}.1f}{RESET}  "
+            f"{YELLOW}{rs_tps:>{col}.1f}{RESET}  "
+            f"{slowdown:>9.1f}×  "
+            f"{fmt_bytes(std_kv_bytes):>{col}}  "
+            f"{fmt_bytes(rs_res_bytes):>{col}}"
+        )
 
     bar_chart(chart_rows)
 
@@ -274,20 +284,22 @@ def main():
     print(f"  {'Tokens':>8}  {'KV cache (stored)':>20}  {'Token IDs (stored)':>20}  {'Ratio':>8}")
     print("  " + "─" * 64)
 
-    kv_ratio  = 2 * config.num_hidden_layers * config.num_key_value_heads * config.head_dim
-    res_ratio = config.hidden_size
-    state_ratio = kv_ratio / res_ratio
-
     for n in [512, 1024, 2048, 4096, 16384, 65536, 131072]:
-        kv_bytes  = 2 * config.num_hidden_layers * config.num_key_value_heads * n * config.head_dim * 2
-        id_bytes  = n * 4  # int32 token IDs
-        print(f"  {n:>8,}  {fmt_bytes(kv_bytes):>20}  {fmt_bytes(id_bytes):>20}  "
-              f"{kv_bytes/id_bytes:>7.0f}×")
+        kv_bytes = (
+            2 * config.num_hidden_layers * config.num_key_value_heads * n * config.head_dim * 2
+        )
+        id_bytes = n * 4  # int32 token IDs
+        print(
+            f"  {n:>8,}  {fmt_bytes(kv_bytes):>20}  {fmt_bytes(id_bytes):>20}  "
+            f"{kv_bytes / id_bytes:>7.0f}×"
+        )
 
     print()
-    print(f"  (Ratio is constant: 2 × {config.num_hidden_layers} layers × "
-          f"{config.num_key_value_heads} kv_heads × {config.head_dim} head_dim / 4 bytes per token ID"
-          f" = {kv_bytes // (131072 * 4):,}×)")
+    print(
+        f"  (Ratio is constant: 2 × {config.num_hidden_layers} layers × "
+        f"{config.num_key_value_heads} kv_heads × {config.head_dim} head_dim / 4 bytes per token ID"
+        f" = {kv_bytes // (131072 * 4):,}×)"
+    )
     print()
 
 

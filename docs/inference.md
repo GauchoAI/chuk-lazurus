@@ -201,6 +201,105 @@ for chunk in generate_stream(model, tokenizer, "Write a story"):
     print(chunk, end="", flush=True)
 ```
 
+## Stateful Context Engines
+
+### EngineMode and make_engine()
+
+Select the `KV_DIRECT` engine at pipeline construction time and retrieve a ready-to-use generator:
+
+```python
+from chuk_lazarus.inference import UnifiedPipeline, UnifiedPipelineConfig
+from chuk_lazarus.inference.unified import EngineMode
+
+# Load with KV-direct engine mode selected
+config = UnifiedPipelineConfig(engine=EngineMode.KV_DIRECT)
+pipeline = UnifiedPipeline.from_pretrained("google/gemma-3-1b-it", config=config)
+
+# Get a ready-to-use KVDirectGenerator for any supported model
+kv_gen = pipeline.make_engine()
+```
+
+### KVDirectGenerator
+
+Stores K,V directly after prefill (post-norm, post-RoPE). Bit-exact with standard KV cache. Exposes the full generation lifecycle — prefill, step, extend, and slide — for direct KV store control:
+
+```python
+import mlx.core as mx
+from chuk_lazarus.inference.context import make_kv_generator
+
+# Auto-detects model family (Gemma, Llama, Mistral, ...)
+kv_gen = make_kv_generator(pipeline.model)
+
+# Prefill on a prompt
+prompt_ids = mx.array([[tok1, tok2, ...]])  # (1, S)
+logits, kv_store = kv_gen.prefill(prompt_ids)
+
+# Generate tokens one at a time
+seq_len = prompt_ids.shape[1]
+for _ in range(max_new_tokens):
+    next_token = mx.argmax(logits[0, -1])
+    logits, kv_store = kv_gen.step(next_token[None, None], kv_store, seq_len)
+    seq_len += 1
+
+# Extend with a new batch of tokens (e.g. second turn)
+new_ids = mx.array([[...]])  # (1, N)
+logits, kv_store = kv_gen.extend(new_ids, kv_store, abs_start=seq_len)
+
+# Evict oldest tokens when budget is hit
+kv_store = kv_gen.slide(kv_store, evict_count=64)
+
+# Memory accounting
+print(f"KV bytes at 512 tokens: {kv_gen.kv_bytes(512):,}")
+```
+
+### Custom model support
+
+Use the auto-detect factory or construct from a specific adapter. To support a new architecture, implement `ModelBackboneProtocol` and pass it to `KVDirectGenerator`:
+
+```python
+from chuk_lazarus.inference.context import (
+    KVDirectGenerator,
+    make_kv_generator,
+    GemmaBackboneAdapter,
+    LlamaBackboneAdapter,
+    ModelBackboneProtocol,
+    TransformerLayerProtocol,
+)
+
+# Auto-detect factory (Gemma, Llama, Mistral):
+gen = make_kv_generator(model)
+
+# Or construct from a specific adapter:
+gen = KVDirectGenerator.from_gemma_rs(rs_model)
+gen = KVDirectGenerator.from_llama(llama_model)
+
+# For a new architecture, implement ModelBackboneProtocol and pass it in:
+class MyBackboneAdapter:  # implements ModelBackboneProtocol
+    ...
+gen = KVDirectGenerator(MyBackboneAdapter(my_model))
+```
+
+### CLI
+
+The `--engine` flag selects the engine at the CLI level:
+
+```bash
+# Standard generation (default)
+lazarus infer --model google/gemma-3-1b-it --prompt "Hello"
+
+# KV-direct stateful engine
+lazarus infer --model google/gemma-3-1b-it --prompt "Hello" --engine kv_direct
+```
+
+### Choosing an engine
+
+| Engine | Class | Use case |
+|--------|-------|----------|
+| `standard` | Built-in KV cache | General inference, default |
+| `kv_direct` | `KVDirectGenerator` | Stateful multi-turn, sliding window, custom eviction |
+| `bounded_kv` | `BoundedKVEngine` | HOT/WARM/COLD memory budgets (Gemma) |
+| `unlimited` | `UnlimitedContextEngine` | Unbounded context via checkpoint replay |
+
 ## Example Scripts
 
 The `examples/inference/` directory contains streamlined examples using UnifiedPipeline:
@@ -345,6 +444,7 @@ prompt = tokenizer.apply_chat_template(
 2. **Enable KV-cache**: Automatically enabled for autoregressive generation
 3. **Batch prompts**: Process multiple prompts in a single forward pass when possible
 4. **Use smaller models**: SmolLM2-135M for fast iteration, larger models for quality
+5. **Use KVDirectGenerator for stateful inference**: `make_kv_generator(model)` gives you direct control over the KV store — sliding window eviction, turn-level extend, and memory accounting without touching the model code.
 
 ## Troubleshooting
 

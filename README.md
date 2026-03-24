@@ -197,7 +197,132 @@ chuk-lazarus generate --type math --output ./data/lazarus
 
 # Run inference
 chuk-lazarus infer --model "TinyLlama/TinyLlama-1.1B-Chat-v1.0" --prompt "What is 2+2?"
+
+# KV-direct stateful engine
+chuk-lazarus infer --model "TinyLlama/TinyLlama-1.1B-Chat-v1.0" --prompt "What is 2+2?" --engine kv_direct
 ```
+
+### Context Libraries (Prefill + Generate)
+
+Pre-fill a document into a windowed KV checkpoint library, then query any part of it at generation time — no re-reading the source:
+
+```bash
+# Prefill: tokenize and build a windowed checkpoint library
+lazarus context prefill \
+    --model google/gemma-3-4b-it \
+    --input shakespeare.txt \
+    --checkpoint ./shakespeare_ctx/ \
+    --window-size 512
+
+# Interrupted? Resume automatically from where it left off
+lazarus context prefill \
+    --model google/gemma-3-4b-it \
+    --input shakespeare.txt \
+    --checkpoint ./shakespeare_ctx/
+
+# Generate: query the library with compass routing
+lazarus context generate \
+    --model google/gemma-3-4b-it \
+    --checkpoint ./shakespeare_ctx/ \
+    --prompt "What does Hamlet say about death?" \
+    --max-tokens 200
+
+# Residual modes control routing precision vs disk usage
+lazarus context prefill \
+    --model google/gemma-3-4b-it \
+    --input document.txt \
+    --checkpoint ./ctx/ \
+    --residual-mode darkspace --frame-bank ./frame_bank.npz
+```
+
+**Selective phases** — run only the parts you need with `--phases`:
+
+```bash
+# Just prefill windows (skip interval + compass extraction)
+lazarus context prefill --model google/gemma-3-4b-it --input shakespeare.txt \
+    --checkpoint ./ctx/ --phases windows
+
+# Recalibrate compass on an existing library (~22 min vs ~32+30+22 for full)
+lazarus context prefill --model google/gemma-3-4b-it --input shakespeare.txt \
+    --checkpoint ./ctx/ --phases compass
+
+# Run interval extraction and compass together
+lazarus context prefill --model google/gemma-3-4b-it --input shakespeare.txt \
+    --checkpoint ./ctx/ --phases interval,compass
+
+# Add pages to an existing library
+lazarus context prefill --model google/gemma-3-4b-it --input shakespeare.txt \
+    --checkpoint ./ctx/ --store-pages --phases pages
+```
+
+Available phases: `windows`, `interval`, `compass`, `darkspace`, `pages`, `all` (default). When `--phases` doesn't include `windows`, the prefill loop is skipped — the engine loads the existing library and runs only the requested extraction passes.
+
+**How it works:** The prefill command splits the source into fixed-size windows, runs a forward pass on each, and saves boundary KV checkpoints plus residual vectors for routing. At generation time, the compass router uses residual similarity to find the right windows for a query, injects their KV checkpoints, and generates — all without re-reading or re-processing the source text.
+
+**Library layout:**
+
+```
+shakespeare_ctx/
+├── manifest.json              — model ID, window size, total tokens, num windows
+├── tokens.bin                 — raw token IDs (uint32, little-endian)
+├── windows.json               — per-window metadata: offsets, counts, text preview
+├── checkpoints.npz            — boundary KV per window (inject without re-prefill)
+├── residuals.npz              — Markov state vectors at window boundaries (also an injection path)
+├── interval_residuals.npz     — 8 interior residuals per window (sub-window retrieval)
+├── compass_residuals.npz      — commitment-layer residuals for routing
+└── compass_basis.npz          — PCA basis for compass routing (auto-calibrated)
+```
+
+| Residual mode | What's saved | Use case |
+|---------------|-------------|----------|
+| `interval` (default) | 8 samples/window + compass PCA | General-purpose, good balance of precision and disk |
+| `full` | Every position + compass PCA | Maximum retrieval precision |
+| `darkspace` | Whitened frame bank projections | Cross-corpus routing with pre-computed frame banks |
+| `none` | Checkpoints + metadata only | Minimal disk, no routing |
+
+**Reliability features:**
+- **Incremental saves** every 5 minutes — only new windows are appended, not rewritten
+- **Memory eviction** — saved checkpoints are freed from GPU memory, keeping usage constant
+- **Two-stage Ctrl-C** — first interrupt saves gracefully, second hard-exits
+- **Automatic resume** — partial libraries are detected and continued from the last window
+
+### Knowledge Store (Build + Query + Chat)
+
+Compress a document into a lightweight knowledge store using TF-IDF routing and 1D vector injection — then query or chat against it without re-reading the source:
+
+```bash
+# Build: tokenize, prefill windows, extract injection entries
+lazarus knowledge build \
+    --model google/gemma-3-4b-it \
+    --input article.txt \
+    --output ./article_kb/
+
+# Query: single-shot question with TF-IDF routing
+lazarus knowledge query \
+    --model google/gemma-3-4b-it \
+    --store ./article_kb/ \
+    --prompt "Who won the competition?"
+
+# Chat: interactive multi-turn conversation grounded in the document
+lazarus knowledge chat \
+    --model google/gemma-3-4b-it \
+    --store ./article_kb/
+```
+
+**How it works:** The build command splits the document into fixed-size windows (default 512 tokens), runs a forward pass on each, and extracts injection entries via K-norm sampling — keeping only the tokens with the highest addressing energy in the model's attention. At query time, TF-IDF routing selects the best windows, their boundary residuals are injected as Markov state, and focused context replay provides the narrative grounding for generation.
+
+**Store layout:**
+
+```
+article_kb/
+├── manifest.json         — model ID, window size, total tokens
+├── kv_index.npz          — K-vectors + token IDs + coefficients (518 bytes/entry)
+├── final_residual.npy    — document Markov state (~10 KB)
+├── tokens.bin            — token archive (replay fallback)
+└── windows.json          — window boundaries + preview text
+```
+
+**Storage:** A 370K-token document produces an ~12 MB store vs ~56 GB for a full KV cache — roughly 4,000× compression.
 
 ### UnifiedPipeline
 
@@ -223,6 +348,7 @@ print(f"Model family: {pipeline.family_type}")  # ModelFamilyType.LLAMA
 - Chat history management (`ChatHistory`)
 - Streaming generation (`generate_stream`)
 - No magic strings - uses enums (`DType`, `Role`, `ModelFamilyType`)
+- Engine selection via `EngineMode` (`STANDARD`, `KV_DIRECT`) — stateful generation with explicit KV store control
 
 ```bash
 # Simplified inference examples
@@ -474,6 +600,79 @@ print(f"L22+L23 ablated: {ablated}")  # Broken output
 
 See [docs/introspection.md](docs/introspection.md) for detailed introspection documentation.
 
+### Residual Stream Navigation Map
+
+Visualise how the model "navigates" from a blank residual to a committed answer — rendered as a 3D sphere in your browser.
+
+**How it works:**
+
+The top-3 singular vectors of the fact unembedding directions (rows of `lm_head.weight`) form a 3D basis that spans "fact space". Every fact token is projected onto this basis and normalised to sit on the unit sphere surface. The residual stream at each layer is projected into the same space — its *direction* shows which fact the model is pointing toward, while its *sharpness* (concentration of logit-lens probabilities over fact tokens) is encoded as dot size and glow.
+
+Three phases are automatically detected from the mean sharpness curve:
+
+| Phase | Layers | What's happening |
+|-------|--------|-----------------|
+| Dark accumulation | 0 → b₁ | Residual is nearly orthogonal to all facts — dim speck wandering the sphere |
+| Routing | b₁ → b₂ | Sharpness rising — dot brightens and moves toward the target landmark |
+| Fact explosion | b₂ → end | Sharpness saturates — large bright orb locks onto the fact landmark |
+
+**Step 1 — Extract activation data:**
+
+```bash
+# Capital of France (default facts, 40 generation steps)
+uv run python examples/inference/nav_map_extract.py \
+    --prompt "The largest planet in the solar system is" \
+    --target Jupiter \
+    --facts Jupiter Mars Venus Earth Sun Moon \
+    --steps 40 --output nav_map_jupiter.json
+
+# Custom prompt, smaller model for faster iteration
+uv run python examples/inference/nav_map_extract.py \
+    --model mlx-community/gemma-3-1b-it-bf16 \
+    --prompt "The capital of France is" --target Paris \
+    --steps 20 --output nav_map_paris.json
+```
+
+**Step 2 — Open the visualizer:**
+
+```bash
+open examples/inference/nav_map.html
+# Then drag nav_map_*.json onto the page
+```
+
+**Two view modes:**
+
+- **Layer depth** — fix a generation step, animate layer 0 → 33. Watch the residual crystallize: a tiny dim speck in early layers grows into a bright orb that arrives at the target fact landmark.
+- **Token drift** — fix a layer (try 33 for the committed output), animate step 0 → N. The dot walks across the sphere token-by-token: bright near the target fact when predicting it, dimmer and wandering when generating filler tokens.
+
+**Controls:**
+
+| Key | Action |
+|-----|--------|
+| `←` / `→` | Scrub the active axis (layer in Layer depth, step in Token drift) |
+| `↑` / `↓` | Scrub the pinned axis |
+| `Space` | Play / pause |
+| `d` | Switch to Layer depth mode |
+| `t` | Switch to Token drift mode |
+| Mouse drag | Orbit the sphere |
+
+**Output format** (`nav_map_*.json`, version 2.0):
+
+```json
+{
+  "version": "2.0",
+  "model": "mlx-community/gemma-3-4b-it-bf16",
+  "phase_boundaries": [11, 22],
+  "facts": [{"token": "Jupiter", "xyz": [...], "color": "#E24B4A", "is_target": true}],
+  "frames": [{
+    "step": 0, "token": " is", "predicted_token": " Jupiter",
+    "layers": [{"layer": 0, "xyz": [...], "sharpness": 0.001, "top_token": "the", ...}]
+  }]
+}
+```
+
+> **Note:** `--target` and `--facts` must be single tokens in the model vocabulary. Multi-token entries are skipped with a warning. Check which facts survived in the terminal output before interpreting the map.
+
 ## Python API
 
 ```python
@@ -526,10 +725,18 @@ src/chuk_lazarus/
 │   └── losses/             # Loss functions (pure math)
 ├── training/               # BatchPlan-driven reference trainers (SFT, DPO, GRPO, PPO)
 ├── inference/              # Unified inference pipeline
-│   ├── unified.py          # UnifiedPipeline with auto-detection
+│   ├── unified.py          # UnifiedPipeline, EngineMode, make_engine()
 │   ├── loader.py           # HFLoader, DType, WeightConverter
 │   ├── chat.py             # ChatHistory, Role, format_chat_prompt
-│   └── generation.py       # GenerationConfig, generate, generate_stream
+│   ├── generation.py       # GenerationConfig, generate, generate_stream
+│   └── context/            # Stateful KV generation, checkpointing, long-context engines
+│       ├── protocols.py    # ModelBackboneProtocol, TransformerLayerProtocol
+│       ├── adapters/       # GemmaBackboneAdapter, LlamaBackboneAdapter
+│       ├── kv_generator.py # KVDirectGenerator + make_kv_generator() factory
+│       ├── kv_checkpoint.py # KVCheckpoint — save/resume prefill state to disk
+│       ├── checkpoint_library.py # CheckpointLibrary — pre-filled knowledge bases
+│       ├── bounded_engine.py # BoundedKVEngine (Mode 3, HOT/WARM/COLD tiers)
+│       └── unlimited_engine.py # UnlimitedContextEngine (Mode 4, window chaining)
 ├── introspection/          # Model introspection and analysis
 │   ├── analyzer.py         # ModelAnalyzer async API with Pydantic models
 │   ├── hooks.py            # ModelHooks for capturing intermediate states
@@ -547,7 +754,7 @@ src/chuk_lazarus/
 | Module | Description |
 |--------|-------------|
 | **Models** | Composable architecture: components, blocks, backbones, heads, families (Llama, Gemma, Granite) |
-| **Inference** | `UnifiedPipeline` with auto-detection, chat history, streaming generation |
+| **Inference** | `UnifiedPipeline` with auto-detection, chat history, streaming; `KVDirectGenerator` (model-agnostic via Gemma/Llama adapters) with `make_kv_generator()` factory; `KVCheckpoint` for resumable prefill and offline context loading |
 | **Introspection** | Model analysis: logit lens, attention visualization, MoE expert identification, ablation studies |
 | **Tokenizers** | Comprehensive toolkit for analysis, preprocessing, and runtime management |
 | **Batching** | Token-budget batching, sequence packing, distributed batch planning |

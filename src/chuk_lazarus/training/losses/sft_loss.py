@@ -4,17 +4,16 @@ Supervised Fine-Tuning (SFT) Loss
 Standard cross-entropy loss for language model training.
 """
 
-from dataclasses import dataclass
-
 import mlx.core as mx
+from pydantic import BaseModel, ConfigDict, Field
 
 
-@dataclass
-class SFTLossConfig:
+class SFTLossConfig(BaseModel):
     """Configuration for SFT loss computation."""
 
-    mask_prompt: bool = True
-    max_seq_length: int = 512
+    model_config = ConfigDict(frozen=True)
+    mask_prompt: bool = Field(default=True, description="Mask prompt tokens in loss")
+    max_seq_length: int = Field(default=512, ge=1, description="Maximum sequence length")
 
 
 def sft_loss(

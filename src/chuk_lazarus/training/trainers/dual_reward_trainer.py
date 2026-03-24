@@ -22,13 +22,13 @@ import json
 import logging
 import time
 from collections.abc import Iterator
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as optim
+from pydantic import Field
 
 from ...models_v2.adapters.lora import LoRAConfig, apply_lora, count_lora_parameters
 from ..base_trainer import BaseTrainer, BaseTrainerConfig
@@ -37,39 +37,39 @@ from ..losses.dual_reward_loss import DualRewardLossConfig, dual_reward_loss
 logger = logging.getLogger(__name__)
 
 
-@dataclass
 class DualRewardTrainerConfig(BaseTrainerConfig):
     """Configuration for dual-reward training."""
 
     # Training settings
-    num_epochs: int = 1
-    batch_size: int = 1
-    learning_rate: float = 1e-3
-    max_steps: int = 500
-
+    num_epochs: int = Field(default=1, ge=1, description="Number of training epochs")
+    batch_size: int = Field(default=1, ge=1, description="Batch size")
+    learning_rate: float = Field(default=1e-3, gt=0, description="Learning rate")
+    max_steps: int = Field(default=500, ge=1, description="Maximum training steps")
     # Classifier settings
-    classifier_layer: int = -1  # -1 means 55% depth
-    classifier_weight: float = 0.4
-    classifier_targets: dict[str, str] = field(
+    classifier_layer: int = Field(default=-1, description="Classifier layer (-1 means 55% depth)")
+    classifier_weight: float = Field(default=0.4, ge=0, le=1, description="Classifier loss weight")
+    classifier_targets: dict[str, str] = Field(
         default_factory=lambda: {
             "multiply": "multiply",
             "add": "add",
             "subtract": "subtract",
             "divide": "divide",
-        }
+        },
+        description="Classification target mapping",
     )
-
     # LoRA settings
-    lora_rank: int = 16
-    lora_targets: list[str] = field(default_factory=lambda: ["v_proj", "o_proj"])
-
+    lora_rank: int = Field(default=16, ge=1, description="LoRA rank")
+    lora_targets: list[str] = Field(
+        default_factory=lambda: ["v_proj", "o_proj"], description="LoRA target modules"
+    )
     # Frozen layers (for Phase 2)
-    freeze_layers: list[int] = field(default_factory=list)
-
+    freeze_layers: list[int] = Field(default_factory=list, description="Layers to freeze")
     # Logging
-    log_interval: int = 50
-    checkpoint_interval: int = 100
-    checkpoint_dir: str = "./checkpoints/dual_reward"
+    log_interval: int = Field(default=50, ge=1, description="Log interval")
+    checkpoint_interval: int = Field(default=100, ge=1, description="Checkpoint interval")
+    checkpoint_dir: str = Field(
+        default="./checkpoints/dual_reward", description="Checkpoint directory"
+    )
 
 
 class DualRewardTrainer(BaseTrainer):

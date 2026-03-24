@@ -17,7 +17,6 @@ import argparse
 import asyncio
 import sys
 
-
 # ── Shared serve logic ────────────────────────────────────────────────────────
 
 
@@ -72,14 +71,14 @@ async def _serve_async(args: argparse.Namespace) -> None:
     port: int = args.port
 
     print("\n" + "=" * 60)
-    print(f"Lazarus inference server ready")
+    print("Lazarus inference server ready")
     print(f"  Model     : {args.model}")
     print(f"  Protocols : {', '.join(p.value for p in protocols)}")
     print(f"  Base URL  : http://{host}:{port}")
     if "openai" in [p.value for p in protocols]:
         print(f"  OpenAI URL: http://{host}:{port}/v1")
     if api_key:
-        print(f"  Auth      : Bearer token enabled")
+        print("  Auth      : Bearer token enabled")
     print("=" * 60 + "\n")
 
     config = uvicorn.Config(app, host=host, port=port, log_level="info")
@@ -109,7 +108,8 @@ def add_serve_parser(subparsers) -> argparse.ArgumentParser:
 def _add_serve_args(parser: argparse.ArgumentParser) -> None:
     """Add all serve arguments to an argparse parser."""
     parser.add_argument(
-        "--model", "-m",
+        "--model",
+        "-m",
         required=True,
         help="Model HuggingFace ID or local path",
     )
@@ -119,7 +119,8 @@ def _add_serve_args(parser: argparse.ArgumentParser) -> None:
         help="Bind host (default: 0.0.0.0)",
     )
     parser.add_argument(
-        "--port", "-p",
+        "--port",
+        "-p",
         type=int,
         default=8080,
         help="Port (default: 8080)",

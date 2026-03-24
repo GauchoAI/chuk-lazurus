@@ -22,13 +22,19 @@ async def run_inference_cmd(args: Namespace) -> None:
     Args:
         args: Parsed command-line arguments
     """
-    from ....inference import UnifiedPipeline
+    from ....inference import UnifiedPipeline, UnifiedPipelineConfig
+    from ....inference.unified import EngineMode
 
     # Convert CLI args to config
     config = InferenceConfig.from_args(args)
 
+    # Build pipeline config
+    pipeline_config = UnifiedPipelineConfig(engine=EngineMode(config.engine))
+
     # Load the model (quiet by default for CLI)
-    pipeline = UnifiedPipeline.from_pretrained(config.model, verbose=False)
+    pipeline = UnifiedPipeline.from_pretrained(
+        config.model, pipeline_config=pipeline_config, verbose=False
+    )
 
     # Collect prompts based on input mode
     prompts: list[str] = []

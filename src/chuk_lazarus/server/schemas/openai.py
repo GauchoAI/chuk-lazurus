@@ -20,7 +20,6 @@ from pydantic import BaseModel, Field
 
 from .internal import (
     FinishReason,
-    InternalChunk,
     InternalMessage,
     InternalRequest,
     InternalResponse,
@@ -315,10 +314,12 @@ class ChatCompletionChunk(BaseModel):
             id=chunk_id,
             created=created,
             model=model,
-            choices=[StreamingChoice(
-                delta=DeltaMessage(tool_calls=deltas),
-                finish_reason=FinishReason.TOOL_CALLS,
-            )],
+            choices=[
+                StreamingChoice(
+                    delta=DeltaMessage(tool_calls=deltas),
+                    finish_reason=FinishReason.TOOL_CALLS,
+                )
+            ],
         )
 
     @classmethod

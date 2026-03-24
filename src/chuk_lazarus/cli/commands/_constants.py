@@ -117,6 +117,15 @@ class InferenceDefaults:
     TOP_P: float = 0.9
 
 
+class ContextDefaults:
+    """Default values for context prefill/generate operations."""
+
+    CHUNK_SIZE: int = 512
+    WINDOW_SIZE: int = 8192
+    GENERATE_MAX_TOKENS: int = 200
+    TEMPERATURE: float = 0.7
+
+
 class MemoryDefaults:
     """Default values for memory analysis."""
 
@@ -403,6 +412,8 @@ __all__ = [
     "GymDefaults",
     # Heatmap
     "HeatmapChars",
+    # Context
+    "ContextDefaults",
     # Inference
     "InferenceDefaults",
     # Input

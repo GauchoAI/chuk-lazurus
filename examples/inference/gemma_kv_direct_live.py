@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import time
 from pathlib import Path
 
@@ -38,6 +37,7 @@ import mlx.core as mx
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def parse_args():
     p = argparse.ArgumentParser()
@@ -104,40 +104,48 @@ PROMPTS = {
 # Terminal colours
 # ---------------------------------------------------------------------------
 
-BOLD   = "\033[1m"
-GREEN  = "\033[92m"
-RED    = "\033[91m"
-CYAN   = "\033[96m"
+BOLD = "\033[1m"
+GREEN = "\033[92m"
+RED = "\033[91m"
+CYAN = "\033[96m"
 YELLOW = "\033[93m"
-DIM    = "\033[2m"
-RESET  = "\033[0m"
+DIM = "\033[2m"
+RESET = "\033[0m"
 
 
 def fmt_bytes(n: int) -> str:
-    if n < 1024:      return f"{n} B"
-    if n < 1024**2:   return f"{n/1024:.1f} KB"
-    if n < 1024**3:   return f"{n/1024**2:.1f} MB"
-    return f"{n/1024**3:.2f} GB"
+    if n < 1024:
+        return f"{n} B"
+    if n < 1024**2:
+        return f"{n / 1024:.1f} KB"
+    if n < 1024**3:
+        return f"{n / 1024**2:.1f} MB"
+    return f"{n / 1024**3:.2f} GB"
 
 
 # ---------------------------------------------------------------------------
 # Loading
 # ---------------------------------------------------------------------------
 
+
 def _download(model_id: str) -> Path:
     local = Path(model_id)
     if local.exists() and local.is_dir():
         return local
     from huggingface_hub import snapshot_download
+
     print(f"  Downloading {model_id}...")
-    return Path(snapshot_download(
-        model_id,
-        allow_patterns=["*.json", "*.safetensors", "*.model", "tokenizer*"],
-    ))
+    return Path(
+        snapshot_download(
+            model_id,
+            allow_patterns=["*.json", "*.safetensors", "*.model", "tokenizer*"],
+        )
+    )
 
 
 def _apply_weights(model, model_path: Path) -> None:
     from mlx.utils import tree_unflatten
+
     raw: dict = {}
     for sf in sorted(model_path.glob("*.safetensors")):
         raw.update(mx.load(str(sf)))
@@ -151,10 +159,11 @@ def _apply_weights(model, model_path: Path) -> None:
 
 
 def load_models(model_id: str):
-    import importlib.util
+    from transformers import AutoTokenizer
+
     from chuk_lazarus.models_v2.families.gemma import GemmaConfig, GemmaForCausalLM
     from chuk_lazarus.models_v2.families.gemma_rs import GemmaResidualStreamForCausalLM
-    from transformers import AutoTokenizer
+    from chuk_lazarus.inference.context.kv_generator import KVDirectGenerator
 
     model_path = _download(model_id)
     with open(model_path / "config.json") as f:
@@ -168,17 +177,7 @@ def load_models(model_id: str):
     _apply_weights(rs, model_path)
     rs.eval()
 
-    # Load KVDirectGenerator
-    inf = Path(__file__).parents[2] / "src/chuk_lazarus/inference"
-    def _load(dotted, fpath):
-        spec = importlib.util.spec_from_file_location(dotted, fpath)
-        mod  = importlib.util.module_from_spec(spec)
-        sys.modules[dotted] = mod
-        spec.loader.exec_module(mod)
-        return mod
-
-    kv_gen_mod = _load("chuk_lazarus.inference.kv_generator", inf / "kv_generator.py")
-    kv_gen = kv_gen_mod.KVDirectGenerator(rs, config)
+    kv_gen = KVDirectGenerator.from_gemma_rs(rs, config)
 
     tokenizer = AutoTokenizer.from_pretrained(str(model_path))
     if tokenizer.pad_token is None:
@@ -190,6 +189,7 @@ def load_models(model_id: str):
 # ---------------------------------------------------------------------------
 # Generators
 # ---------------------------------------------------------------------------
+
 
 def generate_standard_kv(model, input_ids: mx.array, max_new_tokens: int, config):
     """
@@ -203,11 +203,7 @@ def generate_standard_kv(model, input_ids: mx.array, max_new_tokens: int, config
     for _ in range(max_new_tokens):
         next_tok = int(mx.argmax(out.logits[0, -1, :]))
 
-        kv_bytes = sum(
-            k.nbytes + v.nbytes
-            for k, v in cache
-            if k is not None
-        )
+        kv_bytes = sum(k.nbytes + v.nbytes for k, v in cache if k is not None)
 
         t0 = time.time()
         out = model(mx.array([[next_tok]]), cache=cache)
@@ -241,11 +237,12 @@ def generate_kv_direct(kv_gen, input_ids: mx.array, max_new_tokens: int, config)
 
         # KV store bytes at current seq_len (before appending new token)
         kv_bytes = (
-            2 * config.num_key_value_heads
+            2
+            * config.num_key_value_heads
             * config.head_dim
             * seq_len
             * config.num_hidden_layers
-            * 2   # bfloat16
+            * 2  # bfloat16
         )
 
         t0 = time.time()
@@ -260,6 +257,7 @@ def generate_kv_direct(kv_gen, input_ids: mx.array, max_new_tokens: int, config)
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main():
     args = parse_args()
@@ -280,20 +278,17 @@ def main():
     print(f"  Head dim: {config.head_dim}")
 
     bytes_per_tok = (
-        2 * config.num_hidden_layers
-        * config.num_key_value_heads
-        * config.head_dim
-        * 2   # bfloat16
+        2 * config.num_hidden_layers * config.num_key_value_heads * config.head_dim * 2  # bfloat16
     )
     kv_at_prompt = bytes_per_tok * prompt_len
 
     print(f"\n{BOLD}Prompt{RESET}")
     print(f"  Tokens:  {prompt_len}")
     print(f"  KV at prompt: {fmt_bytes(kv_at_prompt)}")
-    print(f"  (Standard KV and KV-direct use identical storage)")
+    print("  (Standard KV and KV-direct use identical storage)")
 
     display = prompt_text if len(prompt_text) < 200 else prompt_text[:200] + "..."
-    print(f"\n  {DIM}\"{display}\"{RESET}")
+    print(f'\n  {DIM}"{display}"{RESET}')
 
     # Warm up both models (small sequence — just to avoid cold-start GPU overhead)
     _w = mx.array([[1, 2, 3]])
@@ -308,7 +303,7 @@ def main():
     print(f"  {DIM}(running standard KV and KV-direct separately, then comparing){RESET}\n")
 
     # --- Run standard KV to completion ---
-    std_results: list[tuple[int, int, float]] = []   # (token, kv_bytes, ms)
+    std_results: list[tuple[int, int, float]] = []  # (token, kv_bytes, ms)
     for tok, kv_b, ms in generate_standard_kv(standard, input_ids, args.tokens, config):
         std_results.append((tok, kv_b, ms))
 
@@ -319,43 +314,44 @@ def main():
 
     # --- Display comparison table ---
     col = 10
-    print(f"  {'Step':>4}  {'Token':<22}  {'Standard KV':>{col}}  {'KV-direct':>{col}}  "
-          f"{'Match':>5}  {'KV ms':>6}  {'KVD ms':>6}")
+    print(
+        f"  {'Step':>4}  {'Token':<22}  {'Standard KV':>{col}}  {'KV-direct':>{col}}  "
+        f"{'Match':>5}  {'KV ms':>6}  {'KVD ms':>6}"
+    )
     print("  " + "─" * 80)
 
-    mismatches      = 0
-    std_total_ms    = 0.0
-    kvd_total_ms    = 0.0
-    final_kv_bytes  = kv_at_prompt
+    mismatches = 0
+    std_total_ms = 0.0
+    kvd_total_ms = 0.0
     generated_tokens = []
-    n_steps         = min(len(std_results), len(kvd_results))
 
-    for step, ((std_tok, std_kv, std_ms), (kvd_tok, kvd_kv, kvd_ms)) in \
-            enumerate(zip(std_results, kvd_results), 1):
-
+    for step, ((std_tok, std_kv, std_ms), (kvd_tok, kvd_kv, kvd_ms)) in enumerate(
+        zip(std_results, kvd_results), 1
+    ):
         match = std_tok == kvd_tok
         if not match:
             mismatches += 1
 
-        token_str     = tokenizer.decode([std_tok])
+        token_str = tokenizer.decode([std_tok])
         token_display = repr(token_str)[:20]
-        match_str     = f"{GREEN}✓{RESET}" if match else f"{RED}✗{RESET}"
+        match_str = f"{GREEN}✓{RESET}" if match else f"{RED}✗{RESET}"
 
-        kv_str  = fmt_bytes(std_kv)
+        kv_str = fmt_bytes(std_kv)
         kvd_str = fmt_bytes(kvd_kv)
         mem_match = abs(std_kv - kvd_kv) < max(std_kv, 1) * 0.01
         kvd_color = RESET if mem_match else YELLOW
 
-        std_total_ms   += std_ms
-        kvd_total_ms   += kvd_ms
-        final_kv_bytes  = std_kv
+        std_total_ms += std_ms
+        kvd_total_ms += kvd_ms
         generated_tokens.append(token_str)
 
-        print(f"  {step:>4}  {token_display:<22}  "
-              f"{CYAN}{kv_str:>{col}}{RESET}  "
-              f"{kvd_color}{kvd_str:>{col}}{RESET}  "
-              f"  {match_str}  "
-              f"{std_ms:>6.1f}  {kvd_ms:>6.1f}")
+        print(
+            f"  {step:>4}  {token_display:<22}  "
+            f"{CYAN}{kv_str:>{col}}{RESET}  "
+            f"{kvd_color}{kvd_str:>{col}}{RESET}  "
+            f"  {match_str}  "
+            f"{std_ms:>6.1f}  {kvd_ms:>6.1f}"
+        )
 
     n_generated = len(generated_tokens)
     print()
@@ -365,12 +361,14 @@ def main():
     print(f"  {CYAN}{repr(''.join(generated_tokens))}{RESET}\n")
 
     # Memory
-    final_seq_len   = prompt_len + n_generated
+    final_seq_len = prompt_len + n_generated
     final_kv_theory = bytes_per_tok * final_seq_len
-    token_id_bytes  = final_seq_len * 4
+    token_id_bytes = final_seq_len * 4
 
-    print(f"{BOLD}Memory at end of generation  "
-          f"(prompt={prompt_len} + {n_generated} new tokens = {final_seq_len} total){RESET}")
+    print(
+        f"{BOLD}Memory at end of generation  "
+        f"(prompt={prompt_len} + {n_generated} new tokens = {final_seq_len} total){RESET}"
+    )
     print(f"  Standard KV:   {fmt_bytes(final_kv_theory)}")
     print(f"  KV-direct:     {fmt_bytes(final_kv_theory)}  (identical — same K,V storage formula)")
     print(f"  Token IDs:     {fmt_bytes(token_id_bytes)}  ({final_seq_len} × 4 bytes)")
@@ -381,10 +379,11 @@ def main():
     avg_kvd = kvd_total_ms / n_generated
 
     print(f"{BOLD}Speed (per-token, after prefill){RESET}")
-    print(f"  Standard KV:   {avg_std:.1f} ms/token  "
-          f"({1000/avg_std:.0f} tok/s)  O(1) per step")
-    print(f"  KV-direct:     {avg_kvd:.1f} ms/token  "
-          f"({1000/avg_kvd:.0f} tok/s)  O(1) per step — no K,V recompute")
+    print(f"  Standard KV:   {avg_std:.1f} ms/token  ({1000 / avg_std:.0f} tok/s)  O(1) per step")
+    print(
+        f"  KV-direct:     {avg_kvd:.1f} ms/token  "
+        f"({1000 / avg_kvd:.0f} tok/s)  O(1) per step — no K,V recompute"
+    )
     overhead = avg_kvd / avg_std
     if overhead < 1.15:
         verdict = f"{GREEN}✓ Matches standard KV speed ({overhead:.2f}×){RESET}"
@@ -397,32 +396,39 @@ def main():
     # Correctness
     print(f"{BOLD}Correctness{RESET}")
     if mismatches == 0:
-        print(f"  {GREEN}✓ All {n_generated} tokens identical.{RESET}  "
-              f"KV-direct produces the same output as standard KV.")
+        print(
+            f"  {GREEN}✓ All {n_generated} tokens identical.{RESET}  "
+            f"KV-direct produces the same output as standard KV."
+        )
     else:
         print(f"  {RED}✗ {mismatches} mismatches out of {n_generated} tokens.{RESET}")
     print()
 
     # What this proves
     print(f"{BOLD}What this proves{RESET}")
-    print(f"  1. Correctness:  KV-direct output == standard KV output (token-for-token)")
-    print(f"  2. Speed:        KV-direct step cost == standard KV step cost (O(1), no recompute)")
-    print(f"  3. Memory:       KV-direct uses the same bytes as standard KV ({fmt_bytes(final_kv_theory)})")
+    print("  1. Correctness:  KV-direct output == standard KV output (token-for-token)")
+    print("  2. Speed:        KV-direct step cost == standard KV step cost (O(1), no recompute)")
+    print(
+        f"  3. Memory:       KV-direct uses the same bytes as standard KV ({fmt_bytes(final_kv_theory)})"
+    )
     print()
-    print(f"  The residual stream proved K,V are redundant in theory (the residual is the state).")
-    print(f"  KV-direct proves they're redundant in practice: store K,V directly, skip the")
-    print(f"  residual round-trip, match standard KV at every level.")
+    print("  The residual stream proved K,V are redundant in theory (the residual is the state).")
+    print("  KV-direct proves they're redundant in practice: store K,V directly, skip the")
+    print("  residual round-trip, match standard KV at every level.")
     print()
-    print(f"  What KV-direct adds over standard KV:")
-    print(f"    O(1) eviction  — drop oldest K,V with a slice (no rebuild)")
-    print(f"    Bounded memory — hard budget, window slides on eviction")
-    print(f"    Composable     — prefill/extend/step/slide separate, no monolithic cache")
+    print("  What KV-direct adds over standard KV:")
+    print("    O(1) eviction  — drop oldest K,V with a slice (no rebuild)")
+    print("    Bounded memory — hard budget, window slides on eviction")
+    print("    Composable     — prefill/extend/step/slide separate, no monolithic cache")
     print()
     print(f"  {DIM}Compare with gemma_rs_live_inference.py:{RESET}")
     rs_res_bytes = prompt_len * config.hidden_size * 2
-    rs_ratio = final_kv_theory / max(token_id_bytes, 1)
-    print(f"  {DIM}  Naive RS:  {fmt_bytes(rs_res_bytes)} persistent (token IDs), ~3× slower{RESET}")
-    print(f"  {DIM}  KV-direct: {fmt_bytes(final_kv_theory)} persistent, ~1× speed, full eviction support{RESET}")
+    print(
+        f"  {DIM}  Naive RS:  {fmt_bytes(rs_res_bytes)} persistent (token IDs), ~3× slower{RESET}"
+    )
+    print(
+        f"  {DIM}  KV-direct: {fmt_bytes(final_kv_theory)} persistent, ~1× speed, full eviction support{RESET}"
+    )
     print()
 
 

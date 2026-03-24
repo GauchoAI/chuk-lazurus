@@ -240,8 +240,8 @@ class GemmaConfig(ModelConfig):
         """
         # Handle VLM configs with nested text_config
         # Gemma 3 VLM models (gemma-3-4b-it, etc.) have config nested under "text_config"
-        if "text_config" in hf_config and ConfigField.VOCAB_SIZE.value not in hf_config:
-            text_config = hf_config["text_config"]
+        if ConfigField.TEXT_CONFIG in hf_config and ConfigField.VOCAB_SIZE.value not in hf_config:
+            text_config = hf_config[ConfigField.TEXT_CONFIG]
             # Merge text_config into main config, with text_config taking precedence for model params
             merged_config = {**hf_config, **text_config}
             hf_config = merged_config
@@ -305,8 +305,8 @@ class GemmaConfig(ModelConfig):
             max_position_embeddings=hf_config.get(ConfigField.MAX_POSITION_EMBEDDINGS.value, 32768),
             rope_theta=hf_config.get(ConfigField.ROPE_THETA.value, DefaultRoPETheta.GEMMA3.value),
             rope_local_base_freq=hf_config.get(
-                "rope_local_base_freq", DefaultRoPETheta.LLAMA2.value
+                ConfigField.ROPE_LOCAL_BASE_FREQ, DefaultRoPETheta.LLAMA2.value
             ),
             rms_norm_eps=hf_config.get(ConfigField.RMS_NORM_EPS.value, DefaultNormEps.GEMMA.value),
-            rope_scaling=hf_config.get("rope_scaling"),
+            rope_scaling=hf_config.get(ConfigField.ROPE_SCALING),
         )

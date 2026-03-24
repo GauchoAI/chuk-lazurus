@@ -12,13 +12,13 @@ because:
 import logging
 import time
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as optim
+from pydantic import Field
 
 from ..base_trainer import BaseTrainer, BaseTrainerConfig
 from ..losses.grpo_loss import GRPOBatch, GRPOConfig, grpo_loss
@@ -27,32 +27,29 @@ from ..utils.log_probs import compute_sequence_log_prob, extract_log_probs
 logger = logging.getLogger(__name__)
 
 
-@dataclass
 class GRPOTrainerConfig(BaseTrainerConfig):
     """Configuration for GRPO training."""
 
     # GRPO hyperparameters
-    grpo: GRPOConfig = field(default_factory=GRPOConfig)
-
+    grpo: GRPOConfig = Field(default_factory=GRPOConfig, description="GRPO loss configuration")
     # Training settings
-    num_iterations: int = 1000
-    prompts_per_iteration: int = 16
-    learning_rate: float = 1e-6
-    weight_decay: float = 0.0
-    max_grad_norm: float = 1.0
-
+    num_iterations: int = Field(default=1000, ge=1, description="Number of training iterations")
+    prompts_per_iteration: int = Field(default=16, ge=1, description="Prompts per iteration")
+    learning_rate: float = Field(default=1e-6, gt=0, description="Learning rate")
+    weight_decay: float = Field(default=0.0, ge=0, description="Weight decay")
+    max_grad_norm: float = Field(default=1.0, gt=0, description="Maximum gradient norm")
     # Generation settings
-    max_response_length: int = 256
-    temperature: float = 1.0
-
+    max_response_length: int = Field(default=256, ge=1, description="Maximum response length")
+    temperature: float = Field(default=1.0, gt=0, description="Sampling temperature")
     # Logging and checkpoints
-    log_interval: int = 1
-    checkpoint_interval: int = 50
-    checkpoint_dir: str = "./checkpoints/grpo"
-
+    log_interval: int = Field(default=1, ge=1, description="Log interval")
+    checkpoint_interval: int = Field(default=50, ge=1, description="Checkpoint interval")
+    checkpoint_dir: str = Field(default="./checkpoints/grpo", description="Checkpoint directory")
     # Early stopping
-    max_steps: int | None = None
-    target_reward: float | None = None
+    max_steps: int | None = Field(default=None, description="Maximum training steps")
+    target_reward: float | None = Field(
+        default=None, description="Target reward for early stopping"
+    )
 
 
 class GRPOTrainer(BaseTrainer):

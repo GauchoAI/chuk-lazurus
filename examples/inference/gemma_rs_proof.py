@@ -80,13 +80,15 @@ def compare_tensors(a: mx.array, b: mx.array, label: str, tol: float = 5e-3) -> 
 # Loading
 # ---------------------------------------------------------------------------
 
+
 def _download(model_id: str) -> Path:
     """Locate or download model. Returns local path."""
     local = Path(model_id)
     if local.exists() and local.is_dir():
         return local
     from huggingface_hub import snapshot_download
-    print(f"  Downloading from HuggingFace Hub...")
+
+    print("  Downloading from HuggingFace Hub...")
     path = snapshot_download(
         model_id,
         allow_patterns=["*.json", "*.safetensors", "*.model", "tokenizer*"],
@@ -117,9 +119,10 @@ def load_models(model_id: str):
     Download once, load into both GemmaForCausalLM and GemmaResidualStreamForCausalLM.
     Returns (standard_model, rs_model, tokenizer, config, model_path).
     """
+    from transformers import AutoTokenizer
+
     from chuk_lazarus.models_v2.families.gemma import GemmaConfig, GemmaForCausalLM
     from chuk_lazarus.models_v2.families.gemma_rs import GemmaResidualStreamForCausalLM
-    from transformers import AutoTokenizer
 
     print(f"\nLocating: {model_id}")
     model_path = _download(model_id)
@@ -135,13 +138,13 @@ def load_models(model_id: str):
     t0 = time.time()
     standard = GemmaForCausalLM(config)
     _apply_weights(standard, model_path)
-    print(f"  Loaded in {time.time()-t0:.1f}s")
+    print(f"  Loaded in {time.time() - t0:.1f}s")
 
     print("\nLoading GemmaResidualStreamForCausalLM ...")
     t0 = time.time()
     rs_model = GemmaResidualStreamForCausalLM(config)
     _apply_weights(rs_model, model_path)
-    print(f"  Loaded in {time.time()-t0:.1f}s")
+    print(f"  Loaded in {time.time() - t0:.1f}s")
 
     tokenizer = AutoTokenizer.from_pretrained(str(model_path))
     if tokenizer.pad_token is None:
@@ -158,6 +161,7 @@ def tokenize(tokenizer, prompt: str) -> mx.array:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 def test_full_pass_equivalence(standard, rs_model, input_ids):
     header("TEST 1: Full forward pass — logit identity")
@@ -228,9 +232,7 @@ def test_residual_composition(rs_model, input_ids, probe_layer, inject_layer, co
     )
 
     # Three-segment composition: 0→probe, probe→inject, inject→end
-    seg1 = rs_model.forward_between_layers(
-        rs_model.model.encode(input_ids), 0, probe_layer
-    )
+    seg1 = rs_model.forward_between_layers(rs_model.model.encode(input_ids), 0, probe_layer)
     mx.eval(seg1.residual)
     seg2 = rs_model.forward_between_layers(seg1.residual, probe_layer, inject_layer)
     mx.eval(seg2.residual)
@@ -277,12 +279,13 @@ def print_top_tokens(tokenizer, logits: mx.array, k: int = 5):
     for rank, tid in enumerate(top_ids.tolist()):
         tok = repr(tokenizer.decode([tid]))
         score = float(last_logits[tid])
-        print(f"    {rank+1}. {tok:<20} logit={score:.3f}")
+        print(f"    {rank + 1}. {tok:<20} logit={score:.3f}")
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main():
     args = parse_args()
@@ -305,7 +308,6 @@ def main():
 
     # Residual stats
     header("Residual stream stats")
-    rs_out_full = rs_model(input_ids, collect_layer_residuals=False)
     partial = rs_model.forward_to_layer(input_ids, stop_layer=probe_layer)
     mx.eval(partial.residual)
     residual_bytes = partial.residual.size * 2  # bfloat16 = 2 bytes/element

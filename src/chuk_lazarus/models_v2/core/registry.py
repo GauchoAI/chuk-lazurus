@@ -18,8 +18,9 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, TypeVar
+
+from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
     from .config import ModelConfig
@@ -33,8 +34,7 @@ ModelClass = type[M]
 ModelFactory = Callable[["ModelConfig"], M]
 
 
-@dataclass
-class ModelCapability:
+class ModelCapability(BaseModel):
     """
     Capability descriptor for model registry.
 
@@ -46,27 +46,33 @@ class ModelCapability:
     Future: Used for MoE routing, gym-driven selection, and expert specialization.
     """
 
+    model_config = ConfigDict(frozen=True)
+
     # Core capability flags
-    is_sequence_model: bool = True
-    is_policy_model: bool = False
-    is_memory_reader: bool = False
-    is_memory_writer: bool = False
-    is_router_candidate: bool = False
+    is_sequence_model: bool = Field(default=True, description="Is a sequence model")
+    is_policy_model: bool = Field(default=False, description="Is a policy model")
+    is_memory_reader: bool = Field(default=False, description="Can read memory")
+    is_memory_writer: bool = Field(default=False, description="Can write memory")
+    is_router_candidate: bool = Field(default=False, description="Can be used for routing")
 
     # Input/output format
-    input_format: str = "tokens"  # tokens, embeddings, images, etc.
-    output_format: str = "logits"  # logits, embeddings, classifications, etc.
+    input_format: str = Field(
+        default="tokens", description="Input format (tokens, embeddings, images)"
+    )
+    output_format: str = Field(
+        default="logits", description="Output format (logits, embeddings, classifications)"
+    )
 
     # Model characteristics
-    supports_kv_cache: bool = False
-    supports_lora: bool = True
-    max_context_length: int | None = None
+    supports_kv_cache: bool = Field(default=False, description="Supports KV cache")
+    supports_lora: bool = Field(default=True, description="Supports LoRA")
+    max_context_length: int | None = Field(default=None, description="Maximum context length")
 
     # Domain specializations (from fine-tuning)
-    domains: list[str] = field(default_factory=list)
+    domains: list[str] = Field(default_factory=list, description="Domain specializations")
 
     # Tags for filtering
-    tags: list[str] = field(default_factory=list)
+    tags: list[str] = Field(default_factory=list, description="Tags for filtering")
 
 
 class ModelRegistry:

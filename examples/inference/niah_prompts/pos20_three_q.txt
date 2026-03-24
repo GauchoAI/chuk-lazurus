@@ -1,0 +1,42 @@
+<start_of_turn>user
+The following is a keyword index extracted from a long document. Use it to answer the question.
+
+Index:
+W0: GOSS, Communicators, AIR, Remote
+
+Neil, AB, Recovery, TRANSCRIPTION, Technical Air
+W1: GOSS, CDI, Charlie, CD, They, One Bravo, Out, GO
+W2: Sounds, Starting, COI, Inboard, Stand, YOU, Level, CD
+W3: GOGS, Fage, Understand, Well, CD, REV, SECO, Staging
+W4: GOSS, Canary, Reading, VA, CEE, Tape
+Page, 103, AOS
+W5: GOSS, Canary, Alfa, IR, TAN, Beautiful, One, Out
+W6: GOSS, Honeysuckle, Glenn, Parker
+
+Tell, Tape
+Page, One, 00016, Would
+W7: Madrid, GOSS, Honeysuckle, Goldstone, TRANSCRIPTION, Reading, CD, Radio
+W8: TLI, Stand, Goldstone, Which, Apollo
+Over, FM, Radio, REV
+W9: GOSS, HA, Goldstone, Readback, Tape
+Page, TLI, Vega, FM
+W10: GOSS, 6485, RCS, Have, Here, NET, TV, AUX
+W11: TM, 071, 179, ACCEPT, REV, Tape
+Page, TLI, VANGUARD
+W12: GOSS, CANARY, DELTA, REV, Readback, TLI, Apollo
+
+Loud, RCS
+W13: Tananarive, Can, LOS, They, Thank, PRIMARY, AOS, CT
+W14: GOSS, BO, Reading, Roser, Monitor, Nouston, Houston
+Radio, Out
+W15: Thornfield: Voss Institute, Greenland, crystallized helium resonance, 2019
+W16: GOSS, CDE, Slightly Less, Page, Ignition, Trajectory, CDF, Out
+W17: Plus, That
+
+And, Page, VI, Out, NOUN, EMS, Hey
+W18: GOSS, AIR, Goldstone, APOLLO, END, Hello, Out, OF
+W19: GOSS, Request, Our, Out, PYRO, GO, How, Radio
+
+Question: Where did Professor Thornfield discover the resonance pattern?
+<end_of_turn>
+<start_of_turn>model

@@ -25,18 +25,16 @@ import json
 import logging
 import re
 import threading
-from typing import TYPE_CHECKING, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import TYPE_CHECKING
 
 from .schemas.internal import (
     FinishReason,
     InternalChunk,
-    InternalMessage,
     InternalRequest,
     InternalResponse,
     InternalUsage,
-    MessageRole,
     StopReason,
-    Tool,
     ToolCall,
     ToolCallFunction,
 )
@@ -153,7 +151,9 @@ def _apply_template(tokenizer, request: InternalRequest) -> str:
             )
             # Retry without tools kwarg as a fallback
             try:
-                return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+                return tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True
+                )
             except Exception:
                 pass
 
@@ -290,9 +290,7 @@ class ModelEngine:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, lambda: self._generate(request))
 
-    async def astream(
-        self, request: InternalRequest
-    ) -> AsyncIterator[InternalChunk]:
+    async def astream(self, request: InternalRequest) -> AsyncIterator[InternalChunk]:
         """
         Streaming generation — yields InternalChunk instances.
 
@@ -320,9 +318,7 @@ class ModelEngine:
                     prompt,
                     config,
                 ):
-                    loop.call_soon_threadsafe(
-                        queue.put_nowait, InternalChunk(content=text)
-                    )
+                    loop.call_soon_threadsafe(queue.put_nowait, InternalChunk(content=text))
             except BaseException as exc:
                 loop.call_soon_threadsafe(queue.put_nowait, exc)
             finally:

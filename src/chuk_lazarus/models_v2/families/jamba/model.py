@@ -27,6 +27,7 @@ from ...core.config import AttentionConfig, FFNConfig, PositionConfig, RoPEConfi
 from ...core.registry import register_model
 from ...heads import LMHead
 from ...models.base import Model, ModelOutput
+from ..constants import HFArchitecture, HFModelType
 from .config import JambaConfig
 
 
@@ -293,8 +294,8 @@ class JambaModel(Backbone):
 
 
 @register_model(
-    model_type="jamba",
-    architectures=["JambaForCausalLM"],
+    model_type=HFModelType.JAMBA,
+    architectures=[HFArchitecture.JAMBA_FOR_CAUSAL_LM],
 )
 class JambaForCausalLM(Model):
     """

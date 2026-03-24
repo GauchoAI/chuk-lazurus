@@ -1,0 +1,23 @@
+<start_of_turn>user
+The following is a keyword index extracted from a long document. Use it to answer the question.
+
+Index:
+W0: Capsule, Two, NET, VOICE, AIR, GROUND, Voice
+
+Trans, Unidentifiable
+W1: Inboard, NET, Thrust, Page, Yes, GO, Charlie, Tower
+W2: Inboard, Starting, CD, Bruce, IVB, MARK, Your, YOU
+W3: Understand, SECO, Shutdown, These, GO, GOGS, GRAND, Ignition
+W4: NET, LOS, Reading, 103, AOS, GU, COMM, CEE
+W5: Thornfield: Voss Institute, Greenland, crystallized helium resonance, 2019
+W6: Would, Say, LOS, Glenn, Yes, Parker
+
+Tell, LM, AOS
+W7: NET, VOICE, Page, LOS, OF, APOLLO, Reading, HSK
+W8: Apollo
+Over, REV, FM, Just, Which, TEXAS, Goldstone, LOS
+W9: NET, 63481, FM, NA, PAD, Read, TLI, 153
+
+Question: Where did Professor Thornfield discover the resonance pattern?
+<end_of_turn>
+<start_of_turn>model

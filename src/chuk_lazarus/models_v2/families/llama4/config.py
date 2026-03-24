@@ -104,11 +104,11 @@ class Llama4TextConfig(ModelConfig):
             Configured Llama4TextConfig instance
         """
         # Extract no_rope_layers if present
-        no_rope_layers = hf_config.get("no_rope_layers")
+        no_rope_layers = hf_config.get(ConfigField.NO_ROPE_LAYERS.value)
         if no_rope_layers is None:
             # Check for nope_layer_interval pattern
-            nope_interval = hf_config.get("nope_layer_interval")
-            num_layers = hf_config.get("num_hidden_layers", 48)
+            nope_interval = hf_config.get(ConfigField.NOPE_LAYER_INTERVAL.value)
+            num_layers = hf_config.get(ConfigField.NUM_HIDDEN_LAYERS.value, 48)
             if nope_interval:
                 no_rope_layers = [i * nope_interval for i in range(num_layers // nope_interval)]
 
@@ -120,26 +120,26 @@ class Llama4TextConfig(ModelConfig):
             num_attention_heads=hf_config.get(ConfigField.NUM_ATTENTION_HEADS.value, 40),
             num_key_value_heads=hf_config.get(ConfigField.NUM_KEY_VALUE_HEADS.value, 8),
             intermediate_size=hf_config.get(ConfigField.INTERMEDIATE_SIZE.value, 8192),
-            intermediate_size_mlp=hf_config.get("intermediate_size_mlp", 16384),
+            intermediate_size_mlp=hf_config.get(ConfigField.INTERMEDIATE_SIZE_MLP.value, 16384),
             max_position_embeddings=hf_config.get(
                 ConfigField.MAX_POSITION_EMBEDDINGS.value, 131072
             ),
-            hidden_act=hf_config.get("hidden_act", "silu"),
+            hidden_act=hf_config.get(ConfigField.HIDDEN_ACT.value, "silu"),
             rope_theta=hf_config.get(ConfigField.ROPE_THETA.value, DefaultRoPETheta.LLAMA3.value),
             rms_norm_eps=hf_config.get(ConfigField.RMS_NORM_EPS.value, DefaultNormEps.LLAMA.value),
             tie_word_embeddings=hf_config.get(ConfigField.TIE_WORD_EMBEDDINGS.value, False),
             # MoE
-            num_local_experts=hf_config.get("num_local_experts", 16),
-            num_experts_per_tok=hf_config.get("num_experts_per_tok", 1),
-            moe_router_topk=hf_config.get("moe_router_topk", 1),
+            num_local_experts=hf_config.get(ConfigField.NUM_LOCAL_EXPERTS.value, 16),
+            num_experts_per_tok=hf_config.get(ConfigField.NUM_EXPERTS_PER_TOK.value, 1),
+            moe_router_topk=hf_config.get(ConfigField.MOE_ROUTER_TOPK.value, 1),
             # iRoPE
             no_rope_layers=no_rope_layers,
             attention_chunk_size=hf_config.get("attention_chunk_size", 8192),
             # Attention features
-            use_qk_norm=hf_config.get("use_qk_norm", True),
-            attn_temperature_tuning=hf_config.get("attn_temperature_tuning", False),
+            use_qk_norm=hf_config.get(ConfigField.USE_QK_NORM.value, True),
+            attn_temperature_tuning=hf_config.get(ConfigField.ATTN_TEMPERATURE_TUNING.value, False),
             # RoPE scaling
-            rope_scaling=hf_config.get("rope_scaling"),
+            rope_scaling=hf_config.get(ConfigField.ROPE_SCALING.value),
         )
 
     @classmethod

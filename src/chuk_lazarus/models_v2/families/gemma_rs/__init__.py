@@ -7,8 +7,8 @@ No KV cache is ever stored between forward passes.
 
 from .model import (
     GemmaResidualStreamForCausalLM,
-    ResidualStreamOutput,
     PartialResidualOutput,
+    ResidualStreamOutput,
 )
 
 __all__ = [

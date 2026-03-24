@@ -21,6 +21,7 @@ from ...backbones.base import Backbone, BackboneOutput
 from ...blocks.base import Block, BlockOutput
 from ...core.registry import register_model
 from ...models.base import Model, ModelOutput
+from ..constants import HFArchitecture, HFModelType
 from .config import GemmaConfig
 
 
@@ -96,9 +97,15 @@ class GemmaAttention(nn.Module):
         # Determine if this is a sliding window layer
         self.is_sliding = config.is_sliding_layer(layer_idx)
 
-        # RoPE with appropriate base frequency
+        # RoPE with appropriate base frequency and scaling
         rope_base = config.rope_local_base_freq if self.is_sliding else config.rope_theta
-        self.rope = nn.RoPE(dims=self.head_dim, base=rope_base, traditional=False)
+        # Global layers apply rope_scaling (e.g., factor=8 → scale=0.125)
+        rope_scale = 1.0
+        if not self.is_sliding and config.rope_scaling is not None:
+            factor = config.rope_scaling.get("factor", 1.0)
+            if factor > 0:
+                rope_scale = 1.0 / factor
+        self.rope = nn.RoPE(dims=self.head_dim, base=rope_base, traditional=False, scale=rope_scale)
 
     def __call__(
         self,
@@ -393,11 +400,11 @@ class GemmaModel(Backbone):
 
         new_cache: list = [None] * start_layer
         for i in range(start_layer, len(self.layers)):
-            layer      = self.layers[i]
+            layer = self.layers[i]
             layer_cache = cache[i]
-            mask       = global_mask if self.config.is_global_layer(i) else sliding_mask
-            output     = layer(h, mask=mask, cache=layer_cache)
-            h          = output.hidden_states
+            mask = global_mask if self.config.is_global_layer(i) else sliding_mask
+            output = layer(h, mask=mask, cache=layer_cache)
+            h = output.hidden_states
             new_cache.append(output.cache)
 
         h = self.norm(h)
@@ -411,8 +418,8 @@ class GemmaModel(Backbone):
 
 
 @register_model(
-    model_type="gemma3_text",
-    architectures=["Gemma3ForCausalLM"],
+    model_type=HFModelType.GEMMA3_TEXT,
+    architectures=[HFArchitecture.GEMMA3_FOR_CAUSAL_LM],
 )
 class GemmaForCausalLM(Model):
     """

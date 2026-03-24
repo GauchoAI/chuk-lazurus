@@ -29,38 +29,48 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import time
 from pathlib import Path
 
 import mlx.core as mx
 
-BOLD   = "\033[1m"
-GREEN  = "\033[92m"
-CYAN   = "\033[96m"
+BOLD = "\033[1m"
+GREEN = "\033[92m"
+CYAN = "\033[96m"
 YELLOW = "\033[93m"
-RED    = "\033[91m"
-DIM    = "\033[2m"
-RESET  = "\033[0m"
+RED = "\033[91m"
+DIM = "\033[2m"
+RESET = "\033[0m"
 
 
 def fmt_bytes(n: int) -> str:
-    if n < 1024:      return f"{n} B"
-    if n < 1024**2:   return f"{n/1024:.1f} KB"
-    if n < 1024**3:   return f"{n/1024**2:.1f} MB"
-    return f"{n/1024**3:.2f} GB"
+    if n < 1024:
+        return f"{n} B"
+    if n < 1024**2:
+        return f"{n / 1024:.1f} KB"
+    if n < 1024**3:
+        return f"{n / 1024**2:.1f} MB"
+    return f"{n / 1024**3:.2f} GB"
 
 
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--model", default="mlx-community/gemma-3-270m-it-bf16")
-    p.add_argument("--budget-mb", type=float, default=None,
-                   help="Hot-tier budget in MB. Default: auto (holds ~300 KV tokens for the loaded model).")
+    p.add_argument(
+        "--budget-mb",
+        type=float,
+        default=None,
+        help="Hot-tier budget in MB. Default: auto (holds ~300 KV tokens for the loaded model).",
+    )
     p.add_argument("--turns", type=int, default=8)
     p.add_argument("--tokens-per-turn", type=int, default=30)
     p.add_argument("--gen-tokens", type=int, default=20)
-    p.add_argument("--checkpoint-interval", type=int, default=0,
-                   help="Store residual checkpoint every N tokens. 0=disabled (default).")
+    p.add_argument(
+        "--checkpoint-interval",
+        type=int,
+        default=0,
+        help="Store residual checkpoint every N tokens. 0=disabled (default).",
+    )
     p.add_argument("--dark-layers", nargs="+", type=int, default=[])
     return p.parse_args()
 
@@ -69,29 +79,37 @@ def parse_args():
 # Model loading
 # ---------------------------------------------------------------------------
 
+
 def _download(model_id: str) -> Path:
     local = Path(model_id)
     if local.exists() and local.is_dir():
         return local
     from huggingface_hub import snapshot_download
+
     # Check if already cached
     try:
-        cached = snapshot_download(model_id, local_files_only=True,
-                                   allow_patterns=["*.json", "*.safetensors", "*.model", "tokenizer*"])
+        cached = snapshot_download(
+            model_id,
+            local_files_only=True,
+            allow_patterns=["*.json", "*.safetensors", "*.model", "tokenizer*"],
+        )
         print(f"  Using cached {model_id}")
         return Path(cached)
     except Exception:
         pass
     print(f"  Downloading {model_id} (this may take 30+ minutes for large models)...")
-    print(f"  Each .safetensors shard downloads one at a time — progress updates per file.")
-    return Path(snapshot_download(
-        model_id,
-        allow_patterns=["*.json", "*.safetensors", "*.model", "tokenizer*"],
-    ))
+    print("  Each .safetensors shard downloads one at a time — progress updates per file.")
+    return Path(
+        snapshot_download(
+            model_id,
+            allow_patterns=["*.json", "*.safetensors", "*.model", "tokenizer*"],
+        )
+    )
 
 
 def load_models(model_id: str):
     from mlx.utils import tree_unflatten
+
     from chuk_lazarus.models_v2.families.gemma import GemmaConfig, GemmaForCausalLM
     from chuk_lazarus.models_v2.families.gemma_rs import GemmaResidualStreamForCausalLM
 
@@ -123,34 +141,24 @@ def load_models(model_id: str):
 
 
 def load_engine_class():
-    import importlib.util
-    inf = Path(__file__).parents[2] / "src/chuk_lazarus/inference"
+    from chuk_lazarus.inference.context.bounded_engine import BoundedKVEngine
 
-    def _load(dotted, fpath):
-        spec = importlib.util.spec_from_file_location(dotted, fpath)
-        mod  = importlib.util.module_from_spec(spec)
-        sys.modules[dotted] = mod
-        spec.loader.exec_module(mod)
-        return mod
-
-    _load("chuk_lazarus.inference.rs_generator",  inf / "rs_generator.py")
-    _load("chuk_lazarus.inference.kv_generator",  inf / "kv_generator.py")
-    mod = _load("chuk_lazarus.inference.bounded_cache", inf / "bounded_cache.py")
-    return mod.BoundedKVEngine
+    return BoundedKVEngine
 
 
 # ---------------------------------------------------------------------------
 # Unbounded KV baseline
 # ---------------------------------------------------------------------------
 
+
 def run_unbounded_kv(std_model, input_ids_per_turn: list[list[int]], gen_tokens: int):
     """
     Standard KV cache, no budget. Memory grows linearly.
     Returns list of (hot_bytes, tok_per_sec) per turn.
     """
-    cache    = None
-    all_ids  = []
-    results  = []
+    cache = None
+    all_ids = []
+    results = []
 
     print(f"  {'Turn':>4}  {'Context':>8}  {'Hot':>9}  {'tok/s':>6}  {'t(s)':>5}")
     print("  " + "─" * 44)
@@ -187,20 +195,20 @@ def run_unbounded_kv(std_model, input_ids_per_turn: list[list[int]], gen_tokens:
         gen_ms = (time.perf_counter() - t0) * 1000
         total_s = time.perf_counter() - t_turn
 
-        kv_bytes = sum(
-            k.nbytes + v.nbytes
-            for k, v in cache
-            if k is not None
-        )
+        kv_bytes = sum(k.nbytes + v.nbytes for k, v in cache if k is not None)
         tps = gen_tokens / (gen_ms / 1000)
-        print(f"  {i:>4}  {len(all_ids):>8,}  {fmt_bytes(kv_bytes):>9}  {tps:>6.1f}  {total_s:>4.1f}s")
+        print(
+            f"  {i:>4}  {len(all_ids):>8,}  {fmt_bytes(kv_bytes):>9}  {tps:>6.1f}  {total_s:>4.1f}s"
+        )
 
-        results.append({
-            "hot_bytes":    kv_bytes,
-            "tok_per_sec":  tps,
-            "total_tokens": len(all_ids),
-            "path":         "hot",
-        })
+        results.append(
+            {
+                "hot_bytes": kv_bytes,
+                "tok_per_sec": tps,
+                "total_tokens": len(all_ids),
+                "path": "hot",
+            }
+        )
 
     return results
 
@@ -209,31 +217,53 @@ def run_unbounded_kv(std_model, input_ids_per_turn: list[list[int]], gen_tokens:
 # Main
 # ---------------------------------------------------------------------------
 
-def print_turn_table(label: str, color: str, rows: list[dict], evict_marker: str = "⚠"):
+
+def print_turn_table(label: str, color: str, rows, evict_marker: str = "⚠"):
     print(f"\n  {color}{BOLD}{label}{RESET}")
-    print(f"  {'Turn':>4}  {'Path':>5}  {'Window':>7}  {'Hot':>9}  "
-          f"{'Warm':>9}  {'Cold':>8}  {'Budget%':>7}  {'tok/s':>6}")
+    print(
+        f"  {'Turn':>4}  {'Path':>5}  {'Window':>7}  {'Hot':>9}  "
+        f"{'Warm':>9}  {'Cold':>8}  {'Budget%':>7}  {'tok/s':>6}"
+    )
     print("  " + "─" * 72)
 
     path_color = {"hot": CYAN, "warm": YELLOW, "cold": RED, "grow": GREEN, "full": CYAN}
 
     for i, r in enumerate(rows, 1):
-        evict = evict_marker if r.get("window_start", 0) > 0 else " "
-        pc    = path_color.get(r.get("path", "cold"), RESET)
-        warm  = r.get("checkpoint_bytes", 0) + r.get("dark_bytes", 0)
-        bpct  = r.get("budget_used_pct", 0)
+        # Support both TurnStats (Pydantic) and plain dicts (unbounded mode)
+        if isinstance(r, dict):
+            path = r.get("path", "?")
+            hot_bytes = r.get("hot_bytes", 0)
+            window_start = 0
+            warm = 0
+            window_size = r.get("total_tokens", 0)
+            token_id_bytes = r.get("total_tokens", 0) * 4
+            bpct = 0.0
+            tps = r.get("tok_per_sec", 0)
+        else:
+            mem = r.memory
+            path = r.path
+            hot_bytes = mem.hot_bytes
+            window_start = mem.window_start
+            warm = mem.checkpoint_bytes + mem.dark_bytes
+            window_size = mem.window_size
+            token_id_bytes = mem.token_id_bytes
+            bpct = mem.budget_used_pct
+            tps = r.tok_per_sec
+
+        evict = evict_marker if window_start > 0 else " "
+        pc = path_color.get(path, RESET)
         bpct_color = RED if bpct > 100 else (YELLOW if bpct > 85 else RESET)
 
-        hot_str = fmt_bytes(r.get("hot_bytes", r.get("kv_bytes", 0)))
-
-        print(f"  {i:>4}  "
-              f"{pc}{r.get('path','?'):>5}{RESET}  "
-              f"{r.get('window_size', r.get('total_tokens', 0)):>7,}  "
-              f"{hot_str:>9}  "
-              f"{fmt_bytes(warm):>9}  "
-              f"{fmt_bytes(r.get('token_id_bytes', r.get('total_tokens', 0)*4)):>8}  "
-              f"{evict}{bpct_color}{bpct:>5.1f}%{RESET}  "
-              f"{r.get('tok_per_sec', 0):>6.1f}")
+        print(
+            f"  {i:>4}  "
+            f"{pc}{path:>5}{RESET}  "
+            f"{window_size:>7,}  "
+            f"{fmt_bytes(hot_bytes):>9}  "
+            f"{fmt_bytes(warm):>9}  "
+            f"{fmt_bytes(token_id_bytes):>8}  "
+            f"{evict}{bpct_color}{bpct:>5.1f}%{RESET}  "
+            f"{tps:>6.1f}"
+        )
 
 
 def main():
@@ -249,8 +279,7 @@ def main():
     # Auto-budget: hold ~300 KV tokens if not specified
     if args.budget_mb is None:
         kv_bytes_per_tok_auto = (
-            2 * config.num_key_value_heads * config.head_dim * 2
-            * config.num_hidden_layers
+            2 * config.num_key_value_heads * config.head_dim * 2 * config.num_hidden_layers
         )
         budget_bytes = 300 * kv_bytes_per_tok_auto
         print(f"  Budget:    {fmt_bytes(budget_bytes)}  (auto: 300 KV tokens)")
@@ -263,42 +292,50 @@ def main():
     print(f"  Gen/turn:  {args.gen_tokens} tokens")
 
     kv_bytes_per_tok = (
-        2 * config.num_key_value_heads * config.head_dim * 2
-        * config.num_hidden_layers
+        2 * config.num_key_value_heads * config.head_dim * 2 * config.num_hidden_layers
     )
     rs_bytes_per_tok = config.hidden_size * 2 * config.num_hidden_layers
     res_ratio = rs_bytes_per_tok / kv_bytes_per_tok
 
-    print(f"\n  Bytes/token — KV: {fmt_bytes(kv_bytes_per_tok)}  "
-          f"RS: {fmt_bytes(rs_bytes_per_tok)}  "
-          f"(RS is {res_ratio:.2f}× {'larger' if res_ratio > 1 else 'smaller'})")
+    print(
+        f"\n  Bytes/token — KV: {fmt_bytes(kv_bytes_per_tok)}  "
+        f"RS: {fmt_bytes(rs_bytes_per_tok)}  "
+        f"(RS is {res_ratio:.2f}× {'larger' if res_ratio > 1 else 'smaller'})"
+    )
     print(f"  Max tokens in budget — RS: {budget_bytes // rs_bytes_per_tok}")
 
     # Build engines
     engine_rs = BoundedKVEngine(
-        std_model=std_model, rs_model=rs_model, config=config,
-        budget_bytes=budget_bytes, generation_mode="rs",
+        std_model=std_model,
+        rs_model=rs_model,
+        config=config,
+        budget_bytes=budget_bytes,
+        generation_mode="rs",
         checkpoint_interval=args.checkpoint_interval,
         dark_layers=args.dark_layers,
     )
     engine_kvd = BoundedKVEngine(
-        std_model=std_model, rs_model=rs_model, config=config,
-        budget_bytes=budget_bytes, generation_mode="kv_direct",
+        std_model=std_model,
+        rs_model=rs_model,
+        config=config,
+        budget_bytes=budget_bytes,
+        generation_mode="kv_direct",
         checkpoint_interval=args.checkpoint_interval,
         dark_layers=args.dark_layers,
     )
 
     # Synthetic conversation turns (same for all modes)
     turns = [
-        [((t * 7 + i * 13) % 8000) + 1
-         for i in range(args.tokens_per_turn + (t % 3) * 10)]
+        [((t * 7 + i * 13) % 8000) + 1 for i in range(args.tokens_per_turn + (t % 3) * 10)]
         for t in range(1, args.turns + 1)
     ]
 
     # Warm up
     print("\n  Warming up / compiling...")
     _w = mx.array([[1, 2, 3, 4, 5]])
-    _ = std_model(_w); _ = rs_model(_w); mx.eval()
+    _ = std_model(_w)
+    _ = rs_model(_w)
+    mx.eval()
     _l, _s = engine_rs._rs_gen.prefill(_w)
     mx.eval(_l)
     _l2, _s2 = engine_rs._rs_gen.step(mx.array([[6]]), _s, 5)
@@ -310,37 +347,46 @@ def main():
     print("  Done.\n")
 
     def _live_header():
-        print(f"  {'Turn':>4}  {'Path':>5}  {'Context':>8}  {'Window':>7}  {'Hot':>9}  {'Budget%':>7}  {'tok/s':>6}  {'t(s)':>5}")
+        print(
+            f"  {'Turn':>4}  {'Path':>5}  {'Context':>8}  {'Window':>7}  {'Hot':>9}  {'Budget%':>7}  {'tok/s':>6}  {'t(s)':>5}"
+        )
         print("  " + "─" * 66)
 
     def _live_row(i, stats):
-        path = stats.get("path", "?")
-        pc   = {"hot": CYAN, "warm": YELLOW, "cold": RED, "grow": GREEN, "full": CYAN}.get(path, RESET)
-        bpct = stats.get("budget_used_pct", 0)
-        bc   = RED if bpct > 100 else (YELLOW if bpct > 85 else RESET)
-        evict = "⚠" if stats.get("window_start", 0) > 0 else " "
-        total_s = stats.get("total_ms", 0) / 1000
-        print(f"  {i:>4}  {pc}{path:>5}{RESET}  "
-              f"{stats.get('total_tokens', 0):>8,}  "
-              f"{stats.get('window_size', 0):>7,}  "
-              f"{fmt_bytes(stats.get('hot_bytes', 0)):>9}  "
-              f"{evict}{bc}{bpct:>5.1f}%{RESET}  "
-              f"{stats.get('tok_per_sec', 0):>6.1f}  "
-              f"{total_s:>4.1f}s")
+        mem = stats.memory
+        path = stats.path
+        pc = {"hot": CYAN, "warm": YELLOW, "cold": RED, "grow": GREEN, "full": CYAN}.get(
+            path, RESET
+        )
+        bpct = mem.budget_used_pct
+        bc = RED if bpct > 100 else (YELLOW if bpct > 85 else RESET)
+        evict = "⚠" if mem.window_start > 0 else " "
+        total_s = stats.total_ms / 1000
+        print(
+            f"  {i:>4}  {pc}{path:>5}{RESET}  "
+            f"{mem.total_tokens:>8,}  "
+            f"{mem.window_size:>7,}  "
+            f"{fmt_bytes(mem.hot_bytes):>9}  "
+            f"{evict}{bc}{bpct:>5.1f}%{RESET}  "
+            f"{stats.tok_per_sec:>6.1f}  "
+            f"{total_s:>4.1f}s"
+        )
 
     # ── Mode 1: Unbounded KV ────────────────────────────────────────────
     print(f"\n{BOLD}{CYAN}Mode 1 — Unbounded KV cache{RESET}")
-    print(f"  Standard transformer inference. Every token ever processed is kept")
-    print(f"  as K,V tensors in GPU memory. No eviction. Memory grows without bound.")
-    print(f"  The baseline every production system runs today.\n")
+    print("  Standard transformer inference. Every token ever processed is kept")
+    print("  as K,V tensors in GPU memory. No eviction. Memory grows without bound.")
+    print("  The baseline every production system runs today.\n")
     unbounded_rows = run_unbounded_kv(std_model, turns, args.gen_tokens)
 
     # ── Mode 2: Bounded RS ──────────────────────────────────────────────
-    print(f"\n{BOLD}{YELLOW}Mode 2 — Bounded Residual Stream  (budget: {fmt_bytes(budget_bytes)}){RESET}")
-    print(f"  Stores the raw residual tensor at each layer instead of K,V.")
-    print(f"  K and V recomputed on-the-fly from stored residuals each step. O(S) matmuls.")
-    print(f"  Incremental: new turns extend stored residuals — no full re-prefill.")
-    print(f"  Window slides when budget is hit. Token IDs kept forever in cold tier.\n")
+    print(
+        f"\n{BOLD}{YELLOW}Mode 2 — Bounded Residual Stream  (budget: {fmt_bytes(budget_bytes)}){RESET}"
+    )
+    print("  Stores the raw residual tensor at each layer instead of K,V.")
+    print("  K and V recomputed on-the-fly from stored residuals each step. O(S) matmuls.")
+    print("  Incremental: new turns extend stored residuals — no full re-prefill.")
+    print("  Window slides when budget is hit. Token IDs kept forever in cold tier.\n")
     _live_header()
     state_rs = engine_rs.new_conversation()
     bounded_rs_rows = []
@@ -353,9 +399,9 @@ def main():
 
     # ── Mode 3: Bounded KV-direct ────────────────────────────────────────
     print(f"\n{BOLD}{GREEN}Mode 3 — Bounded KV-Direct  (budget: {fmt_bytes(budget_bytes)}){RESET}")
-    print(f"  Stores K,V directly after prefill. No recompute at step time.")
-    print(f"  Same memory as standard KV. Approaches standard KV speed.")
-    print(f"  Window slides in place (slice K,V arrays) — no rebuild on eviction.\n")
+    print("  Stores K,V directly after prefill. No recompute at step time.")
+    print("  Same memory as standard KV. Approaches standard KV speed.")
+    print("  Window slides in place (slice K,V arrays) — no rebuild on eviction.\n")
     _live_header()
     state_kvd = engine_kvd.new_conversation()
     bounded_kvd_rows = []
@@ -369,43 +415,46 @@ def main():
     # Display results
     print_turn_table(
         f"Unbounded KV  (no budget — grows to {fmt_bytes(unbounded_rows[-1]['hot_bytes'])})",
-        CYAN, unbounded_rows
+        CYAN,
+        unbounded_rows,
     )
     print_turn_table(
         f"Bounded RS    (budget={fmt_bytes(budget_bytes)}, K,V recomputed each step)",
-        YELLOW, bounded_rs_rows
+        YELLOW,
+        bounded_rs_rows,
     )
     print_turn_table(
         f"Bounded KVD   (budget={fmt_bytes(budget_bytes)}, K,V stored — no recompute)",
-        GREEN, bounded_kvd_rows
+        GREEN,
+        bounded_kvd_rows,
     )
 
     # Summary
     def avg_tps(rows):
-        return sum(r.get("tok_per_sec", 0) for r in rows) / len(rows)
+        return sum(r["tok_per_sec"] if isinstance(r, dict) else r.tok_per_sec for r in rows) / len(rows)
 
     peak_unbounded = unbounded_rows[-1]["hot_bytes"]
-    peak_rs        = max(r.get("hot_bytes", 0) for r in bounded_rs_rows)
-    peak_kvd       = max(r.get("hot_bytes", 0) for r in bounded_kvd_rows)
+    peak_rs = max(r.memory.hot_bytes for r in bounded_rs_rows)
+    peak_kvd = max(r.memory.hot_bytes for r in bounded_kvd_rows)
 
-    total_toks     = unbounded_rows[-1]["total_tokens"]
-    cold_bytes     = total_toks * 4
+    total_toks = unbounded_rows[-1]["total_tokens"]
+    cold_bytes = total_toks * 4
 
-    tps_kv  = avg_tps(unbounded_rows)
-    tps_rs  = avg_tps(bounded_rs_rows)
+    tps_kv = avg_tps(unbounded_rows)
+    tps_rs = avg_tps(bounded_rs_rows)
     tps_kvd = avg_tps(bounded_kvd_rows)
 
     print(f"""
 {BOLD}Summary{RESET}
 
-  {'Mode':>14}  {'Peak hot':>10}  {'Cold':>8}  {'Avg tok/s':>10}  {'vs KV':>6}  {'Budget'}
-  {'─'*68}
-  {'unbounded-kv':>14}  {fmt_bytes(peak_unbounded):>10}  {fmt_bytes(cold_bytes):>8}  {tps_kv:>9.1f}  {'1.00×':>6}  none
-  {'bounded-rs':>14}  {fmt_bytes(peak_rs):>10}  {fmt_bytes(cold_bytes):>8}  {tps_rs:>9.1f}  {tps_rs/tps_kv:>5.2f}×  {fmt_bytes(budget_bytes)}
-  {'bounded-kvd':>14}  {fmt_bytes(peak_kvd):>10}  {fmt_bytes(cold_bytes):>8}  {tps_kvd:>9.1f}  {tps_kvd/tps_kv:>5.2f}×  {fmt_bytes(budget_bytes)}
+  {"Mode":>14}  {"Peak hot":>10}  {"Cold":>8}  {"Avg tok/s":>10}  {"vs KV":>6}  {"Budget"}
+  {"─" * 68}
+  {"unbounded-kv":>14}  {fmt_bytes(peak_unbounded):>10}  {fmt_bytes(cold_bytes):>8}  {tps_kv:>9.1f}  {"1.00×":>6}  none
+  {"bounded-rs":>14}  {fmt_bytes(peak_rs):>10}  {fmt_bytes(cold_bytes):>8}  {tps_rs:>9.1f}  {tps_rs / tps_kv:>5.2f}×  {fmt_bytes(budget_bytes)}
+  {"bounded-kvd":>14}  {fmt_bytes(peak_kvd):>10}  {fmt_bytes(cold_bytes):>8}  {tps_kvd:>9.1f}  {tps_kvd / tps_kv:>5.2f}×  {fmt_bytes(budget_bytes)}
 
   Total conversation: {total_toks} tokens across {args.turns} turns.
-  Cold tier (token IDs): {fmt_bytes(cold_bytes)} — {peak_unbounded // max(cold_bytes,1):,}× smaller than unbounded KV.
+  Cold tier (token IDs): {fmt_bytes(cold_bytes)} — {peak_unbounded // max(cold_bytes, 1):,}× smaller than unbounded KV.
 
 {BOLD}The Markov principle{RESET}
 
@@ -418,7 +467,7 @@ def main():
 {BOLD}KV-direct result{RESET}
 
   Generation speed (this benchmark, {args.gen_tokens} tokens/turn):
-    KV-direct {tps_kvd/tps_rs:.2f}× faster than bounded-RS.
+    KV-direct {tps_kvd / tps_rs:.2f}× faster than bounded-RS.
     Both show overhead vs unbounded KV due to short generation windows
     (fixed per-turn extend cost amortises poorly over {args.gen_tokens} tokens).
     For longer generation windows, KV-direct matches standard KV speed.
@@ -431,7 +480,6 @@ def main():
 
   Next: rank-15 K compression — 21× KV storage reduction, no retraining required.
 """)
-
 
 
 if __name__ == "__main__":

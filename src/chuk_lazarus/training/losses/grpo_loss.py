@@ -19,21 +19,20 @@ Key benefits:
 - Works well with sparse rewards
 """
 
-from dataclasses import dataclass
-
 import mlx.core as mx
+from pydantic import BaseModel, ConfigDict, Field
 
 
-@dataclass
-class GRPOConfig:
+class GRPOConfig(BaseModel):
     """Configuration for GRPO training."""
 
-    group_size: int = 4  # Responses per prompt
-    clip_epsilon: float = 0.2  # PPO-style clipping
-    kl_coef: float = 0.1  # KL penalty coefficient
-    entropy_coef: float = 0.01  # Entropy bonus
-    normalize_advantages: bool = True  # Normalize within group
-    temperature: float = 1.0  # Sampling temperature
+    model_config = ConfigDict(frozen=True)
+    group_size: int = Field(default=4, ge=1, description="Responses per prompt")
+    clip_epsilon: float = Field(default=0.2, gt=0, le=1, description="PPO-style clipping")
+    kl_coef: float = Field(default=0.1, ge=0, description="KL penalty coefficient")
+    entropy_coef: float = Field(default=0.01, ge=0, description="Entropy bonus")
+    normalize_advantages: bool = Field(default=True, description="Normalize within group")
+    temperature: float = Field(default=1.0, gt=0, description="Sampling temperature")
 
 
 def grpo_loss(

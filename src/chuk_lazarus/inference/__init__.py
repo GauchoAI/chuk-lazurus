@@ -34,11 +34,54 @@ from .chat import (
     format_history,
 )
 
+# Context management — stateful inference engines and checkpoint libraries
+from .context import (
+    BoundedKVEngine,
+    Checkpoint,
+    CheckpointLibrary,
+    CheckpointMeta,
+    CheckpointStore,
+    CompiledRSGenerator,
+    ContextCheckpointFile,
+    ContextCheckpointStatus,
+    ConversationState,
+    EngineStats,
+    GemmaBackboneAdapter,
+    GemmaLayerAdapter,
+    # Mode 3: bounded engine
+    GenerationMode,
+    # KV checkpoint
+    KVCheckpoint,
+    # Generators
+    KVDirectGenerator,
+    KVGeneratorProtocol,
+    # Mode 4: unlimited context engine
+    KVStore,
+    # Checkpoint library format
+    LibraryFile,
+    LibraryFormatVersion,
+    LibraryManifest,
+    LibrarySource,
+    LlamaBackboneAdapter,
+    LlamaLayerAdapter,
+    MemoryReport,
+    # Protocols and adapters
+    ModelBackboneProtocol,
+    PathLabel,
+    TokenArchive,
+    TransformerLayerProtocol,
+    TurnStats,
+    UnlimitedContextEngine,
+    WindowMeta,
+    make_kv_generator,
+)
+
 # Generation utilities
 from .generation import (
     GenerationConfig,
     GenerationResult,
     GenerationStats,
+    StopReason,
     generate,
     generate_stream,
     get_stop_tokens,
@@ -63,23 +106,26 @@ from .unified import (
     UnifiedPipelineState,
 )
 
-# Virtual expert system for MoE and dense models
-from .virtual_expert import (
-    MathExpertPlugin,
-    SafeMathEvaluator,
-    VirtualDenseRouter,
-    VirtualDenseWrapper,
-    VirtualExpertAnalysis,
-    VirtualExpertApproach,
-    VirtualExpertPlugin,
-    VirtualExpertRegistry,
-    VirtualExpertResult,
-    VirtualMoEWrapper,
-    VirtualRouter,
-    create_virtual_dense_wrapper,
-    create_virtual_expert_wrapper,
-    get_default_registry,
-)
+# Virtual expert system for MoE and dense models (optional dependency)
+try:
+    from .virtual_expert import (
+        MathExpertPlugin,
+        SafeMathEvaluator,
+        VirtualDenseRouter,
+        VirtualDenseWrapper,
+        VirtualExpertAnalysis,
+        VirtualExpertApproach,
+        VirtualExpertPlugin,
+        VirtualExpertRegistry,
+        VirtualExpertResult,
+        VirtualMoEWrapper,
+        VirtualRouter,
+        create_virtual_dense_wrapper,
+        create_virtual_expert_wrapper,
+        get_default_registry,
+    )
+except ImportError:
+    pass
 
 __all__ = [
     # Loader
@@ -102,6 +148,7 @@ __all__ = [
     "GenerationConfig",
     "GenerationResult",
     "GenerationStats",
+    "StopReason",
     "generate",
     "generate_stream",
     "get_stop_tokens",
@@ -110,6 +157,44 @@ __all__ = [
     "UnifiedPipelineConfig",
     "UnifiedPipelineState",
     "IntrospectionResult",
+    # Context — protocols and adapters
+    "ModelBackboneProtocol",
+    "TransformerLayerProtocol",
+    "GemmaBackboneAdapter",
+    "GemmaLayerAdapter",
+    "LlamaBackboneAdapter",
+    "LlamaLayerAdapter",
+    # Context — generators
+    "KVDirectGenerator",
+    "make_kv_generator",
+    "CompiledRSGenerator",
+    # Context — bounded engine (Mode 3)
+    "GenerationMode",
+    "PathLabel",
+    "MemoryReport",
+    "TurnStats",
+    "Checkpoint",
+    "ConversationState",
+    "BoundedKVEngine",
+    # Context — unlimited engine (Mode 4)
+    "KVStore",
+    "KVGeneratorProtocol",
+    "LibrarySource",
+    "EngineStats",
+    "CheckpointStore",
+    "TokenArchive",
+    "UnlimitedContextEngine",
+    # Context — checkpoint library
+    "LibraryFile",
+    "LibraryFormatVersion",
+    "WindowMeta",
+    "LibraryManifest",
+    "CheckpointLibrary",
+    # Context — KV checkpoint
+    "CheckpointMeta",
+    "ContextCheckpointFile",
+    "ContextCheckpointStatus",
+    "KVCheckpoint",
     # Virtual Expert System (MoE)
     "VirtualExpertPlugin",
     "VirtualExpertRegistry",

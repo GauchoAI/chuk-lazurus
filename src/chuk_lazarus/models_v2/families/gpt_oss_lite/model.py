@@ -23,6 +23,7 @@ from ...backbones.base import Backbone, BackboneOutput
 from ...components.normalization import RMSNorm
 from ...core.registry import register_model
 from ...models.base import Model, ModelOutput
+from ..constants import HFArchitecture, HFModelType
 from .config import GptOssLiteConfig
 
 # =============================================================================
@@ -447,8 +448,11 @@ class GptOssLiteModel(Backbone):
 
 
 @register_model(
-    model_type="gpt_oss_lite",
-    architectures=["GptOssLiteForCausalLM", "GPTOSSLiteForCausalLM"],
+    model_type=HFModelType.GPT_OSS_LITE,
+    architectures=[
+        HFArchitecture.GPT_OSS_LITE_FOR_CAUSAL_LM,
+        HFArchitecture.GPT_OSS_LITE_FOR_CAUSAL_LM_ALT,
+    ],
 )
 class GptOssLiteForCausalLM(Model):
     """GPT-OSS-Lite for causal language modeling."""

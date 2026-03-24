@@ -28,7 +28,9 @@ examples/
 │   └── hero_doctor_demo.py     # ⭐ Hero Demo 1
 ├── inference/          # Text generation examples
 │   ├── basic_inference.py
-│   └── chat_inference.py
+│   ├── chat_inference.py
+│   ├── gemma_kv_direct.py       # KV-direct throughput benchmark
+│   └── gemma_kv_direct_live.py  # KV-direct live generation
 ├── training/           # Model training examples
 │   ├── sft_training.py
 │   ├── dpo_training.py
@@ -278,6 +280,18 @@ Features demonstrated:
   - `minimize_memory` - Reduce peak memory usage
 - Complete efficiency reports with recommendations
 - CLI equivalents: `lazarus data batching histogram`, `analyze`, `suggest`
+
+### KV-Direct Stateful Generation
+
+Stateful inference with explicit KV store management — sliding window eviction, multi-turn extend, memory accounting:
+
+```bash
+# Throughput benchmark: KV-direct vs residual-stream vs standard
+uv run python examples/inference/gemma_kv_direct.py --model google/gemma-3-270m-it
+
+# Live generation demo with real tokenizer
+uv run python examples/inference/gemma_kv_direct_live.py --model google/gemma-3-270m-it
+```
 
 ## Model Inference Examples
 

@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 from ...core.config import ModelConfig
-from ..constants import ConfigField, DefaultNormEps
+from ..constants import ConfigField, DefaultNormEps, HFModelType
 
 
 class GptOssLiteConfig(ModelConfig):
@@ -176,7 +176,7 @@ class GptOssLiteConfig(ModelConfig):
             GptOssLiteConfig instance
         """
         return cls(
-            model_type=hf_config.get(ConfigField.MODEL_TYPE.value, "gpt_oss_lite"),
+            model_type=hf_config.get(ConfigField.MODEL_TYPE.value, HFModelType.GPT_OSS_LITE.value),
             vocab_size=hf_config[ConfigField.VOCAB_SIZE.value],
             hidden_size=hf_config[ConfigField.HIDDEN_SIZE.value],
             num_hidden_layers=hf_config[ConfigField.NUM_HIDDEN_LAYERS.value],
@@ -193,25 +193,25 @@ class GptOssLiteConfig(ModelConfig):
             rope_theta=hf_config.get(ConfigField.ROPE_THETA.value, 150000.0),
             rms_norm_eps=hf_config.get(ConfigField.RMS_NORM_EPS.value, DefaultNormEps.LLAMA.value),
             # MoE config
-            num_local_experts=hf_config.get("num_local_experts", 16),
-            num_experts_per_tok=hf_config.get("num_experts_per_tok", 4),
+            num_local_experts=hf_config.get(ConfigField.NUM_LOCAL_EXPERTS.value, 16),
+            num_experts_per_tok=hf_config.get(ConfigField.NUM_EXPERTS_PER_TOK.value, 4),
             # Layer types
-            layer_types=hf_config.get("layer_types"),
+            layer_types=hf_config.get(ConfigField.LAYER_TYPES.value),
             sliding_window=hf_config.get(ConfigField.SLIDING_WINDOW.value, 128),
             # RoPE scaling
-            rope_scaling=hf_config.get("rope_scaling"),
+            rope_scaling=hf_config.get(ConfigField.ROPE_SCALING.value),
             # SwiGLU limit
-            swiglu_limit=hf_config.get("swiglu_limit", 7.0),
+            swiglu_limit=hf_config.get(ConfigField.SWIGLU_LIMIT.value, 7.0),
             # Attention bias
-            attention_bias=hf_config.get("attention_bias", True),
+            attention_bias=hf_config.get(ConfigField.ATTENTION_BIAS.value, True),
             # Token IDs
             tie_word_embeddings=hf_config.get(ConfigField.TIE_WORD_EMBEDDINGS.value, False),
             bos_token_id=hf_config.get(ConfigField.BOS_TOKEN_ID.value),
             eos_token_id=hf_config.get(ConfigField.EOS_TOKEN_ID.value, 200002),
             pad_token_id=hf_config.get(ConfigField.PAD_TOKEN_ID.value, 199999),
             # Lite-specific
-            source_model=hf_config.get("source_model", "openai/gpt-oss-20b"),
-            reduction_percent=hf_config.get("reduction_percent"),
-            original_experts=hf_config.get("original_experts", 768),
-            total_experts=hf_config.get("total_experts"),
+            source_model=hf_config.get(ConfigField.SOURCE_MODEL.value, "openai/gpt-oss-20b"),
+            reduction_percent=hf_config.get(ConfigField.REDUCTION_PERCENT.value),
+            original_experts=hf_config.get(ConfigField.ORIGINAL_EXPERTS.value, 768),
+            total_experts=hf_config.get(ConfigField.TOTAL_EXPERTS.value),
         )

@@ -302,10 +302,10 @@ class CounterfactualIntervention:
         wrappers and all interventions would silently be no-ops.
         """
         if hasattr(self.model, "model") and hasattr(self.model.model, "layers"):
-            self._layers = self.model.model.layers   # reference, NOT list()
+            self._layers = self.model.model.layers  # reference, NOT list()
             self._backbone = self.model.model
         elif hasattr(self.model, "layers"):
-            self._layers = self.model.layers          # reference, NOT list()
+            self._layers = self.model.layers  # reference, NOT list()
             self._backbone = self.model
         else:
             raise ValueError("Cannot detect model layer structure")

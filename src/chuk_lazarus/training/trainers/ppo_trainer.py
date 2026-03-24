@@ -10,13 +10,13 @@ This trainer handles:
 import logging
 import time
 from collections.abc import Iterator
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as optim
+from pydantic import Field
 
 from ...data import RolloutBuffer
 from ..base_trainer import BaseTrainer, BaseTrainerConfig
@@ -25,37 +25,33 @@ from ..losses.ppo_loss import PPOConfig, ppo_loss
 logger = logging.getLogger(__name__)
 
 
-@dataclass
 class PPOTrainerConfig(BaseTrainerConfig):
     """Configuration for PPO training."""
 
     # PPO hyperparameters
-    ppo: PPOConfig = field(default_factory=PPOConfig)
-
+    ppo: PPOConfig = Field(default_factory=PPOConfig, description="PPO loss configuration")
     # Rollout settings
-    rollout_steps: int = 2048  # Steps per rollout
-    num_envs: int = 1  # Parallel environments
-    gamma: float = 0.99  # Discount factor
-    gae_lambda: float = 0.95  # GAE lambda
-
+    rollout_steps: int = Field(default=2048, ge=1, description="Steps per rollout")
+    num_envs: int = Field(default=1, ge=1, description="Parallel environments")
+    gamma: float = Field(default=0.99, ge=0, le=1, description="Discount factor")
+    gae_lambda: float = Field(default=0.95, ge=0, le=1, description="GAE lambda")
     # Update settings
-    num_epochs_per_rollout: int = 4  # PPO epochs per rollout
-    batch_size: int = 64  # Minibatch size
-    learning_rate: float = 3e-4
-    weight_decay: float = 0.0
-
+    num_epochs_per_rollout: int = Field(default=4, ge=1, description="PPO epochs per rollout")
+    batch_size: int = Field(default=64, ge=1, description="Minibatch size")
+    learning_rate: float = Field(default=3e-4, gt=0, description="Learning rate")
+    weight_decay: float = Field(default=0.0, ge=0, description="Weight decay")
     # Training settings
-    total_timesteps: int = 1_000_000
-    warmup_steps: int = 0
-
+    total_timesteps: int = Field(default=1_000_000, ge=1, description="Total timesteps")
+    warmup_steps: int = Field(default=0, ge=0, description="Warmup steps")
     # Logging and checkpoints
-    log_interval: int = 1  # Log every N rollouts
-    checkpoint_interval: int = 10  # Checkpoint every N rollouts
-    checkpoint_dir: str = "./checkpoints/ppo"
-
+    log_interval: int = Field(default=1, ge=1, description="Log every N rollouts")
+    checkpoint_interval: int = Field(default=10, ge=1, description="Checkpoint every N rollouts")
+    checkpoint_dir: str = Field(default="./checkpoints/ppo", description="Checkpoint directory")
     # Early stopping
-    max_steps: int | None = None
-    target_reward: float | None = None
+    max_steps: int | None = Field(default=None, description="Maximum training steps")
+    target_reward: float | None = Field(
+        default=None, description="Target reward for early stopping"
+    )
 
 
 class PPOTrainer(BaseTrainer):

@@ -1,0 +1,82 @@
+<start_of_turn>user
+The following is a keyword index extracted from a long document. Use it to answer the question.
+
+Index:
+W0: Capsule, Two, NET, VOICE, AIR, GROUND, Voice
+
+Trans, Unidentifiable
+W1: Inboard, NET, Thrust, Page, Yes, GO, Charlie, Tower
+W2: Inboard, Starting, CD, Bruce, IVB, MARK, Your, YOU
+W3: Understand, SECO, Shutdown, These, GO, GOGS, GRAND, Ignition
+W4: NET, LOS, Reading, 103, AOS, GU, COMM, CEE
+W5: NET, Beautiful, All, VHF, Page, LOS, CAHNARVON, 103.0
+W6: Would, Say, LOS, Glenn, Yes, Parker
+
+Tell, LM, AOS
+W7: NET, VOICE, Page, LOS, OF, APOLLO, Reading, HSK
+W8: Apollo
+Over, REV, FM, Just, Which, TEXAS, Goldstone, LOS
+W9: NET, 63481, FM, NA, PAD, Read, TLI, 153
+W10: NET, 6485, Have, AUX, Tape, Here, RCS, GOSS
+W11: Sequence, GO, PAD, Read, VANGUARD, TLI, REV, 071
+W12: NET, Page, LOS, CANARY, BLOCK, Apollo
+Out, About, Looks
+W13: NET, They, COMM, LOS, Thank, PRIMARY, TECH, Tananarive
+W14: NET, Page, Think, Reading, CAP, Goddard, AOS, Monitor
+W15: NET, They, VHF, One, Page, Should, Tape, Very
+W16: NET, Beautiful, Ignition, Page, Trajectory, Tape, CDL, Out
+W17: Saturn, Page, Hey, That
+
+And, Out, Tape, Separation, EMS
+W18: VOICE, NET, All, Page, OF, AIR, Separation, GROUND
+W19: Tape
+Page, Request, Just, Apollo
+Ore, Out, SEP, GO, GOSS
+W20: Understand, CD, Just, Apollo
+Ore, AUTO, Loud, Radio, Buzz
+W21: NET, Could, Apollo
+
+Neil, MANUAI, Page, Tape, ATTITUDE, ACCEL
+W22: Page, DSKY, 4.4, LM, 100, During, COMMAND, And Houston
+W23: LM, Captain, 450, Yes, 4.4, What, Wtiat, 4.5
+W24: Thornfield: Voss Institute, Greenland, crystallized helium resonance, 2019
+W25: 63481, All, NA, Cuba, Alaska, GO, PAD, Yucatan Peninsula
+W26: All, Readback, NA, 290, 00190, Loud, Your, Evasive
+W27: NET, Page, RESS, CRYO, Tape, Right, Out, NO
+W28: VOICE, Could, NET, Page, OF, APOLLO, OFF, TRANSCRIPTION
+W29: NET, Tape
+Page, 357.5, 002.5, Just, Thank, Yes, Ready
+W30: NET, That
+
+Apollo, Say, Well, IVB, OO, Right, 346.5
+W31: There, Greenland, Ail North Atlantic, LM, From, CNV, North Atlantic, Athabaska
+W32: 354.0, Little, Thank, Tape, 019.5, Ullage, Stand, 307.0
+W33: NET, They, Tape
+Page, Ore, CRYO, IVB, Out, GOSS
+W34: LM/CM, NET, DP, FF, With, Thank, Out, Tape
+W35: VENT, Mueller, CM, Bruce, CD, 0.2, Waste, California
+W36: Mueller, They, SNET, Leave, Cape, Tape, Thank, Yes
+W37: NET, Could, Oka, Page, Tape, Wait, Did, Sure
+W38: NET, 01344, OF, COM, Yes, Read, TLI, END
+W39: VOICE, NET, Understand, AIR, Hey, APOLLO, Charlie, GHOUND
+W40: Guidance, NET, Page, Tape, Thank, DSKY, ALARM, DELTA
+W41: NET, Tape
+Page, Just, DSKY, Did, Will, Your, Here
+W42: NET, Thank, Why, Rogur, Charlie, Stand, Tape
+Page
+Stand, Another
+
+Stand
+W43: Understand, 130, Just, AUTO, These, Your, 340.0, Charlie
+W44: NET, Could, Tape
+Page, Yes, GOSS, Stand, 130.7, NOUN
+W45: There, Could, Understand, NET, Yes, Charlie, Forty, TLI
+W46: NET, Tape
+Page, Same, Just, Because, 1978, DSKY, 1285
+W47: VOICE, NET, 128.5, Page, OF, Those, However, APOLLO
+W48: Fine, NET, But, Tape
+Page, Ove, Charlie, Stand, GOSS
+
+Question: Where did Professor Thornfield discover the resonance pattern?
+<end_of_turn>
+<start_of_turn>model

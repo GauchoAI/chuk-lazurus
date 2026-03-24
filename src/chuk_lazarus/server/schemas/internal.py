@@ -22,7 +22,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-
 # ── Enumerations ──────────────────────────────────────────────────────────────
 
 
@@ -104,8 +103,8 @@ class InternalMessage(BaseModel):
 
     role: MessageRole
     content: str | None = None
-    name: str | None = None            # tool function name (role=TOOL)
-    tool_call_id: str | None = None    # which tool call this result answers
+    name: str | None = None  # tool function name (role=TOOL)
+    tool_call_id: str | None = None  # which tool call this result answers
     tool_calls: list[ToolCall] | None = None  # set by assistant when calling tools
 
 
@@ -139,7 +138,7 @@ class InternalUsage(BaseModel):
 class InternalResponse(BaseModel):
     """Complete (non-streaming) generation result."""
 
-    content: str | None       # None when the response is a tool call
+    content: str | None  # None when the response is a tool call
     model: str
     finish_reason: FinishReason
     usage: InternalUsage
