@@ -29,6 +29,7 @@ import mlx.core as mx
 import numpy as np
 
 from .build import _select_targets
+from .cosine_router import build_window_embedding, load_embeddings, save_embeddings
 from .config import ArchitectureConfig
 from .route import SparseKeywordIndex, TFIDFRouter, extract_window_keywords
 from .store import (
@@ -303,6 +304,9 @@ def append_skill(
     boundary_residual = base_state  # Start from base state
     sparse_index = SparseKeywordIndex()
 
+    # Load existing embeddings for cosine router
+    embeddings = load_embeddings(store_path)
+
     for i, (wid, chunk_ids) in enumerate(new_windows):
         # Forward pass through crystal layer
         w_ids = mx.array(chunk_ids)[None]
@@ -326,6 +330,9 @@ def append_skill(
         mx.eval(stream)
         stream_np = np.array(stream.tolist(), dtype=np.float16)
         np.save(str(res_dir / f"window_{wid:03d}.npy"), stream_np)
+
+        # Build cosine router embedding (mean-pooled, normalized)
+        embeddings[wid] = build_window_embedding(stream)
 
         del h, stream
 
@@ -430,9 +437,10 @@ def append_skill(
         br_np = np.array(boundary_residual[0, 0, :].tolist(), dtype=np.float32)
         np.save(str(store_path / BOUNDARY_RESIDUAL_FILE), br_np)
 
-    # ── Step 8: Save updated index ────────────────────────────────────
+    # ── Step 8: Save updated index + embeddings ────────────────────────
     _progress("saving_index", 0.95)
     save_index(store_path, index, config)
+    save_embeddings(embeddings, store_path)
 
     # ── Phase 4: Memory cleanup ───────────────────────────────────────
     del boundary_residual, base_state

@@ -24,6 +24,7 @@ import mlx.core as mx
 import numpy as np
 
 from .config import ArchitectureConfig
+from .cosine_router import CosineRouter, build_query_embedding, load_embeddings
 from .route import KeywordRouter, TFIDFRouter
 
 # ── File constants ───────────────────────────────────────────────────
@@ -152,6 +153,7 @@ class KnowledgeStore:
     # Cached routers (built lazily)
     _tfidf_router: TFIDFRouter | None = field(default=None, repr=False)
     _keyword_router: KeywordRouter | None = field(default=None, repr=False)
+    _cosine_router: CosineRouter | None = field(default=None, repr=False)
 
     # ── Routing ───────────────────────────────────────────────────────
 
@@ -364,6 +366,35 @@ class KnowledgeStore:
                 ids = tokenizer.encode(variant, add_special_tokens=False)
                 stopword_ids.update(ids)
         return stopword_ids
+
+    def route_cosine(
+        self,
+        query_text: str,
+        tokenizer,
+        kv_gen,
+        k: int = 3,
+    ) -> list[int]:
+        """Route via cosine similarity — no expansion needed.
+
+        Embeds the query through prefill_to_layer, then computes cosine
+        similarity against pre-computed window embeddings. <1ms routing.
+        """
+        router = self._get_cosine_router()
+        if router.matrix is None:
+            return []
+        query_emb = build_query_embedding(
+            kv_gen, tokenizer, query_text, self.config.crystal_layer
+        )
+        return router.route_window_ids(query_emb, top_k=k)
+
+    def _get_cosine_router(self) -> CosineRouter:
+        if self._cosine_router is None:
+            if self._store_path:
+                embeddings = load_embeddings(self._store_path)
+            else:
+                embeddings = {}
+            self._cosine_router = CosineRouter(embeddings)
+        return self._cosine_router
 
     def _get_keyword_router(self) -> KeywordRouter:
         if self._keyword_router is None:
@@ -687,6 +718,7 @@ class KnowledgeStore:
         # Invalidate cached routers so they rebuild with new data
         self._tfidf_router = None
         self._keyword_router = None
+        self._cosine_router = None
 
     def log_stats(self, file=sys.stderr) -> None:
         entry_bytes = len(self.entries) * 14  # 14 bytes per entry (position_in_window is uint16)
