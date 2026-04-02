@@ -217,29 +217,36 @@ class KnowledgeStore:
         if not isinstance(base_result, list):
             base_result = [base_result] if base_result is not None else []
 
-        if not expansion_ids or len(base_result) >= k:
+        if not expansion_ids:
             return base_result[:k]
 
-        # Expanded routing — fill remaining slots
-        # Filter stopwords from expansion too
+        # Weighted routing: score each window as base_score + 0.5 * expansion_score.
+        # This lets expansion rescue zero-overlap queries (weather → "weather", "forecast")
+        # while keeping base signal dominant when it has a clear match (sql → "database").
         stopwords = router.stopword_ids
-        useful = [t for t in expansion_ids if self.idf.get(t, 0.0) > 0 and t not in stopwords]
-        if useful:
-            expanded_ids = query_ids + useful
-            exp_result = router.route(expanded_ids, top_k=k)
-            if not isinstance(exp_result, list):
-                exp_result = [exp_result] if exp_result is not None else []
+        base_set = set(query_ids) - stopwords
+        exp_set = {t for t in expansion_ids if self.idf.get(t, 0.0) > 0 and t not in stopwords}
+        exp_only = exp_set - base_set  # expansion tokens not already in query
 
-            # Merge: base first, then expansion fills gaps
-            seen = set(base_result)
-            merged = list(base_result)
-            for wid in exp_result:
-                if wid not in seen and len(merged) < k:
-                    merged.append(wid)
-                    seen.add(wid)
-            return merged
+        if not exp_only:
+            return base_result[:k]
 
-        return base_result[:k]
+        scored: list[tuple[float, int]] = []
+        for wid, tokens in self.window_tokens.items():
+            base_score = sum(self.idf.get(t, 0.0) for t in base_set & tokens)
+            exp_score = sum(self.idf.get(t, 0.0) for t in exp_only & tokens)
+            total = base_score + 0.3 * exp_score
+            if total > 0:
+                scored.append((total, wid))
+
+        if not scored:
+            return base_result[:k]
+
+        scored.sort(reverse=True)
+        top_score = scored[0][0]
+        threshold = top_score * 0.5
+        result = [wid for s, wid in scored if s >= threshold]
+        return result[:k]
 
     @staticmethod
     def _expand_query(
@@ -260,7 +267,8 @@ class KnowledgeStore:
         from ._sampling import sample_token
 
         prompt = (
-            f"Q: {query_text}\nA: The specific distinctive words and phrases from this event are:"
+            f'User query: "{query_text}"\n'
+            f"List synonyms and related technical terms for this query, one per line:\n1."
         )
         prompt_ids = tokenizer.encode(prompt, add_special_tokens=True)
         prompt_mx = mx.array(prompt_ids)[None]
