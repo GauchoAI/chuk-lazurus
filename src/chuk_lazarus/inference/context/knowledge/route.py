@@ -103,9 +103,11 @@ class TFIDFRouter:
         self,
         window_tokens: dict[int, set[int]],
         idf: dict[int, float],
+        stopword_ids: set[int] | None = None,
     ) -> None:
         self.window_tokens = window_tokens
         self.idf = idf
+        self.stopword_ids = stopword_ids or set()
 
     def route(self, query_token_ids: list[int], top_k: int = 1) -> int | list[int] | None:
         """Return the top window_id(s) by TF-IDF overlap score.
@@ -117,7 +119,7 @@ class TFIDFRouter:
         """
         if not self.window_tokens:
             return None if top_k == 1 else []
-        query_set = set(query_token_ids)
+        query_set = set(query_token_ids) - self.stopword_ids
         scored: list[tuple[float, int]] = []
         for wid, tokens in self.window_tokens.items():
             overlap = query_set & tokens
@@ -141,7 +143,7 @@ class TFIDFRouter:
         """Return (window_id, score) for best match."""
         if not self.window_tokens:
             return None, 0.0
-        query_set = set(query_token_ids)
+        query_set = set(query_token_ids) - self.stopword_ids
         best_wid: int | None = None
         best_score: float = 0.0
         for wid, tokens in self.window_tokens.items():

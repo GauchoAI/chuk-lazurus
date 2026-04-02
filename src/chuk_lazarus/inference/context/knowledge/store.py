@@ -187,7 +187,7 @@ class KnowledgeStore:
         if method == "tfidf":
             if tokenizer is None:
                 raise ValueError("TF-IDF routing requires a tokenizer")
-            router = self._get_tfidf_router()
+            router = self._get_tfidf_router(tokenizer)
             query_ids = tokenizer.encode(query_text, add_special_tokens=False)
             return router.route_with_score(query_ids)
         # keyword doesn't have a meaningful score
@@ -209,7 +209,7 @@ class KnowledgeStore:
         the base query misses (vocabulary gap) but can't overwrite
         good base matches.
         """
-        router = self._get_tfidf_router()
+        router = self._get_tfidf_router(tokenizer)
         query_ids = tokenizer.encode(query_text, add_special_tokens=False)
 
         # Base routing
@@ -221,7 +221,9 @@ class KnowledgeStore:
             return base_result[:k]
 
         # Expanded routing — fill remaining slots
-        useful = [t for t in expansion_ids if self.idf.get(t, 0.0) > 0]
+        # Filter stopwords from expansion too
+        stopwords = router.stopword_ids
+        useful = [t for t in expansion_ids if self.idf.get(t, 0.0) > 0 and t not in stopwords]
         if useful:
             expanded_ids = query_ids + useful
             exp_result = router.route(expanded_ids, top_k=k)
@@ -288,7 +290,7 @@ class KnowledgeStore:
         return expansion
 
     def _route_tfidf(self, query_text: str, tokenizer) -> int | None:
-        router = self._get_tfidf_router()
+        router = self._get_tfidf_router(tokenizer)
         query_ids = tokenizer.encode(query_text, add_special_tokens=False)
         return router.route(query_ids)
 
@@ -296,10 +298,25 @@ class KnowledgeStore:
         router = self._get_keyword_router()
         return router.route(query_text)
 
-    def _get_tfidf_router(self) -> TFIDFRouter:
+    def _get_tfidf_router(self, tokenizer=None) -> TFIDFRouter:
         if self._tfidf_router is None:
-            self._tfidf_router = TFIDFRouter(self.window_tokens, self.idf)
+            stopword_ids = set()
+            if tokenizer is not None:
+                stopword_ids = self._build_stopword_ids(tokenizer)
+            self._tfidf_router = TFIDFRouter(self.window_tokens, self.idf, stopword_ids)
         return self._tfidf_router
+
+    @staticmethod
+    def _build_stopword_ids(tokenizer) -> set[int]:
+        """Build a set of token IDs for common stopwords."""
+        from ..research._stopwords import FUNCTION_WORDS
+
+        stopword_ids: set[int] = set()
+        for word in FUNCTION_WORDS:
+            for variant in [word, f" {word}", word.capitalize(), f" {word.capitalize()}"]:
+                ids = tokenizer.encode(variant, add_special_tokens=False)
+                stopword_ids.update(ids)
+        return stopword_ids
 
     def _get_keyword_router(self) -> KeywordRouter:
         if self._keyword_router is None:
