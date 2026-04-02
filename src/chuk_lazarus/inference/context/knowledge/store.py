@@ -220,32 +220,71 @@ class KnowledgeStore:
         if not expansion_ids:
             return base_result[:k]
 
-        # Weighted routing: score each window as base_score + 0.5 * expansion_score.
-        # This lets expansion rescue zero-overlap queries (weather → "weather", "forecast")
-        # while keeping base signal dominant when it has a clear match (sql → "database").
+        # Two-pass weighted routing with disambiguation.
+        #
+        # Pass 1: Score each window as base_score + 0.3 * expansion_score.
+        # Pass 2: For expansion tokens shared across top candidates, only the
+        #         window with the highest base_score (confidence) keeps them.
+        #         This resolves ambiguity without extra LLM calls.
         stopwords = router.stopword_ids
         base_set = set(query_ids) - stopwords
         exp_set = {t for t in expansion_ids if self.idf.get(t, 0.0) > 0 and t not in stopwords}
-        exp_only = exp_set - base_set  # expansion tokens not already in query
+        exp_only = exp_set - base_set
 
         if not exp_only:
             return base_result[:k]
 
-        scored: list[tuple[float, int]] = []
+        # Pass 1: initial scoring
+        window_scores: dict[int, tuple[float, float]] = {}  # wid → (base, exp)
         for wid, tokens in self.window_tokens.items():
             base_score = sum(self.idf.get(t, 0.0) for t in base_set & tokens)
             exp_score = sum(self.idf.get(t, 0.0) for t in exp_only & tokens)
-            total = base_score + 0.3 * exp_score
-            if total > 0:
-                scored.append((total, wid))
+            if base_score > 0 or exp_score > 0:
+                window_scores[wid] = (base_score, exp_score)
 
-        if not scored:
+        if not window_scores:
             return base_result[:k]
 
-        scored.sort(reverse=True)
-        top_score = scored[0][0]
+        # Find top candidates (2x k to have enough for disambiguation)
+        initial = sorted(window_scores.items(),
+                         key=lambda x: x[1][0] + 0.3 * x[1][1], reverse=True)
+        candidates = [wid for wid, _ in initial[:k * 2]]
+
+        # Pass 2: disambiguate shared expansion tokens
+        # For each expansion token, find which candidate windows contain it.
+        # If it appears in multiple candidates, only the one with the highest
+        # base_score keeps it — the others surrender it.
+        token_owner: dict[int, int] = {}  # token_id → winning wid
+        for t in exp_only:
+            contenders = []
+            for wid in candidates:
+                if t in self.window_tokens.get(wid, set()):
+                    base_s = window_scores[wid][0]
+                    contenders.append((base_s, wid))
+            if contenders:
+                # Highest base score wins. Ties broken by IDF relevance of
+                # this token within the window (lower wid as tiebreaker).
+                contenders.sort(key=lambda x: (-x[0], x[1]))
+                token_owner[t] = contenders[0][1]
+
+        # Re-score candidates with disambiguated expansion
+        final_scored: list[tuple[float, int]] = []
+        for wid in candidates:
+            base_s, _ = window_scores[wid]
+            # Only count expansion tokens this window "owns"
+            owned_exp = sum(self.idf.get(t, 0.0) for t, owner in token_owner.items()
+                           if owner == wid)
+            total = base_s + 0.3 * owned_exp
+            if total > 0:
+                final_scored.append((total, wid))
+
+        if not final_scored:
+            return base_result[:k]
+
+        final_scored.sort(reverse=True)
+        top_score = final_scored[0][0]
         threshold = top_score * 0.5
-        result = [wid for s, wid in scored if s >= threshold]
+        result = [wid for s, wid in final_scored if s >= threshold]
         return result[:k]
 
     @staticmethod
