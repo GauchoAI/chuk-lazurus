@@ -1,5 +1,6 @@
 """Knowledge store — the production path for document understanding."""
 
+from .append import append_skill, build_base_state, load_base_state, load_index, save_index
 from .build import streaming_prefill
 from .config import ArchitectureConfig, ArchitectureNotCalibrated
 from .inject import (

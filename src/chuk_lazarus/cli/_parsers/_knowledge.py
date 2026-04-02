@@ -115,6 +115,39 @@ def register_knowledge_parsers(subparsers):
     )
     kn_chat.set_defaults(func=lambda args: asyncio.run(_run_chat(args)))
 
+    # knowledge init
+    kn_init = kn_subparsers.add_parser(
+        "init",
+        help="Initialize a store with a base state from a system prompt",
+    )
+    kn_init.add_argument("--model", "-m", required=True, help="Model ID or local path")
+    kn_init.add_argument("--input", "-i", required=True, help="System prompt text file")
+    kn_init.add_argument("--output", "-o", required=True, help="Output knowledge store directory")
+    kn_init.set_defaults(func=lambda args: asyncio.run(_run_init(args)))
+
+    # knowledge append
+    kn_append = kn_subparsers.add_parser(
+        "append",
+        help="Append a skill/document to an existing knowledge store",
+    )
+    kn_append.add_argument("--model", "-m", required=True, help="Model ID or local path")
+    kn_append.add_argument("--store", "-s", required=True, help="Knowledge store directory")
+    kn_append.add_argument("--input", "-i", required=True, help="New Markdown/text file to append")
+    kn_append.add_argument(
+        "--json-log",
+        default=None,
+        dest="json_log",
+        help="Write structured JSONL events to this file",
+    )
+    kn_append.add_argument(
+        "--metrics-port",
+        type=int,
+        default=None,
+        dest="metrics_port",
+        help="Expose Prometheus metrics on this port (e.g. 9090)",
+    )
+    kn_append.set_defaults(func=lambda args: asyncio.run(_run_append(args)))
+
 
 async def _run_build(args):
     from ..commands.knowledge import knowledge_build_cmd
@@ -132,3 +165,15 @@ async def _run_chat(args):
     from ..commands.knowledge import knowledge_chat_cmd
 
     await knowledge_chat_cmd(args)
+
+
+async def _run_init(args):
+    from ..commands.knowledge import knowledge_init_cmd
+
+    await knowledge_init_cmd(args)
+
+
+async def _run_append(args):
+    from ..commands.knowledge import knowledge_append_cmd
+
+    await knowledge_append_cmd(args)

@@ -47,6 +47,8 @@ async def knowledge_query_cmd(args: Namespace) -> None:
 
     print(f"Loading knowledge store: {store_path}", file=sys.stderr)
     store = KnowledgeStore.load(store_path)
+    # Re-read index from disk to pick up any dynamically appended skills
+    store.reload_index()
     store.log_stats()
 
     prompt_ids = prepare_prompt(tokenizer, args.prompt)

@@ -577,6 +577,53 @@ class KnowledgeStore:
         store._store_path = path
         return store
 
+    def reload_index(self) -> None:
+        """Re-read the index from disk, picking up any appended skills.
+
+        This is cheap (~1ms for a ~500KB index on SSD) and should be called
+        before every query in a daemon/agentic loop to see newly appended
+        skills without restarting the model.
+        """
+        if self._store_path is None:
+            return
+
+        path = self._store_path
+
+        # Window tokens
+        if (path / WINDOW_TOKENS_FILE).exists():
+            wt_npz = np.load(str(path / WINDOW_TOKENS_FILE), allow_pickle=False)
+            self.window_tokens = {int(k): {int(t) for t in wt_npz[k]} for k in wt_npz.files}
+
+        # Window token lists
+        if (path / WINDOW_TOKEN_LISTS_FILE).exists():
+            wtl_npz = np.load(str(path / WINDOW_TOKEN_LISTS_FILE), allow_pickle=False)
+            self.window_token_lists = {int(k): [int(t) for t in wtl_npz[k]] for k in wtl_npz.files}
+
+        # IDF
+        if (path / IDF_FILE).exists():
+            idf_raw = json.loads((path / IDF_FILE).read_text())
+            self.idf = {int(k): float(v) for k, v in idf_raw.items()}
+
+        # Keywords
+        if (path / KEYWORDS_FILE).exists():
+            kw_raw = json.loads((path / KEYWORDS_FILE).read_text())
+            self.keywords = {int(k): v for k, v in kw_raw.items()}
+
+        # Entries
+        if (path / ENTRIES_FILE).exists():
+            npz = np.load(str(path / ENTRIES_FILE), allow_pickle=False)
+            self.entries = _numpy_to_entries(npz["entries"]) if len(npz["entries"]) > 0 else []
+
+        # Manifest (update num_windows/num_tokens)
+        if (path / MANIFEST_FILE).exists():
+            manifest = json.loads((path / MANIFEST_FILE).read_text())
+            self.num_windows = manifest.get("num_windows", self.num_windows)
+            self.num_tokens = manifest.get("num_tokens", self.num_tokens)
+
+        # Invalidate cached routers so they rebuild with new data
+        self._tfidf_router = None
+        self._keyword_router = None
+
     def log_stats(self, file=sys.stderr) -> None:
         entry_bytes = len(self.entries) * 14  # 14 bytes per entry (position_in_window is uint16)
         wt_bytes = sum(len(t) * 2 for t in self.window_tokens.values())

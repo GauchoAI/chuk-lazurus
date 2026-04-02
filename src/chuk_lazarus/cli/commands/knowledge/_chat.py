@@ -44,6 +44,9 @@ async def knowledge_chat_cmd(args: Namespace) -> None:
         if not prompt_text.strip():
             continue
 
+        # Re-read index from disk to pick up any dynamically appended skills
+        store.reload_index()
+
         prompt_ids = prepare_prompt(tokenizer, prompt_text)
         window_id = store.route(prompt_text, tokenizer=tokenizer)
 
