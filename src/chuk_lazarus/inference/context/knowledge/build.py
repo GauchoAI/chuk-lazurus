@@ -33,6 +33,7 @@ def streaming_prefill(
     config: ArchitectureConfig,
     tokenizer=None,
     progress_fn: Callable[[int, int], None] | None = None,
+    progress_pass3_fn: Callable[[int, int], None] | None = None,
 ) -> KnowledgeStore:
     """Build a knowledge store from a document.  Three-pass.
 
@@ -42,7 +43,8 @@ def streaming_prefill(
     document_tokens : Full document as token IDs.
     config          : ArchitectureConfig with crystal_layer, window_size, etc.
     tokenizer       : Required for donor prompt construction and keywords.
-    progress_fn     : Optional callback(window_id, num_windows).
+    progress_fn     : Optional callback(window_id, num_windows) for Pass 2.
+    progress_pass3_fn : Optional callback(window_id, num_windows) for Pass 3.
 
     Returns
     -------
@@ -154,6 +156,9 @@ def streaming_prefill(
                     mx.array([[token]]), kv_store, seq_len=seq_len
                 )
                 seq_len += 1
+
+            if progress_pass3_fn:
+                progress_pass3_fn(wid, num_windows)
 
         # Recompute IDF with expanded token sets
         idf = TFIDFRouter.compute_idf(window_tokens)

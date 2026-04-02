@@ -40,6 +40,19 @@ def register_knowledge_parsers(subparsers):
         dest="max_tokens",
         help="Truncate input to at most N tokens",
     )
+    kn_build.add_argument(
+        "--json-log",
+        default=None,
+        dest="json_log",
+        help="Write structured JSONL events to this file",
+    )
+    kn_build.add_argument(
+        "--metrics-port",
+        type=int,
+        default=None,
+        dest="metrics_port",
+        help="Expose Prometheus metrics on this port (e.g. 9090)",
+    )
     kn_build.set_defaults(func=lambda args: asyncio.run(_run_build(args)))
 
     # knowledge query
@@ -71,6 +84,12 @@ def register_knowledge_parsers(subparsers):
         default=3,
         dest="top_k",
         help="Number of windows for context (default: 3, adaptive)",
+    )
+    kn_query.add_argument(
+        "--json-log",
+        default=None,
+        dest="json_log",
+        help="Write structured JSONL events to this file",
     )
     kn_query.set_defaults(func=lambda args: asyncio.run(_run_query(args)))
 

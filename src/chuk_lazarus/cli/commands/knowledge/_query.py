@@ -18,6 +18,9 @@ async def knowledge_query_cmd(args: Namespace) -> None:
     import mlx.core as mx
 
     from ._common import generate_plain, load_model, prepare_prompt, stop_token_ids
+    from ._metrics import JsonLogger
+
+    json_log = JsonLogger(args.json_log) if getattr(args, "json_log", None) else None
 
     _, kv_gen, tokenizer = load_model(args.model)
 
@@ -30,6 +33,9 @@ async def knowledge_query_cmd(args: Namespace) -> None:
         output = tokenizer.decode(generated, skip_special_tokens=True)
         sys.stdout.write(output + "\n")
         sys.stdout.flush()
+        if json_log:
+            json_log.event("query_plain", prompt=args.prompt, tokens_generated=len(generated))
+            json_log.close()
         return
 
     from ....inference.context.knowledge import KnowledgeStore
@@ -63,6 +69,11 @@ async def knowledge_query_cmd(args: Namespace) -> None:
         file=sys.stderr,
     )
 
+    if json_log:
+        json_log.event("query_start", prompt=args.prompt,
+                       expansion_words=expansion_words[:15],
+                       expansion_ms=round(expand_ms, 1))
+
     window_ids = store.route_top_k(
         args.prompt,
         tokenizer,
@@ -73,9 +84,14 @@ async def knowledge_query_cmd(args: Namespace) -> None:
     if not window_ids:
         print("  No matching windows — generating plain.", file=sys.stderr)
         generated = generate_plain(kv_gen, prompt_ids, args.max_tokens, stop_ids)
+        if json_log:
+            json_log.event("query_fallback", reason="no_matching_windows")
     else:
         route_ms = (time.monotonic() - t0) * 1000
         print(f"  Routed to windows {window_ids} ({route_ms:.1f} ms)", file=sys.stderr)
+
+        if json_log:
+            json_log.event("routed", window_ids=window_ids, route_ms=round(route_ms, 1))
 
         # Reconstruct: decode window tokens, chat-template with query,
         # prefill with boundary as initial_residual
@@ -145,6 +161,11 @@ async def knowledge_query_cmd(args: Namespace) -> None:
             mx.eval(logits)
             seq_len = ctx_mx.shape[1]
 
+        prefill_ms = (time.monotonic() - t0) * 1000
+        if json_log:
+            json_log.event("prefill_done", mode=mode, ctx_tokens=ctx_tokens,
+                           prefill_ms=round(prefill_ms, 1))
+
         # Generate
         generated = []
         for _ in range(args.max_tokens):
@@ -164,7 +185,15 @@ async def knowledge_query_cmd(args: Namespace) -> None:
         gen_ms = (time.monotonic() - t0) * 1000
         print(f"  Generated {len(generated)} tokens ({gen_ms:.0f} ms total)", file=sys.stderr)
 
+        if json_log:
+            json_log.event("generate_done", tokens_generated=len(generated),
+                           total_ms=round(gen_ms, 1))
+
     output = tokenizer.decode(generated, skip_special_tokens=True)
     sys.stdout.write(output)
     sys.stdout.write("\n")
     sys.stdout.flush()
+
+    if json_log:
+        json_log.event("query_done", output=output)
+        json_log.close()
