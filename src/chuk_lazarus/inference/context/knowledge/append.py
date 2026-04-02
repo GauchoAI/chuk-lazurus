@@ -387,7 +387,17 @@ def append_skill(
     _progress("building_entries", 0.85)
 
     # Recompute IDF globally (all windows, old + new)
-    index["idf"] = TFIDFRouter.compute_idf(index["window_tokens"])
+    # Use smoothed IDF: log((N+1) / df) to handle single-window case
+    # where standard log(N/df) = log(1/1) = 0 for all tokens
+    n_windows = len(index["window_tokens"])
+    if n_windows > 0:
+        token_df: dict[int, int] = {}
+        for tokens in index["window_tokens"].values():
+            for t in tokens:
+                token_df[t] = token_df.get(t, 0) + 1
+        index["idf"] = {t: math.log((n_windows + 1) / df) for t, df in token_df.items()}
+    else:
+        index["idf"] = {}
 
     # Select targets and create entries for new windows only
     fact_id_counter = old_max_fact_id + 1
