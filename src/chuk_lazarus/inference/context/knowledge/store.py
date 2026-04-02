@@ -25,6 +25,7 @@ import numpy as np
 
 from .config import ArchitectureConfig
 from .cosine_router import CosineRouter, build_query_embedding, load_embeddings
+from .synthetic_router import load_synthetic_embeddings
 from .route import KeywordRouter, TFIDFRouter
 
 # ── File constants ───────────────────────────────────────────────────
@@ -154,6 +155,7 @@ class KnowledgeStore:
     _tfidf_router: TFIDFRouter | None = field(default=None, repr=False)
     _keyword_router: KeywordRouter | None = field(default=None, repr=False)
     _cosine_router: CosineRouter | None = field(default=None, repr=False)
+    _synthetic_router: CosineRouter | None = field(default=None, repr=False)
 
     # ── Routing ───────────────────────────────────────────────────────
 
@@ -386,6 +388,35 @@ class KnowledgeStore:
             kv_gen, tokenizer, query_text, self.config.crystal_layer
         )
         return router.route_window_ids(query_emb, top_k=k)
+
+    def route_synthetic(
+        self,
+        query_text: str,
+        tokenizer,
+        kv_gen,
+        k: int = 3,
+    ) -> list[int]:
+        """Route via cosine similarity against synthetic query embeddings.
+
+        Skills were embedded at append time using model-generated query
+        variants, placing them in "query space" for better alignment.
+        """
+        router = self._get_synthetic_router()
+        if router.matrix is None:
+            return []
+        query_emb = build_query_embedding(
+            kv_gen, tokenizer, query_text, self.config.crystal_layer
+        )
+        return router.route_window_ids(query_emb, top_k=k)
+
+    def _get_synthetic_router(self) -> CosineRouter:
+        if self._synthetic_router is None:
+            if self._store_path:
+                embeddings = load_synthetic_embeddings(self._store_path)
+            else:
+                embeddings = {}
+            self._synthetic_router = CosineRouter(embeddings)
+        return self._synthetic_router
 
     def _get_cosine_router(self) -> CosineRouter:
         if self._cosine_router is None:
@@ -719,6 +750,7 @@ class KnowledgeStore:
         self._tfidf_router = None
         self._keyword_router = None
         self._cosine_router = None
+        self._synthetic_router = None
 
     def log_stats(self, file=sys.stderr) -> None:
         entry_bytes = len(self.entries) * 14  # 14 bytes per entry (position_in_window is uint16)

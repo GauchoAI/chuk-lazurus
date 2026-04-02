@@ -30,6 +30,11 @@ import numpy as np
 
 from .build import _select_targets
 from .cosine_router import build_window_embedding, load_embeddings, save_embeddings
+from .synthetic_router import (
+    build_synthetic_embedding,
+    load_synthetic_embeddings,
+    save_synthetic_embeddings,
+)
 from .config import ArchitectureConfig
 from .route import SparseKeywordIndex, TFIDFRouter, extract_window_keywords
 from .store import (
@@ -437,10 +442,22 @@ def append_skill(
         br_np = np.array(boundary_residual[0, 0, :].tolist(), dtype=np.float32)
         np.save(str(store_path / BOUNDARY_RESIDUAL_FILE), br_np)
 
+    # ── Step 7b: Build synthetic query embeddings ──────────────────────
+    _progress("synthetic_embeddings", 0.90)
+    synth_embeddings = load_synthetic_embeddings(store_path)
+
+    # Generate synthetic queries for each NEW window and embed them
+    full_text = tokenizer.decode(doc_tokens, skip_special_tokens=True)
+    synth_emb = build_synthetic_embedding(full_text, kv_gen, tokenizer, config.crystal_layer)
+    # Assign same embedding to all windows of this skill
+    for wid, _ in new_windows:
+        synth_embeddings[wid] = synth_emb
+
     # ── Step 8: Save updated index + embeddings ────────────────────────
     _progress("saving_index", 0.95)
     save_index(store_path, index, config)
     save_embeddings(embeddings, store_path)
+    save_synthetic_embeddings(synth_embeddings, store_path)
 
     # ── Phase 4: Memory cleanup ───────────────────────────────────────
     del boundary_residual, base_state
