@@ -30,6 +30,8 @@ import numpy as np
 
 from .build import _select_targets
 from .cosine_router import build_window_embedding, load_embeddings, save_embeddings
+from .offline_router import build_offline_skill_embedding, save_offline_data
+from .offline_router import OFFLINE_EMBEDDINGS_FILE
 from .synthetic_router import (
     build_synthetic_embedding,
     load_synthetic_embeddings,
@@ -443,7 +445,7 @@ def append_skill(
         np.save(str(store_path / BOUNDARY_RESIDUAL_FILE), br_np)
 
     # ── Step 7b: Build synthetic query embeddings ──────────────────────
-    _progress("synthetic_embeddings", 0.90)
+    _progress("synthetic_embeddings", 0.88)
     synth_embeddings = load_synthetic_embeddings(store_path)
 
     # Generate synthetic queries for each NEW window and embed them
@@ -453,11 +455,28 @@ def append_skill(
     for wid, _ in new_windows:
         synth_embeddings[wid] = synth_emb
 
+    # ── Step 7c: Build offline embeddings (bag-of-embeddings) ─────────
+    _progress("offline_embeddings", 0.92)
+    embed_matrix = kv_gen.backbone.embed_matrix
+
+    # Load existing offline embeddings
+    offline_emb_path = store_path / OFFLINE_EMBEDDINGS_FILE
+    if offline_emb_path.exists():
+        npz = np.load(str(offline_emb_path), allow_pickle=False)
+        offline_embeddings = {int(k): mx.array(npz[k], dtype=mx.float32) for k in npz.files}
+    else:
+        offline_embeddings = {}
+
+    offline_emb = build_offline_skill_embedding(full_text, kv_gen, tokenizer, embed_matrix)
+    for wid, _ in new_windows:
+        offline_embeddings[wid] = offline_emb
+
     # ── Step 8: Save updated index + embeddings ────────────────────────
     _progress("saving_index", 0.95)
     save_index(store_path, index, config)
     save_embeddings(embeddings, store_path)
     save_synthetic_embeddings(synth_embeddings, store_path)
+    save_offline_data(offline_embeddings, embed_matrix, store_path)
 
     # ── Phase 4: Memory cleanup ───────────────────────────────────────
     del boundary_residual, base_state

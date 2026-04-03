@@ -25,6 +25,7 @@ import numpy as np
 
 from .config import ArchitectureConfig
 from .cosine_router import CosineRouter, build_query_embedding, load_embeddings
+from .offline_router import OfflineRouter, load_offline_router
 from .synthetic_router import load_synthetic_embeddings
 from .route import KeywordRouter, TFIDFRouter
 
@@ -156,6 +157,7 @@ class KnowledgeStore:
     _keyword_router: KeywordRouter | None = field(default=None, repr=False)
     _cosine_router: CosineRouter | None = field(default=None, repr=False)
     _synthetic_router: CosineRouter | None = field(default=None, repr=False)
+    _offline_router: OfflineRouter | None = field(default=None, repr=False)
 
     # ── Routing ───────────────────────────────────────────────────────
 
@@ -408,6 +410,28 @@ class KnowledgeStore:
             kv_gen, tokenizer, query_text, self.config.crystal_layer
         )
         return router.route_window_ids(query_emb, top_k=k)
+
+    def route_offline(
+        self,
+        query_text: str,
+        tokenizer,
+        k: int = 3,
+    ) -> list[int]:
+        """Route via pure software — no model invocation.
+
+        Uses bag-of-embeddings from the saved embed_matrix.
+        Tokenizer is just a lookup table. Routing is <1ms.
+        """
+        router = self._get_offline_router()
+        if router is None:
+            return []
+        return router.route(query_text, tokenizer, top_k=k)
+
+    def _get_offline_router(self) -> OfflineRouter | None:
+        if self._offline_router is None:
+            if self._store_path:
+                self._offline_router = load_offline_router(self._store_path)
+        return self._offline_router
 
     def _get_synthetic_router(self) -> CosineRouter:
         if self._synthetic_router is None:
@@ -751,6 +775,7 @@ class KnowledgeStore:
         self._keyword_router = None
         self._cosine_router = None
         self._synthetic_router = None
+        self._offline_router = None
 
     def log_stats(self, file=sys.stderr) -> None:
         entry_bytes = len(self.entries) * 14  # 14 bytes per entry (position_in_window is uint16)
